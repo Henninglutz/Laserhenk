@@ -8,6 +8,20 @@ from models.customer import (
     SessionState,
 )
 from models.graph_state import HenkGraphState, create_initial_graph_state
+from models.handoff import (
+    CustomerCommitment,
+    DesignHenkToLaserHenkPayload,
+    GarmentType,
+    HandoffValidator,
+    Henk1ToDesignHenkPayload,
+    InnerLiningType,
+    JacketForm,
+    LaserHenkToHITLPayload,
+    OccasionType,
+    ReversType,
+    ShoulderProcessing,
+    StyleType,
+)
 from models.tools import (
     CRMLeadCreate,
     CRMLeadResponse,
@@ -30,6 +44,20 @@ __all__ = [
     # Graph state
     "HenkGraphState",
     "create_initial_graph_state",
+    # Handoff models
+    "Henk1ToDesignHenkPayload",
+    "DesignHenkToLaserHenkPayload",
+    "LaserHenkToHITLPayload",
+    "HandoffValidator",
+    # Handoff enums
+    "StyleType",
+    "OccasionType",
+    "GarmentType",
+    "JacketForm",
+    "ShoulderProcessing",
+    "ReversType",
+    "InnerLiningType",
+    "CustomerCommitment",
     # Tool models
     "RAGQuery",
     "RAGResult",

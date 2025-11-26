@@ -2,9 +2,16 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from models.handoff import (
+        DesignHenkToLaserHenkPayload,
+        Henk1ToDesignHenkPayload,
+        LaserHenkToHITLPayload,
+    )
 
 
 class CustomerType(str, Enum):
@@ -84,5 +91,17 @@ class SessionState(BaseModel):
         None, description="Context from RAG database"
     )
     next_action: Optional[str] = None
+
+    # Handoff Payloads (tracking inter-agent data transfer)
+    henk1_to_design_payload: Optional[dict] = Field(
+        None, description="HENK1 → Design HENK handoff data"
+    )
+    design_to_laser_payload: Optional[dict] = Field(
+        None, description="Design HENK → LASERHENK handoff data"
+    )
+    laser_to_hitl_payload: Optional[dict] = Field(
+        None, description="LASERHENK → HITL handoff data"
+    )
+
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
