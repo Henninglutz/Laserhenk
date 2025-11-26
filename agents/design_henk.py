@@ -75,7 +75,7 @@ class DesignHenkAgent(BaseAgent):
                 should_continue=True,
             )
 
-        # **CRITICAL: Leadsicherung mit CRM**
+        # Mandatory: Leadsicherung mit CRM**
         if not state.customer.crm_lead_id:
             return AgentDecision(
                 next_agent="design_henk",
