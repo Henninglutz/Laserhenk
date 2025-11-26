@@ -7,7 +7,7 @@ Only includes fields relevant for agent handoffs and RAG queries.
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Season(str, Enum):
@@ -100,10 +100,7 @@ class FabricData(BaseModel):
         None, description="Price category (for budget filtering)"
     )
 
-    class Config:
-        """Pydantic config."""
-
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class FabricSearchCriteria(BaseModel):
