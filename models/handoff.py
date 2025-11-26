@@ -5,6 +5,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from models.fabric import FabricColor, FabricPattern, Season
+
 
 # ============================================================================
 # HENK1 → Design HENK Mandatory Fields
@@ -44,20 +46,28 @@ class Henk1ToDesignHenkPayload(BaseModel):
     budget_max: float = Field(..., description="Maximum Budget in EUR", gt=0)
     style: StyleType = Field(..., description="Gewünschter Stil")
     occasion: OccasionType = Field(..., description="Anlass")
-    patterns: list[str] = Field(
+
+    # Fabric preferences (type-safe with enums)
+    patterns: list[FabricPattern] = Field(
         ...,
         min_length=1,
-        description="Liste von Mustern (z.B. ['Fischgrat', 'Uni', 'Karo'])",
+        description="Liste von Mustern (z.B. ['fischgrat', 'uni', 'karo'])",
     )
-    colors: list[str] = Field(
+    colors: list[FabricColor] = Field(
         ...,
         min_length=1,
-        description="Liste von Farben (z.B. ['Navy', 'Grau', 'Schwarz'])",
+        description="Liste von Farben (z.B. ['navy', 'grau', 'schwarz'])",
+    )
+    season: Optional[Season] = Field(
+        None, description="Gewünschte Saison (wedding, summer, 4season, winter)"
     )
 
     # Optional Context
     customer_notes: Optional[str] = Field(
         None, description="Zusätzliche Notizen aus Bedarfsermittlung"
+    )
+    setting: Optional[str] = Field(
+        None, description="Setting/Kontext (z.B. 'see', 'kirche', 'standesamt')"
     )
 
     @field_validator("budget_max")

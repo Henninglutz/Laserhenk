@@ -7,6 +7,15 @@ from models.customer import (
     Measurements,
     SessionState,
 )
+from models.fabric import (
+    FabricColor,
+    FabricData,
+    FabricPattern,
+    FabricRecommendation,
+    FabricSearchCriteria,
+    Season,
+    StockStatus,
+)
 from models.graph_state import HenkGraphState, create_initial_graph_state
 from models.handoff import (
     CustomerCommitment,
@@ -44,6 +53,14 @@ __all__ = [
     # Graph state
     "HenkGraphState",
     "create_initial_graph_state",
+    # Fabric models
+    "FabricData",
+    "FabricSearchCriteria",
+    "FabricRecommendation",
+    "Season",
+    "FabricPattern",
+    "FabricColor",
+    "StockStatus",
     # Handoff models
     "Henk1ToDesignHenkPayload",
     "DesignHenkToLaserHenkPayload",
