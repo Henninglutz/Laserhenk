@@ -1,5 +1,39 @@
 """Models package."""
 
+from models.auth import (
+    APIKey,
+    APIKeyCreate,
+    APIKeyResponse,
+    LoginRequest,
+    LoginResponse,
+    PasswordChangeRequest,
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    PermissionScope,
+    SessionRevoke,
+    TokenRefreshRequest,
+    TokenRefreshResponse,
+    User,
+    UserCreate,
+    UserRole,
+    UserSession,
+    UserUpdate,
+)
+from models.business import (
+    CRMDeal,
+    CustomerLifetimeValue,
+    CustomerSegment,
+    DealPriority,
+    DealStage,
+    DealUpdate,
+    OrderItem,
+    OrderQuote,
+    OrderQuoteUpdate,
+    OrderStatus,
+    PaymentIntent,
+    PaymentMethod,
+    PaymentStatus,
+)
 from models.customer import (
     Customer,
     CustomerType,
@@ -47,6 +81,38 @@ from models.tools import (
 )
 
 __all__ = [
+    # Auth models
+    "User",
+    "UserRole",
+    "UserCreate",
+    "UserUpdate",
+    "PermissionScope",
+    "LoginRequest",
+    "LoginResponse",
+    "TokenRefreshRequest",
+    "TokenRefreshResponse",
+    "PasswordChangeRequest",
+    "PasswordResetRequest",
+    "PasswordResetConfirm",
+    "UserSession",
+    "SessionRevoke",
+    "APIKey",
+    "APIKeyCreate",
+    "APIKeyResponse",
+    # Business models
+    "CRMDeal",
+    "DealStage",
+    "DealPriority",
+    "DealUpdate",
+    "OrderQuote",
+    "OrderItem",
+    "OrderStatus",
+    "OrderQuoteUpdate",
+    "PaymentIntent",
+    "PaymentMethod",
+    "PaymentStatus",
+    "CustomerSegment",
+    "CustomerLifetimeValue",
     # Customer models
     "Customer",
     "CustomerType",
