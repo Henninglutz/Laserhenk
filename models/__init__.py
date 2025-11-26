@@ -8,11 +8,14 @@ from models.customer import (
     SessionState,
 )
 from models.fabric import (
+    FabricChunk,
     FabricColor,
     FabricData,
     FabricPattern,
     FabricRecommendation,
     FabricSearchCriteria,
+    GeneratedOutfit,
+    OutfitSpec,
     Season,
     StockStatus,
 )
@@ -57,6 +60,9 @@ __all__ = [
     "FabricData",
     "FabricSearchCriteria",
     "FabricRecommendation",
+    "FabricChunk",
+    "OutfitSpec",
+    "GeneratedOutfit",
     "Season",
     "FabricPattern",
     "FabricColor",

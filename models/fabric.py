@@ -62,10 +62,11 @@ class FabricData(BaseModel):
     Simplified Fabric Data Model.
 
     Based on SQLAlchemy Fabric model but simplified for agent handoffs.
+    Extended with scraping and processing metadata.
     """
 
     fabric_code: str = Field(..., description="Unique fabric code")
-    name: str = Field(..., description="Fabric name")
+    name: Optional[str] = Field(None, description="Fabric name")
 
     # Core characteristics
     composition: Optional[str] = Field(
@@ -86,18 +87,33 @@ class FabricData(BaseModel):
     # Availability
     stock_status: Optional[str] = Field(None, description="Stock status")
     supplier: str = Field(default="Formens", description="Supplier name")
+    origin: Optional[str] = Field(None, description="Country of origin")
 
     # Metadata
     description: Optional[str] = Field(
         None, description="Human-readable description"
     )
+    care_instructions: Optional[str] = Field(
+        None, description="Care and maintenance instructions"
+    )
     image_urls: list[str] = Field(
         default_factory=list, description="Fabric image URLs"
+    )
+    local_image_paths: list[str] = Field(
+        default_factory=list, description="Local paths to downloaded images"
     )
 
     # RAG-relevant
     price_category: Optional[str] = Field(
         None, description="Price category (for budget filtering)"
+    )
+
+    # Scraping metadata
+    scrape_date: Optional[str] = Field(
+        None, description="ISO timestamp of when data was scraped"
+    )
+    additional_metadata: dict[str, any] = Field(
+        default_factory=dict, description="Additional flexible metadata"
     )
 
     model_config = ConfigDict(use_enum_values=True)
@@ -154,3 +170,93 @@ class FabricRecommendation(BaseModel):
         default_factory=list,
         description="Why this fabric was recommended",
     )
+
+
+class FabricChunk(BaseModel):
+    """
+    Represents a chunk of fabric data for RAG processing.
+
+    Used for vector embeddings and semantic search.
+    """
+
+    fabric_code: str = Field(..., description="Reference to fabric")
+    chunk_id: str = Field(..., description="Unique chunk identifier")
+    content: str = Field(..., description="Chunk text content")
+    chunk_type: str = Field(
+        ...,
+        description="Type: 'characteristics', 'visual', 'usage', 'technical'",
+    )
+    metadata: dict[str, any] = Field(
+        default_factory=dict, description="Additional chunk metadata"
+    )
+    embedding: Optional[list[float]] = Field(
+        None, description="Vector embedding (OpenAI)"
+    )
+
+    model_config = ConfigDict(use_enum_values=True)
+
+
+class OutfitSpec(BaseModel):
+    """
+    Specification for outfit generation.
+
+    Used by agents to request outfit visualizations.
+    """
+
+    occasion: str = Field(
+        ..., description="e.g., 'wedding', 'business', 'casual'"
+    )
+    season: str = Field(..., description="e.g., 'summer', 'winter'")
+    style_preferences: list[str] = Field(
+        default_factory=list,
+        description="e.g., ['classic', 'modern', 'bold']",
+    )
+    color_preferences: list[str] = Field(
+        default_factory=list, description="Preferred colors"
+    )
+    pattern_preferences: list[str] = Field(
+        default_factory=list, description="Preferred patterns"
+    )
+    fabric_codes: list[str] = Field(
+        default_factory=list,
+        description="Specific fabrics to use (if known)",
+    )
+    additional_notes: Optional[str] = Field(
+        None, description="Additional requirements or notes"
+    )
+
+    model_config = ConfigDict(use_enum_values=True)
+
+
+class GeneratedOutfit(BaseModel):
+    """
+    Result of DALL-E outfit generation.
+
+    Contains generated image and metadata.
+    """
+
+    outfit_id: str = Field(..., description="Unique outfit identifier")
+    spec: OutfitSpec = Field(..., description="Original specification")
+    fabrics_used: list[str] = Field(
+        default_factory=list, description="Fabric codes used"
+    )
+    dalle_prompt: str = Field(
+        ..., description="Prompt sent to DALL-E"
+    )
+    image_url: Optional[str] = Field(
+        None, description="Generated image URL"
+    )
+    local_image_path: Optional[str] = Field(
+        None, description="Local path to saved image"
+    )
+    revised_prompt: Optional[str] = Field(
+        None, description="DALL-E's revised prompt"
+    )
+    generation_date: Optional[str] = Field(
+        None, description="ISO timestamp of generation"
+    )
+    metadata: dict[str, any] = Field(
+        default_factory=dict, description="Additional metadata"
+    )
+
+    model_config = ConfigDict(use_enum_values=True)
