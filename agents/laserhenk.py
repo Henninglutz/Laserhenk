@@ -21,11 +21,13 @@ class LaserHenkAgent(BaseAgent):
         """
         Process measurement collection.
 
+        Current implementation uses state-based decision logic to determine
+        measurement method (SAIA 3D vs HITL manual).
+        Phase 3 will add LLM integration for customer communication.
+
         Returns:
             AgentDecision with next steps
         """
-        # Hier würde die Logik für Maßerfassung stehen
-        # Für jetzt: Struktur-Placeholder
 
         # Check if customer has existing measurements
         if state.customer.has_measurements:

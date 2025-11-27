@@ -30,11 +30,12 @@ class DesignHenkAgent(BaseAgent):
         """
         Process design preferences and lead securing.
 
+        Current implementation uses state-based decision logic.
+        Phase 3 will add LLM integration for conversational preference collection.
+
         Returns:
             AgentDecision with next steps
         """
-        # Hier würde die LLM-Logik für Design-Abfrage stehen
-        # Für jetzt: Struktur-Placeholder
 
         # Check if we need to query RAG for design options
         if not state.rag_context:

@@ -24,11 +24,12 @@ class Henk1Agent(BaseAgent):
         """
         Process needs assessment phase.
 
+        Current implementation uses state-based decision logic.
+        Phase 3 will add LLM integration for conversational needs assessment (AIDA).
+
         Returns:
             AgentDecision with next steps
         """
-        # Hier würde die LLM-Logik für Bedarfsermittlung stehen
-        # Für jetzt: Struktur-Placeholder
 
         # Check if customer type is determined
         if state.customer.customer_type == CustomerType.NEW:
