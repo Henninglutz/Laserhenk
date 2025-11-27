@@ -2,92 +2,42 @@
 
 import asyncio
 import os
-from typing import Optional
+import uuid
 
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
-from werkzeug.security import check_password_hash, generate_password_hash
+from flask import Flask, render_template, request, jsonify, session
 
 from models.graph_state import create_initial_graph_state
-from workflow.graph import create_henk_graph, run_henk_workflow, resume_henk_workflow
+from workflow.graph import run_henk_workflow, resume_henk_workflow
 
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# Simple in-memory user storage (replace with database in production)
-USERS = {
-    'admin': generate_password_hash('admin123'),  # Change this!
-}
-
-
 # ============================================================================
-# AUTHENTICATION ROUTES
-# ============================================================================
-
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    """Login page."""
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-
-        if username in USERS and check_password_hash(USERS[username], password):
-            session['user'] = username
-            return redirect(url_for('laserhenk_home'))
-
-        return render_template('login.html', error='Invalid credentials')
-
-    return render_template('login.html')
-
-
-@app.route('/logout')
-def logout():
-    """Logout."""
-    session.pop('user', None)
-    return redirect(url_for('login'))
-
-
-def login_required(f):
-    """Decorator to require login."""
-    from functools import wraps
-
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user' not in session:
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-
-    return decorated_function
-
-
-# ============================================================================
-# LASERHENK APPLICATION ROUTES
+# ROUTES
 # ============================================================================
 
 
 @app.route('/')
 def index():
     """Redirect to LASERHENK."""
+    from flask import redirect, url_for
     return redirect(url_for('laserhenk_home'))
 
 
 @app.route('/LASERHENK')
-@login_required
 def laserhenk_home():
     """LASERHENK main interface."""
     return render_template('laserhenk.html')
 
 
 @app.route('/LASERHENK/session/new', methods=['POST'])
-@login_required
 def create_session():
     """Create new customer session."""
-    data = request.get_json()
+    data = request.get_json() or {}
     customer_id = data.get('customer_id')
 
     # Create session
-    import uuid
     session_id = str(uuid.uuid4())
     initial_state = create_initial_graph_state(session_id)
 
@@ -105,7 +55,6 @@ def create_session():
 
 
 @app.route('/LASERHENK/workflow/start', methods=['POST'])
-@login_required
 def start_workflow():
     """Start HENK workflow."""
     session_id = session.get('henk_session_id')
@@ -134,7 +83,6 @@ def start_workflow():
 
 
 @app.route('/LASERHENK/workflow/resume', methods=['POST'])
-@login_required
 def resume_workflow():
     """Resume workflow after HITL interrupt."""
     session_id = session.get('henk_session_id')
@@ -162,7 +110,6 @@ def resume_workflow():
 
 
 @app.route('/LASERHENK/agents')
-@login_required
 def get_agents():
     """Get available agents info."""
     agents = [

@@ -4,86 +4,324 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LASERHENK - Agent System</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .header {
+            background: #2563eb;
+            color: white;
+            padding: 1.5rem;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .card h2 {
+            margin-bottom: 1rem;
+            color: #2563eb;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #1d4ed8;
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover:not(:disabled) {
+            background: #059669;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .session-info {
+            padding: 1rem;
+            background: #f0f9ff;
+            border-radius: 6px;
+            border-left: 4px solid #2563eb;
+            margin-bottom: 1rem;
+        }
+
+        .agents-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .agent-card {
+            padding: 1rem;
+            border: 2px solid #e5e7eb;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .agent-card.active {
+            border-color: #2563eb;
+            background: #f0f9ff;
+        }
+
+        .agent-card h3 {
+            color: #2563eb;
+            margin-bottom: 0.5rem;
+        }
+
+        .agent-card p {
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .messages {
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 1rem;
+            background: #f9fafb;
+            border-radius: 6px;
+        }
+
+        .message {
+            padding: 0.75rem;
+            margin-bottom: 0.75rem;
+            border-radius: 6px;
+            background: white;
+            border-left: 4px solid #2563eb;
+        }
+
+        .message strong {
+            color: #2563eb;
+            display: block;
+            margin-bottom: 0.25rem;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .status.idle {
+            background: #e5e7eb;
+            color: #6b7280;
+        }
+
+        .status.active {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status.error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+    </style>
 </head>
 <body>
-    <!-- Header -->
-    <header class="header">
-        <div class="container">
-            <div class="header-left">
-                <h1 class="logo">LASERHENK</h1>
-                <span class="version">v2.0</span>
-            </div>
-            <div class="header-right">
-                <span class="user-info">{{ session.user }}</span>
-                <a href="{{ url_for('logout') }}" class="btn btn-secondary">Logout</a>
-            </div>
-        </div>
-    </header>
-
-    <!-- Main Content -->
-    <div class="container main-content">
-        <!-- Sidebar: Agent Overview -->
-        <aside class="sidebar">
-            <h2>Agent Status</h2>
-            <div id="agent-list" class="agent-list">
-                <!-- Will be populated by JavaScript -->
-            </div>
-        </aside>
-
-        <!-- Main Area: Workflow & Chat -->
-        <main class="main-area">
-            <!-- Session Controls -->
-            <section class="session-controls">
-                <h2>Session Controls</h2>
-                <div class="controls-row">
-                    <button id="btn-new-session" class="btn btn-primary">
-                        New Session
-                    </button>
-                    <button id="btn-start-workflow" class="btn btn-success" disabled>
-                        Start Workflow
-                    </button>
-                    <button id="btn-resume-workflow" class="btn btn-warning" disabled>
-                        Resume
-                    </button>
-                </div>
-                <div id="session-info" class="session-info">
-                    <span id="session-id">No active session</span>
-                </div>
-            </section>
-
-            <!-- Workflow Visualization -->
-            <section class="workflow-section">
-                <h2>Workflow State</h2>
-                <div id="workflow-graph" class="workflow-graph">
-                    <div class="graph-placeholder">
-                        <p>Start a session to see the workflow graph</p>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Chat/Messages -->
-            <section class="chat-section">
-                <h2>Agent Messages</h2>
-                <div id="messages-container" class="messages-container">
-                    <div class="message system">
-                        <strong>System:</strong> Welcome to LASERHENK. Create a new session to begin.
-                    </div>
-                </div>
-                <div class="chat-input">
-                    <input
-                        type="text"
-                        id="user-input"
-                        placeholder="Type your message..."
-                        disabled
-                    >
-                    <button id="btn-send" class="btn btn-primary" disabled>Send</button>
-                </div>
-            </section>
-        </main>
+    <div class="header">
+        <h1>LASERHENK</h1>
+        <p>Agentic AI Tailoring System</p>
     </div>
 
-    <!-- Scripts -->
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <div class="container">
+        <!-- Session Control -->
+        <div class="card">
+            <h2>Session Control</h2>
+            <div class="session-info">
+                <span id="session-status" class="status idle">No Session</span>
+                <span id="session-id" style="margin-left: 1rem; color: #666;"></span>
+            </div>
+            <div class="controls">
+                <button id="btn-new-session" class="btn btn-primary">New Session</button>
+                <button id="btn-start-workflow" class="btn btn-success" disabled>Start Workflow</button>
+                <button id="btn-resume-workflow" class="btn btn-success" disabled>Resume</button>
+            </div>
+        </div>
+
+        <!-- Agents -->
+        <div class="card">
+            <h2>Agents</h2>
+            <div id="agents-grid" class="agents-grid">
+                <!-- Agents will be loaded here -->
+            </div>
+        </div>
+
+        <!-- Messages -->
+        <div class="card">
+            <h2>Workflow Messages</h2>
+            <div id="messages" class="messages">
+                <p style="color: #999;">No messages yet. Start a session to begin.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentSession = {
+            id: null,
+            active: false
+        };
+
+        // Load agents
+        async function loadAgents() {
+            try {
+                const response = await fetch('/LASERHENK/agents');
+                const data = await response.json();
+
+                const grid = document.getElementById('agents-grid');
+                grid.innerHTML = '';
+
+                data.agents.forEach(agent => {
+                    const card = document.createElement('div');
+                    card.className = 'agent-card';
+                    card.id = `agent-${agent.name.toLowerCase().replace(/\\s+/g, '-')}`;
+                    card.innerHTML = `
+                        <h3>${agent.name}</h3>
+                        <p>${agent.description}</p>
+                        <small style="color: #999;">${agent.phase}</small>
+                    `;
+                    grid.appendChild(card);
+                });
+            } catch (error) {
+                console.error('Error loading agents:', error);
+            }
+        }
+
+        // Create new session
+        async function createNewSession() {
+            try {
+                const response = await fetch('/LASERHENK/session/new', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    currentSession.id = data.session_id;
+                    currentSession.active = true;
+
+                    document.getElementById('session-status').textContent = 'Active';
+                    document.getElementById('session-status').className = 'status active';
+                    document.getElementById('session-id').textContent = `ID: ${data.session_id.substring(0, 8)}...`;
+                    document.getElementById('btn-start-workflow').disabled = false;
+
+                    addMessage('System', 'Session created successfully');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                addMessage('Error', error.message);
+            }
+        }
+
+        // Start workflow
+        async function startWorkflow() {
+            try {
+                document.getElementById('btn-start-workflow').disabled = true;
+                addMessage('System', 'Starting workflow...');
+
+                const response = await fetch('/LASERHENK/workflow/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    if (data.messages && data.messages.length > 0) {
+                        data.messages.forEach(msg => {
+                            addMessage(msg.role || 'System', msg.content);
+                        });
+                    }
+                    addMessage('System', `Workflow completed. Current agent: ${data.current_agent || 'None'}`);
+                } else if (data.error) {
+                    addMessage('Error', data.error);
+                    document.getElementById('btn-start-workflow').disabled = false;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                addMessage('Error', error.message);
+                document.getElementById('btn-start-workflow').disabled = false;
+            }
+        }
+
+        // Add message
+        function addMessage(role, content) {
+            const messagesDiv = document.getElementById('messages');
+
+            // Remove placeholder if exists
+            if (messagesDiv.querySelector('p[style*="color: #999"]')) {
+                messagesDiv.innerHTML = '';
+            }
+
+            const messageEl = document.createElement('div');
+            messageEl.className = 'message';
+            messageEl.innerHTML = `<strong>${role}</strong>${content}`;
+            messagesDiv.appendChild(messageEl);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // Event listeners
+        document.getElementById('btn-new-session').addEventListener('click', createNewSession);
+        document.getElementById('btn-start-workflow').addEventListener('click', startWorkflow);
+
+        // Initialize
+        loadAgents();
+    </script>
 </body>
 </html>
