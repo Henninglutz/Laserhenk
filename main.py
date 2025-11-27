@@ -33,74 +33,35 @@ async def run_agent_system(session_id: str):
 
     Args:
         session_id: Session identifier
-
-    Executes the LangGraph workflow with:
-    - 4 Agents: Operator, HENK1, Design HENK, LASERHENK
-    - Tool Nodes: RAG, CRM, DALLE, SAIA
-    - HITL Interrupts for human approval
     """
-    print(f"🚀 Starting HENK Agent System for session: {session_id}")
-    print()
+    print(f"Starting HENK Agent System (Session: {session_id})")
 
-    print("📊 LangGraph Workflow Components:")
-    print("  ✓ 4 Agent Nodes: Operator, HENK1, Design HENK, LASERHENK")
-    print("  ✓ 4 Tool Nodes: RAG, CRM, DALLE, SAIA")
-    print("  ✓ Conditional Edges based on Operator logic")
-    print("  ✓ HITL Interrupts:")
-    print("    - Design HENK: CRM Lead approval")
-    print("    - LASERHENK: SAIA 3D Tool OR Manual measurement")
-    print()
-
-    # Create and visualize graph
+    # Create and execute graph
     graph = create_henk_graph()
-    print(f"✅ LangGraph StateGraph compiled successfully")
-    print()
+    print(f"Graph initialized: {len(graph.nodes)} nodes")
 
-    # Show graph structure
-    print("📋 Graph Structure:")
-    print(f"  Nodes: {len(graph.nodes)}")
-    for node_name in graph.nodes:
-        print(f"    - {node_name}")
-    print()
+    initial_state = create_initial_graph_state(session_id)
 
-    print("💡 Workflow Ready for Execution")
-    print()
-    print("ℹ️  Note: Full workflow execution requires:")
-    print("  • LLM integration for intelligent agent decisions")
-    print("  • External API connections (PIPEDRIVE, DALLE, SAIA)")
-    print("  • RAG database setup")
-    print("  • User interface for HITL interactions")
-    print()
-    print("✅ Phase 2 Complete: LangGraph workflow architecture implemented!")
+    # Execute workflow
+    final_state = await run_henk_workflow(
+        initial_state=initial_state,
+        thread_id=session_id
+    )
+
+    print(f"Workflow complete. Final agent: {final_state.get('current_agent')}")
+    return final_state
 
 
 def main():
     """Main function."""
-    print("=" * 60)
-    print("LASERHENK - Agentic AI System")
-    print("Version 2.0.0 (LangGraph Workflow)")
-    print("=" * 60)
-    print()
-
-    # Create a test session
-    session_id = create_session()
-    print(f"✅ Session created: {session_id}")
-    print()
-
-    # Run the agent system with LangGraph workflow
     import asyncio
 
-    asyncio.run(run_agent_system(session_id))
+    print("=" * 60)
+    print("LASERHENK - Agentic AI System")
+    print("=" * 60)
 
-    print()
-    print("=" * 60)
-    print("✅ Phase 2 Complete: LangGraph Workflow Implemented")
-    print("📚 Next Steps:")
-    print("  1. Add LLM integration for agent decision-making")
-    print("  2. Connect external tool APIs (PIPEDRIVE, DALLE, SAIA)")
-    print("  3. Implement RAG database queries")
-    print("  4. Add user interface for HITL interactions")
-    print("=" * 60)
+    session_id = create_session()
+    asyncio.run(run_agent_system(session_id))
 
 
 if __name__ == "__main__":

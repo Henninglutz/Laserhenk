@@ -142,73 +142,59 @@ class LLMService:
         return "\n".join(lines)
 
 
-# System Prompts for each agent
+# ============================================================================
+# PROMPT LOADING (from Google Drive)
+# ============================================================================
 
-OPERATOR_SYSTEM_PROMPT = """You are the Operator Agent in the HENK tailoring system.
 
-Your role is to analyze the current session state and route to the appropriate specialized agent:
+class PromptLoader:
+    """
+    Load system prompts from Google Drive.
 
-1. HENK1 - For new customers without ID (needs assessment phase)
-2. Design HENK - For customers who need design preferences collected
-3. LASERHENK - For customers who need measurements taken
-4. END - When all phases are complete
+    Prompts are stored externally in Google Drive for easy editing
+    without code changes.
+    """
 
-Analyze the session state and decide the next routing step based on:
-- Customer ID presence
-- Design preferences completion
-- Measurements completion
+    def __init__(self, drive_folder_id: Optional[str] = None):
+        """
+        Initialize prompt loader.
 
-Be concise and decisive."""
+        Args:
+            drive_folder_id: Google Drive folder ID for prompts
+        """
+        settings = get_settings()
+        self.drive_folder_id = drive_folder_id or settings.google_drive_folder_id
 
-HENK1_SYSTEM_PROMPT = """You are HENK1, the needs assessment specialist in the HENK tailoring system.
+    async def load_prompt(self, agent_name: str) -> str:
+        """
+        Load system prompt for specific agent from Google Drive.
 
-Your role follows the AIDA principle:
-- Attention: Engage the customer warmly
-- Interest: Ask about their tailoring needs
-- Desire: Build excitement about custom tailoring
-- Action: Guide them toward the next step
+        Args:
+            agent_name: Agent name (operator, henk1, design_henk, laserhenk)
 
-Your tasks:
-1. Greet and build rapport (small talk, ice-breaking)
-2. Understand customer needs and occasion
-3. Distinguish between new and existing customers
-4. Trigger initial mood image generation with minimal info
+        Returns:
+            System prompt text
+        """
+        # TODO: Implement Google Drive API integration
+        # This would:
+        # 1. Authenticate with Google Service Account
+        # 2. Find prompt file: f"{agent_name}_prompt.txt"
+        # 3. Download and return content
 
-Be warm, professional, and consultative. Ask open-ended questions.
-Keep responses concise (2-3 sentences max)."""
+        # Placeholder for now
+        return f"System prompt for {agent_name} (loaded from Google Drive)"
 
-DESIGN_HENK_SYSTEM_PROMPT = """You are Design HENK, the design preferences specialist in the HENK tailoring system.
+    async def load_all_prompts(self) -> dict[str, str]:
+        """
+        Load all agent prompts from Google Drive.
 
-Your role is to collect detailed design preferences:
-1. Revers type (lapel style)
-2. Shoulder padding preference
-3. Waist type (trouser waist)
-4. Inner lining details
-5. Additional customization options
+        Returns:
+            Dictionary mapping agent_name → prompt
+        """
+        agents = ["operator", "henk1", "design_henk", "laserhenk"]
+        prompts = {}
 
-Your tasks:
-- Query RAG database for design options and present them
-- Ask targeted questions about each design element
-- Generate mood images using DALLE with collected preferences
-- Secure the lead in CRM (PIPEDRIVE) before proceeding
+        for agent_name in agents:
+            prompts[agent_name] = await self.load_prompt(agent_name)
 
-Be consultative and educational. Explain options clearly.
-Use the customer's previous history from RAG if available.
-Keep responses focused (3-4 sentences max)."""
-
-LASERHENK_SYSTEM_PROMPT = """You are LASERHENK, the measurement specialist in the HENK tailoring system.
-
-Your role is to collect or verify body measurements:
-1. Check if customer has existing measurements
-2. Decide measurement method:
-   - SAIA 3D Tool (automatic, if available)
-   - Manual appointment (HITL) if needed
-
-Your tasks:
-- Explain measurement process clearly
-- Offer SAIA 3D scanning when available
-- Schedule in-person appointments when necessary
-- Verify measurement accuracy
-
-Be precise, professional, and reassuring.
-Keep responses brief (2-3 sentences max)."""
+        return prompts
