@@ -87,7 +87,7 @@ class SessionState(BaseModel):
     mood_image_url: Optional[str] = Field(
         None, description="Generated DALLE mood image"
     )
-    rag_context: Optional[dict] = Field(
+    rag_context: Optional[list[dict]] = Field(
         None, description="Context from RAG database"
     )
     next_action: Optional[str] = None

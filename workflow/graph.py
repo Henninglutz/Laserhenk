@@ -104,10 +104,8 @@ async def crm_tool_node(state: HenkGraphState) -> HenkGraphState:
 
         lead_data = CRMLeadCreate(
             customer_name=state["session_state"].customer.name or "Unknown",
-            customer_email=state["session_state"].customer.email,
-            customer_phone=state["session_state"].customer.phone_number,
-            design_preferences=params.get("design_preferences"),
-            mood_image_url=params.get("mood_image"),
+            email=state["session_state"].customer.email,
+            phone=state["session_state"].customer.phone,
             notes=f"Session: {state['session_state'].session_id}"
         )
 
