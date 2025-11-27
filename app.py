@@ -1,5 +1,6 @@
 """Flask Web Application for HENK Agent System."""
 
+import asyncio
 import os
 from typing import Optional
 
@@ -80,7 +81,7 @@ def laserhenk_home():
 
 @app.route('/LASERHENK/session/new', methods=['POST'])
 @login_required
-async def create_session():
+def create_session():
     """Create new customer session."""
     data = request.get_json()
     customer_id = data.get('customer_id')
@@ -105,7 +106,7 @@ async def create_session():
 
 @app.route('/LASERHENK/workflow/start', methods=['POST'])
 @login_required
-async def start_workflow():
+def start_workflow():
     """Start HENK workflow."""
     session_id = session.get('henk_session_id')
 
@@ -116,10 +117,10 @@ async def start_workflow():
     initial_state = create_initial_graph_state(session_id)
 
     try:
-        final_state = await run_henk_workflow(
+        final_state = asyncio.run(run_henk_workflow(
             initial_state=initial_state,
             thread_id=session_id
-        )
+        ))
 
         return jsonify({
             'success': True,
@@ -134,7 +135,7 @@ async def start_workflow():
 
 @app.route('/LASERHENK/workflow/resume', methods=['POST'])
 @login_required
-async def resume_workflow():
+def resume_workflow():
     """Resume workflow after HITL interrupt."""
     session_id = session.get('henk_session_id')
     data = request.get_json()
@@ -145,10 +146,10 @@ async def resume_workflow():
     user_input = data.get('user_input')
 
     try:
-        final_state = await resume_henk_workflow(
+        final_state = asyncio.run(resume_henk_workflow(
             thread_id=session_id,
             user_input=user_input
-        )
+        ))
 
         return jsonify({
             'success': True,
