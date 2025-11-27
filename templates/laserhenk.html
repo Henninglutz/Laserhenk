@@ -13,12 +13,11 @@
       --text: #eef1f6;
       --accent: #6ea8fe;
       --accent-strong: #4c8dff;
-      --agent-bg: #1a1f2a;
+      --assistant: #1a1f2a;
+      --user: #1e2a22;
       --border: #20232b;
       --shadow: 0 10px 30px rgba(0,0,0,.35);
       --radius: 16px;
-      --success: #10b981;
-      --warning: #f59e0b;
     }
 
     * { box-sizing: border-box; }
@@ -28,6 +27,11 @@
       background: radial-gradient(1200px 700px at 80% -200px, #182036 0%, var(--bg) 60%);
       color: var(--text);
       font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Inter, Ubuntu, Cantarell, sans-serif;
+    }
+
+    .sr-only{
+      position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+      overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;
     }
 
     /* Top bar */
@@ -44,7 +48,7 @@
       width:36px; height:36px; display:grid; place-items:center;
       border-radius: 12px;
       background: linear-gradient(135deg, var(--accent-strong), #9ec5ff);
-      color:#0b1a33; font-weight: 800; font-size: 18px;
+      color:#0b1a33; font-weight: 800;
       box-shadow: var(--shadow);
     }
     .titles h1{ font-size:18px; margin:0; letter-spacing:.2px; }
@@ -63,179 +67,93 @@
       font-family: inherit;
       transition: transform .06s ease, border-color .2s ease, background .2s ease;
     }
-    .btn:hover:not(:disabled){ transform: translateY(-1px); }
-    .btn:active:not(:disabled){ transform: translateY(0); }
-    .btn:disabled{
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
+    .btn:hover{ transform: translateY(-1px); }
+    .btn:active{ transform: translateY(0); }
+    .btn.icon{ padding:10px; }
+    .btn.ghost{ background: transparent; }
+    .btn.link{ text-decoration: none; }
     .btn.primary{
       background: linear-gradient(180deg, var(--accent), var(--accent-strong));
       color: #071326;
       border-color: transparent;
       font-weight: 600;
     }
-    .btn.success{
-      background: linear-gradient(180deg, var(--success), #059669);
-      color: white;
-      border-color: transparent;
-      font-weight: 600;
-    }
 
     /* Layout */
     .container{
-      max-width: 1200px;
+      max-width: 920px;
       margin: 0 auto;
       padding: 16px;
     }
-
-    .card{
-      background: var(--panel);
+    .chat{
+      display:flex; flex-direction:column; gap:14px;
+      padding: 10px;
+      min-height: calc(100dvh - 220px);
+    }
+    .msg{ display:flex; }
+    .msg.assistant{ justify-content:flex-start; }
+    .msg.user{ justify-content:flex-end; }
+    .bubble{
+      max-width: 72ch;
+      padding: 12px 14px;
+      border-radius: 14px;
       border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 20px;
-      margin-bottom: 18px;
       box-shadow: var(--shadow);
     }
-    .card h2{
-      margin: 0 0 16px 0;
-      font-size: 18px;
-      font-weight: 600;
+    .msg.assistant .bubble{
+      background: linear-gradient(180deg, var(--assistant), #121620);
+    }
+    .msg.user .bubble{
+      background: linear-gradient(180deg, var(--user), #142018);
+    }
+
+    /* Composer */
+    .composer{
+      position: sticky; bottom: 0;
+      display:flex; gap: 10px; align-items:center;
+      padding: 12px;
+      background: rgba(12,14,18,.6);
+      backdrop-filter: blur(8px);
+      border-top: 1px solid var(--border);
+      border-radius: 14px;
+      margin-top: 14px;
+    }
+    .input{
+      flex:1;
+      background: var(--panel);
       color: var(--text);
-    }
-
-    /* Session info */
-    .session-info{
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px 14px;
-      background: rgba(110,168,254,0.1);
-      border: 1px solid rgba(110,168,254,0.2);
-      border-radius: 10px;
-      margin-bottom: 14px;
-    }
-    .status{
-      display: inline-block;
-      padding: 4px 10px;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-    }
-    .status.idle{
-      background: rgba(139,144,161,0.2);
-      color: var(--muted);
-    }
-    .status.active{
-      background: rgba(16,185,129,0.2);
-      color: var(--success);
-    }
-
-    /* Controls */
-    .controls{
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    /* Agents grid */
-    .agents-grid{
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 14px;
-    }
-    .agent-card{
-      padding: 16px;
-      background: var(--agent-bg);
-      border: 1px solid var(--border);
+      border:1px solid var(--border);
+      padding: 12px 12px;
       border-radius: 12px;
-      transition: all 0.2s ease;
-    }
-    .agent-card:hover{
-      border-color: var(--accent);
-      transform: translateY(-2px);
-    }
-    .agent-card.active{
-      border-color: var(--accent-strong);
-      background: linear-gradient(180deg, #1e2a3a, #1a1f2a);
-      box-shadow: 0 0 0 2px rgba(110,168,254,0.3);
-    }
-    .agent-card h3{
-      color: var(--accent);
-      margin: 0 0 8px 0;
       font-size: 16px;
-      font-weight: 600;
+      font-family: inherit;
     }
-    .agent-card p{
-      font-size: 14px;
-      color: var(--muted);
-      margin: 0 0 6px 0;
-    }
-    .agent-card small{
-      font-size: 12px;
-      color: var(--muted);
-      opacity: 0.7;
+    .input::placeholder{ color: var(--muted); }
+    .input:focus{
+      outline: none;
+      border-color: var(--accent);
     }
 
-    /* Messages */
-    .messages{
-      max-height: 500px;
-      overflow-y: auto;
-      padding: 14px;
-      background: rgba(10,12,16,0.4);
-      border-radius: 12px;
-      border: 1px solid var(--border);
-    }
-    .messages::-webkit-scrollbar{
-      width: 8px;
-    }
-    .messages::-webkit-scrollbar-track{
-      background: transparent;
-    }
-    .messages::-webkit-scrollbar-thumb{
-      background: var(--border);
-      border-radius: 4px;
-    }
-    .message{
-      padding: 12px 14px;
-      margin-bottom: 10px;
-      border-radius: 10px;
-      background: linear-gradient(180deg, var(--agent-bg), #121620);
-      border: 1px solid var(--border);
-    }
-    .message strong{
-      color: var(--accent);
-      display: block;
-      margin-bottom: 4px;
+    .send-text{ margin-left: 4px; }
+
+    /* Footnote */
+    .footnote{
+      color: var(--muted);
+      margin-top: 12px;
       font-size: 13px;
-      font-weight: 600;
     }
-    .message-placeholder{
-      color: var(--muted);
-      font-size: 14px;
-      text-align: center;
-      padding: 20px;
+    .footnote summary{
+      cursor: pointer;
+      padding: 8px 0;
     }
 
-    /* Responsive */
+    /* Small screens */
     @media (max-width: 560px){
-      .controls{
-        flex-direction: column;
-      }
-      .btn{
-        width: 100%;
-        justify-content: center;
-      }
-      .agents-grid{
-        grid-template-columns: 1fr;
-      }
+      .send-text{ display:none; }
     }
   </style>
 </head>
 <body>
-  <!-- Header -->
   <header class="topbar" role="banner">
     <div class="brand">
       <span class="logo" aria-hidden="true">L</span>
@@ -245,148 +163,121 @@
       </div>
     </div>
     <nav aria-label="Quick actions" class="actions">
-      <button id="clearBtn" class="btn" title="Restart">
-        Restart
+      <button id="clearBtn" class="btn ghost" title="Clear chat">
+        Clear
       </button>
     </nav>
   </header>
 
-  <!-- Main Content -->
-  <main class="container" role="main">
-    <!-- Session Control -->
-    <section class="card">
-      <h2>Session Control</h2>
-      <div class="session-info">
-        <span id="session-status" class="status idle">No Session</span>
-        <span id="session-id" style="color: var(--muted); font-size: 14px;"></span>
-      </div>
-      <div class="controls">
-        <button id="btn-new-session" class="btn primary">New Session</button>
-        <button id="btn-start-workflow" class="btn success" disabled>Start Workflow</button>
-        <button id="btn-resume-workflow" class="btn success" disabled>Resume</button>
-      </div>
-    </section>
-
-    <!-- Agents -->
-    <section class="card">
-      <h2>Agent Network</h2>
-      <div id="agents-grid" class="agents-grid">
-        <!-- Agents will be loaded here -->
+  <main id="main" class="container" role="main">
+    <section id="chat" class="chat" aria-live="polite" aria-busy="false">
+      <!-- Messages render here -->
+      <div class="msg assistant">
+        <div class="bubble">
+          Hallo! Ich bin <strong>LASERHENK</strong>, dein AI-gestütztes Agenten-System für maßgeschneiderte Herrenmode.<br/><br/>
+          Ich orchestriere verschiedene KI-Agenten, um dir bei deinem perfekten Outfit zu helfen:<br/>
+          • <strong>HENK1</strong> ermittelt deine Bedürfnisse<br/>
+          • <strong>Design HENK</strong> erstellt dein Wunsch-Outfit<br/>
+          • <strong>LASERHENK</strong> nimmt präzise Maße<br/><br/>
+          Erzähl mir von deinem Anlass – wir starten den Workflow!
+        </div>
       </div>
     </section>
 
-    <!-- Messages -->
-    <section class="card">
-      <h2>Workflow Messages</h2>
-      <div id="messages" class="messages">
-        <p class="message-placeholder">No messages yet. Start a session to begin.</p>
+    <form id="composer" class="composer" autocomplete="off" aria-label="Message composer">
+      <label for="message" class="sr-only">Your message</label>
+      <input
+        id="message"
+        name="message"
+        class="input"
+        type="text"
+        placeholder="Beschreibe deinen Anlass, Stil-Wünsche..."
+        maxlength="2000"
+        required
+      />
+
+      <button id="sendBtn" type="submit" class="btn primary" title="Send">
+        <svg width="18" height="18" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+          <path fill="currentColor" d="M2 21l21-9L2 3v7l15 2-15 2v7z"/>
+        </svg>
+        <span class="send-text">Send</span>
+      </button>
+    </form>
+
+    <details class="footnote">
+      <summary>Workflow Status</summary>
+      <div>
+        Session: <code id="sessionIdLabel">none</code><br/>
+        Current Agent: <code id="currentAgentLabel">none</code>
       </div>
-    </section>
+    </details>
   </main>
 
-  <!-- JavaScript -->
   <script>
     const CONFIG = {
-      BACKEND_URL: '/LASERHENK'
+      BACKEND_URL: '/LASERHENK',
+      MAX_HISTORY: 20
     };
 
     const els = {
-      sessionStatus: document.getElementById('session-status'),
-      sessionId: document.getElementById('session-id'),
-      btnNewSession: document.getElementById('btn-new-session'),
-      btnStartWorkflow: document.getElementById('btn-start-workflow'),
-      btnResumeWorkflow: document.getElementById('btn-resume-workflow'),
-      clearBtn: document.getElementById('clearBtn'),
-      agentsGrid: document.getElementById('agents-grid'),
-      messages: document.getElementById('messages')
+      chat: document.getElementById('chat'),
+      form: document.getElementById('composer'),
+      input: document.getElementById('message'),
+      send: document.getElementById('sendBtn'),
+      clear: document.getElementById('clearBtn'),
+      sessionIdLabel: document.getElementById('sessionIdLabel'),
+      currentAgentLabel: document.getElementById('currentAgentLabel')
     };
 
-    let currentSession = {
-      id: null,
-      active: false
-    };
+    let history = []; // {role:"user"|"assistant", content:string}
+    let sessionId = null;
+    let currentAgent = null;
 
     // UI helpers
-    function scrollMessages(){
+    function scrollToBottom(){
       requestAnimationFrame(() => {
-        els.messages.scrollTop = els.messages.scrollHeight;
+        els.chat.scrollTop = els.chat.scrollHeight;
       });
     }
 
-    function addMessage(role, content){
-      // Remove placeholder if exists
-      const placeholder = els.messages.querySelector('.message-placeholder');
-      if (placeholder) {
-        placeholder.remove();
-      }
+    function el(tag, className, text){
+      const n = document.createElement(tag);
+      if (className) n.className = className;
+      if (text) n.textContent = text;
+      return n;
+    }
 
-      const msg = document.createElement('div');
-      msg.className = 'message';
-      msg.innerHTML = `<strong>${sanitize(role)}</strong>${sanitize(content)}`;
-      els.messages.appendChild(msg);
-      scrollMessages();
+    function addMessage(role, content){
+      const wrap = el('div', `msg ${role}`);
+      const bubble = el('div', 'bubble');
+      bubble.innerHTML = sanitize(content).replace(/\n/g, '<br/>');
+      wrap.appendChild(bubble);
+      els.chat.appendChild(wrap);
+      scrollToBottom();
     }
 
     function sanitize(str){
-      return String(str).replace(/[&<>"]/g, c => ({
-        "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;"
+      return str.replace(/[&<>"]/g, c => ({
+        '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;'
       }[c]));
     }
 
     function setBusy(isBusy){
-      els.btnNewSession.disabled = isBusy;
-      els.btnStartWorkflow.disabled = isBusy || !currentSession.active;
-      els.btnResumeWorkflow.disabled = isBusy;
+      els.chat.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+      els.send.disabled = !!isBusy;
+      els.input.disabled = !!isBusy;
     }
 
-    function updateSessionUI(sessionId){
-      currentSession.id = sessionId;
-      currentSession.active = true;
-      els.sessionStatus.textContent = 'Active';
-      els.sessionStatus.className = 'status active';
-      els.sessionId.textContent = `ID: ${sessionId.substring(0, 8)}...`;
-      els.btnStartWorkflow.disabled = false;
+    function updateStatus(){
+      els.sessionIdLabel.textContent = sessionId ? sessionId.substring(0, 8) + '...' : 'none';
+      els.currentAgentLabel.textContent = currentAgent || 'none';
     }
 
-    function clearSession(){
-      currentSession = { id: null, active: false };
-      els.sessionStatus.textContent = 'No Session';
-      els.sessionStatus.className = 'status idle';
-      els.sessionId.textContent = '';
-      els.btnStartWorkflow.disabled = true;
-      els.btnResumeWorkflow.disabled = true;
-      els.messages.innerHTML = '<p class="message-placeholder">No messages yet. Start a session to begin.</p>';
-    }
+    // Networking
+    async function ensureSession(){
+      if (sessionId) return sessionId;
 
-    // Load agents
-    async function loadAgents(){
       try {
-        const response = await fetch(`${CONFIG.BACKEND_URL}/agents`);
-        const data = await response.json();
-
-        els.agentsGrid.innerHTML = '';
-
-        data.agents.forEach(agent => {
-          const card = document.createElement('div');
-          card.className = 'agent-card';
-          card.id = `agent-${agent.name.toLowerCase().replace(/\s+/g, '-')}`;
-          card.innerHTML = `
-            <h3>${sanitize(agent.name)}</h3>
-            <p>${sanitize(agent.description)}</p>
-            <small>${sanitize(agent.phase)}</small>
-          `;
-          els.agentsGrid.appendChild(card);
-        });
-      } catch (error) {
-        console.error('Failed to load agents:', error);
-        addMessage('Error', `Failed to load agents: ${error.message}`);
-      }
-    }
-
-    // Create new session
-    async function createNewSession(){
-      try {
-        setBusy(true);
         const response = await fetch(`${CONFIG.BACKEND_URL}/session/new`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -396,106 +287,102 @@
         const data = await response.json();
 
         if (data.success) {
-          updateSessionUI(data.session_id);
-          addMessage('System', data.message || 'Session created successfully');
+          sessionId = data.session_id;
+          updateStatus();
+          return sessionId;
         } else {
           throw new Error(data.error || 'Failed to create session');
         }
-      } catch (error) {
-        console.error('Error:', error);
-        addMessage('Error', error.message);
-      } finally {
-        setBusy(false);
+      } catch (err) {
+        console.error('Session creation failed:', err);
+        addMessage('assistant', `Sorry, konnte keine Session erstellen. (${err.message})`);
+        return null;
       }
     }
 
-    // Start workflow
-    async function startWorkflow(){
-      if (!currentSession.active) {
-        addMessage('Error', 'No active session');
-        return;
-      }
+    async function sendMessage(userText){
+      const sid = await ensureSession();
+      if (!sid) return;
 
-      try {
+      try{
         setBusy(true);
-        addMessage('System', 'Starting workflow...');
 
         const response = await fetch(`${CONFIG.BACKEND_URL}/workflow/start`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
 
+        if(!response.ok){
+          throw new Error(`HTTP ${response.status}`);
+        }
+
         const data = await response.json();
 
         if (data.success) {
           if (data.messages && data.messages.length > 0) {
             data.messages.forEach(msg => {
-              const role = msg.role || 'System';
-              addMessage(role.charAt(0).toUpperCase() + role.slice(1), msg.content);
+              const role = msg.role === 'user' ? 'user' : 'assistant';
+              history.push({ role, content: msg.content });
+              addMessage(role, msg.content);
             });
           }
-          addMessage('System', `Workflow completed. Current agent: ${data.current_agent || 'None'}`);
+
+          if (data.current_agent) {
+            currentAgent = data.current_agent;
+            updateStatus();
+          }
+
+          const replyText = `Workflow abgeschlossen. Aktueller Agent: ${data.current_agent || 'none'}`;
+          history.push({ role: 'assistant', content: replyText });
+          addMessage('assistant', replyText);
         } else {
           throw new Error(data.error || 'Workflow failed');
         }
-      } catch (error) {
-        console.error('Error:', error);
-        addMessage('Error', error.message);
-      } finally {
+      }catch(err){
+        console.error(err);
+        addMessage('assistant', `Sorry, ein Fehler ist aufgetreten. (${err.message})`);
+      }finally{
         setBusy(false);
       }
     }
 
-    // Resume workflow
-    async function resumeWorkflow(){
-      if (!currentSession.active) {
-        addMessage('Error', 'No active session');
-        return;
-      }
+    // Events
+    els.form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = els.input.value.trim();
+      if(!text) return;
+      els.input.value = '';
+      history.push({ role: 'user', content: text });
+      addMessage('user', text);
+      await sendMessage(text);
+    });
 
-      try {
-        setBusy(true);
-        addMessage('System', 'Resuming workflow...');
-
-        const response = await fetch(`${CONFIG.BACKEND_URL}/workflow/resume`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_input: null })
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-          if (data.messages && data.messages.length > 0) {
-            data.messages.forEach(msg => {
-              const role = msg.role || 'System';
-              addMessage(role.charAt(0).toUpperCase() + role.slice(1), msg.content);
-            });
-          }
-          addMessage('System', 'Workflow resumed');
-        } else {
-          throw new Error(data.error || 'Resume failed');
-        }
-      } catch (error) {
-        console.error('Error:', error);
-        addMessage('Error', error.message);
-      } finally {
-        setBusy(false);
-      }
-    }
-
-    // Event listeners
-    els.btnNewSession.addEventListener('click', createNewSession);
-    els.btnStartWorkflow.addEventListener('click', startWorkflow);
-    els.btnResumeWorkflow.addEventListener('click', resumeWorkflow);
-    els.clearBtn.addEventListener('click', () => {
-      if (confirm('Clear session and restart?')) {
-        clearSession();
+    els.input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        els.form.requestSubmit();
       }
     });
 
+    els.clear.addEventListener('click', () => {
+      if (!confirm('Chat löschen und neu starten?')) return;
+      history = [];
+      sessionId = null;
+      currentAgent = null;
+      els.chat.innerHTML = '';
+      updateStatus();
+      addMessage('assistant',
+        'Hallo! Ich bin <strong>LASERHENK</strong>, dein AI-gestütztes Agenten-System für maßgeschneiderte Herrenmode.<br/><br/>' +
+        'Ich orchestriere verschiedene KI-Agenten, um dir bei deinem perfekten Outfit zu helfen:<br/>' +
+        '• <strong>HENK1</strong> ermittelt deine Bedürfnisse<br/>' +
+        '• <strong>Design HENK</strong> erstellt dein Wunsch-Outfit<br/>' +
+        '• <strong>LASERHENK</strong> nimmt präzise Maße<br/><br/>' +
+        'Erzähl mir von deinem Anlass – wir starten den Workflow!'
+      );
+    });
+
     // Initialize
-    loadAgents();
+    updateStatus();
   </script>
 </body>
 </html>
