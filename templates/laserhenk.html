@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LASERHENK - Agent System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-left">
+                <h1 class="logo">LASERHENK</h1>
+                <span class="version">v2.0</span>
+            </div>
+            <div class="header-right">
+                <span class="user-info">{{ session.user }}</span>
+                <a href="{{ url_for('logout') }}" class="btn btn-secondary">Logout</a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="container main-content">
+        <!-- Sidebar: Agent Overview -->
+        <aside class="sidebar">
+            <h2>Agent Status</h2>
+            <div id="agent-list" class="agent-list">
+                <!-- Will be populated by JavaScript -->
+            </div>
+        </aside>
+
+        <!-- Main Area: Workflow & Chat -->
+        <main class="main-area">
+            <!-- Session Controls -->
+            <section class="session-controls">
+                <h2>Session Controls</h2>
+                <div class="controls-row">
+                    <button id="btn-new-session" class="btn btn-primary">
+                        New Session
+                    </button>
+                    <button id="btn-start-workflow" class="btn btn-success" disabled>
+                        Start Workflow
+                    </button>
+                    <button id="btn-resume-workflow" class="btn btn-warning" disabled>
+                        Resume
+                    </button>
+                </div>
+                <div id="session-info" class="session-info">
+                    <span id="session-id">No active session</span>
+                </div>
+            </section>
+
+            <!-- Workflow Visualization -->
+            <section class="workflow-section">
+                <h2>Workflow State</h2>
+                <div id="workflow-graph" class="workflow-graph">
+                    <div class="graph-placeholder">
+                        <p>Start a session to see the workflow graph</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Chat/Messages -->
+            <section class="chat-section">
+                <h2>Agent Messages</h2>
+                <div id="messages-container" class="messages-container">
+                    <div class="message system">
+                        <strong>System:</strong> Welcome to LASERHENK. Create a new session to begin.
+                    </div>
+                </div>
+                <div class="chat-input">
+                    <input
+                        type="text"
+                        id="user-input"
+                        placeholder="Type your message..."
+                        disabled
+                    >
+                    <button id="btn-send" class="btn btn-primary" disabled>Send</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
