@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     saia_api_key: Optional[str] = None
     saia_api_url: Optional[str] = None
 
+    # Google Service Account (for Drive/Docs access)
+    google_service_account_file: Optional[str] = None
+    google_drive_folder_id: Optional[str] = None
+
     # Application
     environment: str = "development"
     log_level: str = "INFO"
