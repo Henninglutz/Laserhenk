@@ -37,7 +37,7 @@ class DesignHenkAgent(BaseAgent):
         # Für jetzt: Struktur-Placeholder
 
         # Check if we need to query RAG for design options
-        if not state.rag_context:
+        if not state.design_rag_queried:
             return AgentDecision(
                 next_agent="design_henk",
                 message="Querying RAG for design options",
@@ -55,37 +55,42 @@ class DesignHenkAgent(BaseAgent):
         )
 
         if not preferences_complete:
+            # TODO: Replace with actual LLM conversation to collect preferences
+            # For now: Mock data to prevent infinite loop
+            state.design_preferences.revers_type = "Spitzrevers"
+            state.design_preferences.shoulder_padding = "mittel"
+            state.design_preferences.waistband_type = "bundfalte"
+
             return AgentDecision(
-                next_agent="design_henk",
-                message="Collecting design preferences",
-                action="collect_preferences",
+                next_agent="operator",
+                message="Design preferences collected (mock data)",
+                action=None,
                 should_continue=True,
             )
 
         # Generate mood image with DALLE
         if not state.mood_image_url:
+            # TODO: Replace with actual DALL-E API call
+            # For now: Mock URL to prevent infinite loop
+            state.mood_image_url = "https://mock-dalle-image.jpg"
+
             return AgentDecision(
-                next_agent="design_henk",
-                message="Generating mood image",
-                action="generate_dalle_image",
-                action_params={
-                    "design_preferences": state.design_preferences.model_dump(),
-                    "customer_context": state.rag_context,
-                },
+                next_agent="operator",
+                message="Mood image generated (mock)",
+                action=None,
                 should_continue=True,
             )
 
         # Mandatory: Leadsicherung mit CRM**
         if not state.customer.crm_lead_id:
+            # TODO: Replace with actual CRM API call
+            # For now: Mock CRM ID to prevent infinite loop
+            state.customer.crm_lead_id = f"MOCK_CRM_{state.session_id[:8]}"
+
             return AgentDecision(
-                next_agent="design_henk",
-                message="Securing lead in CRM",
-                action="create_crm_lead",
-                action_params={
-                    "customer": state.customer.model_dump(),
-                    "design_preferences": state.design_preferences.model_dump(),
-                    "mood_image": state.mood_image_url,
-                },
+                next_agent="operator",
+                message="Lead secured in CRM (mock)",
+                action=None,
                 should_continue=True,
             )
 
