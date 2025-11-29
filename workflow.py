@@ -25,6 +25,7 @@ async def rag_tool_node(state: HenkGraphState) -> HenkGraphState:
     """RAG Tool Node - PostgreSQL Database Queries."""
     print("=== RAG_TOOL_NODE CALLED ===")
     print(f"    action_params: {state.get('action_params')}")
+    print(f"    current_agent: {state.get('current_agent')}")
     print(f"    BEFORE: rag_context = {state['session_state'].rag_context}")
 
     rag_tool = RAGTool()
@@ -37,6 +38,15 @@ async def rag_tool_node(state: HenkGraphState) -> HenkGraphState:
     # Store result
     state["rag_output"] = {"results": result.results, "metadata": result.metadata}
     state["session_state"].rag_context = result.results
+
+    # Mark which agent queried RAG
+    current_agent = state.get("current_agent", "")
+    if current_agent == "henk1":
+        state["session_state"].henk1_rag_queried = True
+        print("    Set henk1_rag_queried = True")
+    elif current_agent == "design_henk":
+        state["session_state"].design_rag_queried = True
+        print("    Set design_rag_queried = True")
 
     print(f"    AFTER: rag_context = {state['session_state'].rag_context}")
     print(f"    Results count: {len(result.results)}")
@@ -54,6 +64,8 @@ async def rag_tool_node(state: HenkGraphState) -> HenkGraphState:
 async def henk1_node(state: HenkGraphState) -> HenkGraphState:
     """HENK1 Agent Node."""
     print(f"=== HENK1_NODE CALLED ===")
+    state["current_agent"] = "henk1"
+
     agent = Henk1Agent()
     decision = await agent.process(state["session_state"])
 
@@ -89,6 +101,8 @@ async def operator_node(state: HenkGraphState) -> HenkGraphState:
 async def design_henk_node(state: HenkGraphState) -> HenkGraphState:
     """Design HENK Agent Node."""
     print(f"=== DESIGN_HENK_NODE CALLED ===")
+    state["current_agent"] = "design_henk"
+
     agent = DesignHenkAgent()
     decision = await agent.process(state["session_state"])
 

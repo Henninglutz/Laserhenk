@@ -37,7 +37,7 @@ class DesignHenkAgent(BaseAgent):
         # Für jetzt: Struktur-Placeholder
 
         # Check if we need to query RAG for design options
-        if not state.rag_context:
+        if not state.design_rag_queried:
             return AgentDecision(
                 next_agent="design_henk",
                 message="Querying RAG for design options",

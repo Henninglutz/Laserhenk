@@ -24,11 +24,11 @@ class Henk1Agent(BaseAgent):
         """
         Process needs assessment phase.
         """
-        print(f"=== HENK1 PROCESS: rag_context = {state.rag_context}")
+        print(f"=== HENK1 PROCESS: henk1_rag_queried = {state.henk1_rag_queried}")
         print(f"=== HENK1 PROCESS: customer_id = {state.customer.customer_id}")
 
         # If RAG has been queried (even if empty), needs assessment is complete
-        if state.rag_context is not None:
+        if state.henk1_rag_queried:
             print("=== HENK1: RAG has been queried, marking complete")
             # Mark customer as identified (for Operator routing)
             if not state.customer.customer_id:

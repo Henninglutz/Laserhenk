@@ -92,6 +92,14 @@ class SessionState(BaseModel):
     )
     next_action: Optional[str] = None
 
+    # RAG query tracking per agent
+    henk1_rag_queried: bool = Field(
+        default=False, description="HENK1 has queried RAG"
+    )
+    design_rag_queried: bool = Field(
+        default=False, description="Design HENK has queried RAG"
+    )
+
     # Handoff Payloads (tracking inter-agent data transfer)
     henk1_to_design_payload: Optional[dict] = Field(
         None, description="HENK1 → Design HENK handoff data"
