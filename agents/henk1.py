@@ -23,39 +23,32 @@ class Henk1Agent(BaseAgent):
     async def process(self, state: SessionState) -> AgentDecision:
         """
         Process needs assessment phase.
-
-        Returns:
-            AgentDecision with next steps
         """
-        # Hier würde die LLM-Logik für Bedarfsermittlung stehen
-        # Für jetzt: Struktur-Placeholder
+        print(f"=== HENK1 PROCESS: rag_context = {state.rag_context}")
+        print(f"=== HENK1 PROCESS: customer_id = {state.customer.customer_id}")
 
-        # Check if customer type is determined
-        if state.customer.customer_type == CustomerType.NEW:
+        # If RAG context exists, needs assessment is complete
+        if state.rag_context:
+            print("=== HENK1: RAG context exists, marking complete")
+            # Mark customer as identified (for Operator routing)
+            if not state.customer.customer_id:
+                state.customer.customer_id = f"TEMP_{state.session_id[:8]}"
+
             return AgentDecision(
                 next_agent="operator",
-                message="Needs assessment complete - new customer",
-                action="query_rag",
-                action_params={
-                    "query": "Initial product catalog for new customer"
-                },
+                message="Needs assessment complete - customer informed about products",
+                action=None,
                 should_continue=True,
             )
 
-        # Existing customer
-        if state.customer.has_measurements:
-            return AgentDecision(
-                next_agent="operator",
-                message="Existing customer with measurements",
-                action="generate_initial_mood_image",
-                action_params={"use_existing_data": True},
-                should_continue=True,
-            )
-
-        # Default: continue conversation
+        # First time in HENK1: Query RAG for product catalog
+        print("=== HENK1: No RAG context, querying RAG")
         return AgentDecision(
             next_agent="operator",
-            message="Continue needs assessment",
-            action="continue_conversation",
+            message="Starting needs assessment - querying product catalog",
+            action="query_rag",
+            action_params={
+                "query": "Initial product catalog for new customer"
+            },
             should_continue=True,
         )

@@ -5,7 +5,7 @@ Only includes fields relevant for agent handoffs and RAG queries.
 """
 
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -112,7 +112,7 @@ class FabricData(BaseModel):
     scrape_date: Optional[str] = Field(
         None, description="ISO timestamp of when data was scraped"
     )
-    additional_metadata: dict[str, any] = Field(
+    additional_metadata: dict[str, Any] = Field(
         default_factory=dict, description="Additional flexible metadata"
     )
 
@@ -186,7 +186,7 @@ class FabricChunk(BaseModel):
         ...,
         description="Type: 'characteristics', 'visual', 'usage', 'technical'",
     )
-    metadata: dict[str, any] = Field(
+    metadata: dict[str, Any] = Field(
         default_factory=dict, description="Additional chunk metadata"
     )
     embedding: Optional[list[float]] = Field(
