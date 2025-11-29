@@ -27,9 +27,9 @@ class Henk1Agent(BaseAgent):
         print(f"=== HENK1 PROCESS: rag_context = {state.rag_context}")
         print(f"=== HENK1 PROCESS: customer_id = {state.customer.customer_id}")
 
-        # If RAG context exists, needs assessment is complete
-        if state.rag_context:
-            print("=== HENK1: RAG context exists, marking complete")
+        # If RAG has been queried (even if empty), needs assessment is complete
+        if state.rag_context is not None:
+            print("=== HENK1: RAG has been queried, marking complete")
             # Mark customer as identified (for Operator routing)
             if not state.customer.customer_id:
                 state.customer.customer_id = f"TEMP_{state.session_id[:8]}"
