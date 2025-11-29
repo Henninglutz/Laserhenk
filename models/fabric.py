@@ -255,7 +255,7 @@ class GeneratedOutfit(BaseModel):
     generation_date: Optional[str] = Field(
         None, description="ISO timestamp of generation"
     )
-    metadata: dict[str, any] = Field(
+    metadata: dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata"
     )
 
