@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from langgraph.graph import END, StateGraph
+from langgraph.graph import StateGraph, END
 
 from agents.henk1 import Henk1Agent
 from agents.operator import OperatorAgent
@@ -163,11 +163,21 @@ def create_workflow() -> StateGraph:
     # Set entry point
     workflow.set_entry_point("operator")
 
+    # Define path mapping for routing
+    path_map = {
+        "operator": "operator",
+        "henk1": "henk1",
+        "design_henk": "design_henk",
+        "laserhenk": "laserhenk",
+        "rag_tool": "rag_tool",
+        "end": END,
+    }
+
     # Add conditional edges from each agent node
-    workflow.add_conditional_edges("operator", route_after_agent)
-    workflow.add_conditional_edges("henk1", route_after_agent)
-    workflow.add_conditional_edges("design_henk", route_after_agent)
-    workflow.add_conditional_edges("laserhenk", route_after_agent)
+    workflow.add_conditional_edges("operator", route_after_agent, path_map)
+    workflow.add_conditional_edges("henk1", route_after_agent, path_map)
+    workflow.add_conditional_edges("design_henk", route_after_agent, path_map)
+    workflow.add_conditional_edges("laserhenk", route_after_agent, path_map)
 
     # RAG tool always routes back to operator
     workflow.add_edge("rag_tool", "operator")
