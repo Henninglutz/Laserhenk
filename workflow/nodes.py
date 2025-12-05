@@ -382,31 +382,122 @@ _[Detaillierter Vergleich wird noch implementiert]_"""
 
 async def _execute_pricing_tool(params: Dict[str, Any], state: HenkGraphState) -> str:
     """
-    Pricing Tool: Berechnet Preis basierend auf Customer-Daten.
+    Pricing Tool: Berechnet Preis basierend auf Customer-Daten und Stoff-Auswahl.
+
+    Pricing Policy (aus henk_core_prompt):
+    - "no_prices_before_fabric: true" - Preise erst NACH Stoffauswahl
+    - "price_hint_on_demand: optional" - Nur auf Nachfrage
+
+    Nutzt RAG für stoffbasierte Preise, wenn verfügbar.
 
     Args:
-        params: Pricing-Parameter
+        params: Pricing-Parameter (optional: fabric_code, garment_type)
         state: Graph State mit customer_data
 
     Returns:
-        Preisschätzung
+        Preisschätzung basierend auf Stoff + Konfig
     """
+    from tools.rag_tool import RAGTool
+
     customer_data = state["session_state"].get("customer_data", {})
+    fabric_code = params.get("fabric_code") or customer_data.get("selected_fabric")
+    garment_type = params.get("garment_type") or customer_data.get("garment_type", "suit")
 
-    logger.info(f"[PricingTool] Calculating price with customer_data={list(customer_data.keys())}")
+    logger.info(
+        f"[PricingTool] Calculating price: fabric_code={fabric_code}, "
+        f"garment_type={garment_type}, customer_data={list(customer_data.keys())}"
+    )
 
-    # TODO: Implement actual pricing logic
-    base_price = 2000
+    # Check: Hat User schon Stoff gewählt?
+    if not fabric_code:
+        logger.info("[PricingTool] No fabric selected - returning policy notice")
+        return """**Preisauskunft:**
 
-    # Dummy adjustments
-    if customer_data.get("fabric_preference") == "premium":
-        base_price += 500
-    if customer_data.get("suit_style") == "three_piece":
-        base_price += 300
+Gerne! Um dir einen genauen Preis zu nennen, brauche ich noch deine Stoffauswahl.
 
-    return f"""**Preisschätzung:**
+Die Stoffkategorie macht den größten Unterschied - von klassischer Schurwolle bis zu exklusiven italienischen Tüchern.
 
-Basis: {base_price}€
-(Bespoke-Anzug, individuell angepasst)
+Soll ich dir passende Stoffe zeigen? Dann kann ich direkt den Preis kalkulieren."""
 
-_Hinweis: Endpreis abhängig von Stoffauswahl und Details_"""
+    # Versuche Stoff-Preis aus RAG zu holen
+    fabric_price = None
+    fabric_name = "Ausgewählter Stoff"
+
+    try:
+        rag = RAGTool()
+        fabric_data = await rag.get_fabric_by_code(fabric_code)
+
+        if fabric_data and "price" in fabric_data:
+            fabric_price = fabric_data["price"]
+            fabric_name = fabric_data.get("name", fabric_code)
+            logger.info(f"[PricingTool] Got fabric price from RAG: {fabric_price}€")
+    except Exception as e:
+        logger.warning(f"[PricingTool] RAG lookup failed: {e}")
+
+    # Fallback: Basis-Preise nach Garment Type
+    if fabric_price is None:
+        logger.info("[PricingTool] Using fallback pricing (RAG not available)")
+        # Basis-Preise für Bespoke-Anfertigung
+        base_prices = {
+            "suit": 1800,        # 2-Teiler
+            "three_piece": 2100, # 3-Teiler
+            "jacket": 1200,      # Sakko einzeln
+            "trousers": 600,     # Hose einzeln
+            "vest": 400,         # Weste einzeln
+            "coat": 2500,        # Mantel
+            "tuxedo": 2200,      # Smoking
+        }
+        fabric_price = base_prices.get(garment_type, 1800)
+
+    # Adjustments basierend auf Konfiguration
+    adjustments = []
+    total = fabric_price
+
+    # Extras
+    if customer_data.get("monogram"):
+        total += 50
+        adjustments.append("+ 50€ Monogramm")
+
+    if customer_data.get("custom_lining"):
+        total += 150
+        adjustments.append("+ 150€ Custom-Innenfutter")
+
+    if customer_data.get("custom_buttons"):
+        total += 80
+        adjustments.append("+ 80€ Spezial-Knöpfe")
+
+    # Three-piece upgrade
+    if garment_type == "suit" and customer_data.get("add_vest"):
+        total += 400
+        adjustments.append("+ 400€ Weste")
+        garment_type = "three_piece"
+
+    # Format Output
+    garment_labels = {
+        "suit": "Bespoke-Anzug (2-teilig)",
+        "three_piece": "Bespoke-Anzug (3-teilig)",
+        "jacket": "Bespoke-Sakko",
+        "trousers": "Bespoke-Hose",
+        "vest": "Bespoke-Weste",
+        "coat": "Bespoke-Mantel",
+        "tuxedo": "Bespoke-Smoking",
+    }
+
+    result = f"""**Preiskalkulation:**
+
+{garment_labels.get(garment_type, "Bespoke-Kleidungsstück")}
+Stoff: {fabric_name}
+
+Basis: {fabric_price}€"""
+
+    if adjustments:
+        result += "\n" + "\n".join(adjustments)
+
+    result += f"""
+
+**Gesamt: {total}€**
+
+_Inkl. individueller Anpassung, Maßanfertigung und Premium-Service._
+_Preis kann sich bei finaler Stoffauswahl/Details noch ändern._"""
+
+    return result
