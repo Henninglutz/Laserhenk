@@ -306,7 +306,8 @@ class FabricEmbeddingGenerator:
             print(f"🏃 [DRY RUN] Would insert {len(embeddings_data)} embeddings")
             return
 
-        query = text("""
+        # Use raw SQL with asyncpg-style parameters ($1, $2, etc.)
+        query = """
             INSERT INTO fabric_embeddings (
                 fabric_id,
                 chunk_id,
@@ -315,23 +316,32 @@ class FabricEmbeddingGenerator:
                 embedding,
                 embedding_metadata
             ) VALUES (
-                :fabric_id,
-                :chunk_id,
-                :chunk_type,
-                :content,
-                :embedding::vector,
-                :embedding_metadata::jsonb
+                $1::uuid,
+                $2,
+                $3,
+                $4,
+                $5::vector,
+                $6::jsonb
             )
             ON CONFLICT (chunk_id) DO UPDATE SET
                 content = EXCLUDED.content,
                 embedding = EXCLUDED.embedding,
                 embedding_metadata = EXCLUDED.embedding_metadata,
                 updated_at = NOW()
-        """)
+        """
 
         async with self.engine.begin() as conn:
             for data in embeddings_data:
-                await conn.execute(query, data)
+                # Convert dict to tuple in correct order
+                values = (
+                    data["fabric_id"],
+                    data["chunk_id"],
+                    data["chunk_type"],
+                    data["content"],
+                    data["embedding"],
+                    data["embedding_metadata"]
+                )
+                await conn.execute(text(query), values)
 
     async def process_batch(self, fabrics: List[Dict[str, Any]]):
         """
