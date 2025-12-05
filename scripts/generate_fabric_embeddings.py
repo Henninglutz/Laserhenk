@@ -306,7 +306,7 @@ class FabricEmbeddingGenerator:
             print(f"🏃 [DRY RUN] Would insert {len(embeddings_data)} embeddings")
             return
 
-        # Use raw SQL with asyncpg-style parameters ($1, $2, etc.)
+        # Use raw asyncpg connection for proper parameter binding
         query = """
             INSERT INTO fabric_embeddings (
                 fabric_id,
@@ -330,10 +330,14 @@ class FabricEmbeddingGenerator:
                 updated_at = NOW()
         """
 
-        async with self.engine.begin() as conn:
+        # Get the raw asyncpg connection
+        async with self.engine.connect() as conn:
+            raw_conn = await conn.get_raw_connection()
+            async_conn = raw_conn.driver_connection
+
             for data in embeddings_data:
-                # Convert dict to tuple in correct order
-                values = (
+                await async_conn.execute(
+                    query,
                     data["fabric_id"],
                     data["chunk_id"],
                     data["chunk_type"],
@@ -341,7 +345,9 @@ class FabricEmbeddingGenerator:
                     data["embedding"],
                     data["embedding_metadata"]
                 )
-                await conn.execute(text(query), values)
+
+            # Commit the transaction
+            await conn.commit()
 
     async def process_batch(self, fabrics: List[Dict[str, Any]]):
         """
