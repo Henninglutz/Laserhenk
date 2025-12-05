@@ -80,8 +80,15 @@ class FabricEmbeddingGenerator:
 
     async def initialize(self):
         """Initialize database connection."""
+        # Convert to asyncpg URL if needed
+        connection_string = POSTGRES_CONNECTION_STRING
+        if connection_string.startswith("postgresql://"):
+            connection_string = connection_string.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif connection_string.startswith("postgres://"):
+            connection_string = connection_string.replace("postgres://", "postgresql+asyncpg://", 1)
+
         self.engine = create_async_engine(
-            POSTGRES_CONNECTION_STRING,
+            connection_string,
             echo=False,
             pool_size=10,
             max_overflow=20

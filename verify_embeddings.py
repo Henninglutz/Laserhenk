@@ -34,6 +34,12 @@ async def check_embedding_dimensions():
         print("❌ DATABASE_URL oder POSTGRES_CONNECTION_STRING nicht in .env gefunden")
         return
 
+    # Convert to asyncpg URL if needed
+    if connection_string.startswith("postgresql://"):
+        connection_string = connection_string.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif connection_string.startswith("postgres://"):
+        connection_string = connection_string.replace("postgres://", "postgresql+asyncpg://", 1)
+
     # Async Engine für asyncpg
     engine = create_async_engine(connection_string, echo=False)
 
