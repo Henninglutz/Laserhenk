@@ -28,9 +28,10 @@ TABLES_TO_CHECK = [
 async def check_embedding_dimensions():
     """Prüft die Embedding-Dimensionen in allen relevanten Tabellen."""
 
-    connection_string = os.getenv("POSTGRES_CONNECTION_STRING")
+    # Support both DATABASE_URL and POSTGRES_CONNECTION_STRING
+    connection_string = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_CONNECTION_STRING")
     if not connection_string:
-        print("❌ POSTGRES_CONNECTION_STRING nicht in .env gefunden")
+        print("❌ DATABASE_URL oder POSTGRES_CONNECTION_STRING nicht in .env gefunden")
         return
 
     # Async Engine für asyncpg

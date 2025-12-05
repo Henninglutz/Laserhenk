@@ -38,7 +38,8 @@ load_dotenv()
 
 # Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-POSTGRES_CONNECTION_STRING = os.getenv("POSTGRES_CONNECTION_STRING")
+# Support both DATABASE_URL and POSTGRES_CONNECTION_STRING
+POSTGRES_CONNECTION_STRING = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_CONNECTION_STRING")
 EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "384"))
 EMBEDDING_MODEL = "text-embedding-3-small"  # Supports flexible dimensions
 
@@ -48,7 +49,7 @@ if not OPENAI_API_KEY:
     sys.exit(1)
 
 if not POSTGRES_CONNECTION_STRING:
-    print("❌ Error: POSTGRES_CONNECTION_STRING not set in .env")
+    print("❌ Error: DATABASE_URL or POSTGRES_CONNECTION_STRING not set in .env")
     sys.exit(1)
 
 # Configure OpenAI
