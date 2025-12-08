@@ -230,8 +230,10 @@ python scripts/generate_fabric_embeddings.py --batch-size 50
 **Kosten:**
 - 1.988 Stoffe × 4 Chunks = 7.952 Embeddings
 - ~50 Tokens pro Chunk = ~398k Tokens
-- text-embedding-3-small: $0.00002 / 1k tokens
+- text-embedding-3-small (1536 dims): $0.00002 / 1k tokens
 - **Gesamt: ~$0.008** (unter 1 Cent!)
+
+**WICHTIG:** .env muss `EMBEDDING_DIMENSION=1536` haben!
 
 **Dauer:** 15-30 Minuten (abhängig von OpenAI API)
 

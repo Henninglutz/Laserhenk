@@ -8,7 +8,7 @@ Dieses Skript:
    - Visual Description (Visual attributes)
    - Usage Context (Category, Season, Occasion)
    - Technical Details (Care, Origin, Supplier)
-3. Generiert Embeddings mit OpenAI text-embedding-3-small (384 dims)
+3. Generiert Embeddings mit OpenAI text-embedding-3-small
 4. Speichert in `fabric_embeddings` Tabelle
 
 Usage:
@@ -17,7 +17,8 @@ Usage:
 Umgebungsvariablen:
     POSTGRES_CONNECTION_STRING: PostgreSQL Connection String
     OPENAI_API_KEY: OpenAI API Key
-    EMBEDDING_DIMENSION: Target embedding dimensions (default: 384)
+    EMBEDDING_DIMENSION: Target embedding dimensions (default: 1536)
+                        MUSS mit Datenbank-Schema übereinstimmen!
 """
 
 import asyncio
@@ -41,8 +42,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 POSTGRES_CONNECTION_STRING = os.getenv("DATABASE_URL") or os.getenv(
     "POSTGRES_CONNECTION_STRING"
 )
-EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "384"))
-EMBEDDING_MODEL = "text-embedding-3-small"  # Supports flexible dimensions
+EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "1536"))
+EMBEDDING_MODEL = "text-embedding-3-small"  # Supports flexible dimensions (default: 1536)
 
 # Validate environment
 if not OPENAI_API_KEY:
