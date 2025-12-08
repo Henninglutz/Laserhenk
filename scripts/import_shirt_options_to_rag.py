@@ -120,10 +120,16 @@ STANDARD Stoffe: €{pricing['standard']['price_eur']}
         collars_standard = data["sections"]["collar_models"]["standard"]
         collar_lines = ["HEMDEN KRAGENFORMEN - Standard:"]
         for collar in collars_standard:
-            collar_lines.append(
-                f"\n{collar['name']} ({collar['code']}): {collar['type']}, "
-                f"Stand {collar['collar_stand_mm']}mm, Spitze {collar['collar_point_mm']}mm"
-            )
+            # Build description based on available fields
+            desc_parts = [f"{collar['name']} ({collar['code']}): {collar['type']}"]
+
+            if "collar_stand_mm" in collar:
+                desc_parts.append(f"Stand {collar['collar_stand_mm']}mm")
+            if "collar_point_mm" in collar:
+                desc_parts.append(f"Spitze {collar['collar_point_mm']}mm")
+
+            collar_lines.append("\n" + ", ".join(desc_parts))
+
             if "notes" in collar:
                 collar_lines.append(f"  Hinweis: {collar['notes']}")
 
@@ -140,9 +146,11 @@ STANDARD Stoffe: €{pricing['standard']['price_eur']}
         collars_special = data["sections"]["collar_models"]["special"]
         special_lines = ["HEMDEN KRAGENFORMEN - Spezial:"]
         for collar in collars_special:
-            special_lines.append(
-                f"\n{collar['name']} ({collar['code']}): Stand {collar['collar_stand_mm']}mm"
-            )
+            desc = f"\n{collar['name']} ({collar['code']})"
+            if "collar_stand_mm" in collar:
+                desc += f": Stand {collar['collar_stand_mm']}mm"
+            special_lines.append(desc)
+
             if "notes" in collar:
                 special_lines.append(f"  Hinweis: {collar['notes']}")
 
@@ -178,9 +186,10 @@ STANDARD Stoffe: €{pricing['standard']['price_eur']}
         cuffs_standard = data["sections"]["cuffs"]["standard"]
         cuff_lines = ["MANSCHETTEN - Standard:"]
         for cuff in cuffs_standard:
-            cuff_lines.append(
-                f"\n{cuff['name']} ({cuff['code']}): Höhe {cuff['height_mm']}mm"
-            )
+            desc = f"\n{cuff['name']} ({cuff['code']})"
+            if "height_mm" in cuff:
+                desc += f": Höhe {cuff['height_mm']}mm"
+            cuff_lines.append(desc)
 
         chunks.append(
             {
@@ -195,9 +204,10 @@ STANDARD Stoffe: €{pricing['standard']['price_eur']}
         cuffs_french = data["sections"]["cuffs"]["french_cuffs"]
         french_lines = ["MANSCHETTEN - Französisch (Umschlag):"]
         for cuff in cuffs_french:
-            french_lines.append(
-                f"\n{cuff['name']} ({cuff['code']}): Höhe {cuff['height_mm']}mm"
-            )
+            desc = f"\n{cuff['name']} ({cuff['code']})"
+            if "height_mm" in cuff:
+                desc += f": Höhe {cuff['height_mm']}mm"
+            french_lines.append(desc)
 
         chunks.append(
             {
