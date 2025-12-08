@@ -58,37 +58,81 @@ Das System nutzt **Pydantic-Klassen** für strukturierte Datenvalidierung und me
 
 ```
 laserhenk/
-├── agents/                  # Agent-Implementierungen
+├── agents/                     # Agent-Implementierungen
 │   ├── __init__.py
-│   ├── base.py             # BaseAgent Klasse
-│   ├── operator.py         # Operator Agent (Router)
-│   ├── henk1.py            # HENK1 (Bedarfsermittlung)
-│   ├── design_henk.py      # Design HENK (Design + CRM)
-│   └── laserhenk.py        # LASERHENK (Maße)
+│   ├── base.py                # BaseAgent Klasse
+│   ├── operator.py            # Operator Agent (Router)
+│   ├── henk1.py               # HENK1 (Bedarfsermittlung)
+│   ├── design_henk.py         # Design HENK (Design + CRM)
+│   ├── laserhenk.py           # LASERHENK (Maße)
+│   └── supervisor_agent.py    # Supervisor Agent
 │
-├── tools/                   # Tool-Interfaces
+├── tools/                      # Tool-Interfaces
 │   ├── __init__.py
-│   ├── rag_tool.py         # PostgreSQL RAG
-│   ├── crm_tool.py         # PIPEDRIVE CRM
-│   ├── dalle_tool.py       # DALLE Image Generation
-│   └── saia_tool.py        # SAIA 3D Measurement
+│   ├── rag_tool.py            # PostgreSQL RAG
+│   ├── crm_tool.py            # PIPEDRIVE CRM
+│   ├── dalle_tool.py          # DALLE Image Generation
+│   └── saia_tool.py           # SAIA 3D Measurement
 │
-├── models/                  # Pydantic Models
+├── models/                     # Pydantic Models
 │   ├── __init__.py
-│   ├── customer.py         # Customer, Measurements, DesignPreferences
-│   ├── tools.py            # Tool Request/Response Models
-│   └── graph_state.py      # LangGraph State
+│   ├── customer.py            # Customer, Measurements, DesignPreferences
+│   ├── tools.py               # Tool Request/Response Models
+│   ├── graph_state.py         # LangGraph State
+│   ├── fabric.py              # Fabric Models
+│   ├── business.py            # Business Models
+│   ├── handoff.py             # Handoff Models
+│   └── auth.py                # Authentication Models
 │
-├── config/                  # Konfiguration
+├── workflow/                   # LangGraph Workflow
 │   ├── __init__.py
-│   └── settings.py         # Pydantic Settings
+│   ├── workflow.py            # Workflow Definition
+│   ├── nodes.py               # Workflow Nodes
+│   └── graph_state.py         # Graph State Management
 │
-├── tests/                   # Unit Tests
-│   └── __init__.py
+├── database/                   # Database Connection
+│   ├── __init__.py
+│   └── connection.py          # PostgreSQL Connection Pool
 │
-├── .env.example            # Environment Variables Template
-├── requirements.txt        # Python Dependencies
-└── README.md              # Diese Datei
+├── drive_mirror/               # Google Drive Mirror
+│   ├── chunks/                # RAG Chunks (generated)
+│   └── henk/
+│       ├── fabrics/           # ✅ Fabric Catalog (140 Anzug-Stoffe)
+│       │   ├── fabric_catalog.json
+│       │   └── price_book_by_tier.json
+│       ├── garments/          # 🆕 Garment Catalog (Template)
+│       │   └── garment_catalog.json
+│       ├── shirts/            # 🆕 Shirt Catalog (Template)
+│       │   └── shirt_catalog.json
+│       ├── options/           # 🆕 Options Catalog (Template)
+│       │   └── henk2_options_catalog.json
+│       └── knowledge/         # 🆕 Style Catalog (Template)
+│           └── style_catalog.json
+│
+├── scripts/                    # Utility Scripts
+│   ├── generate_fabric_embeddings.py
+│   ├── verify_embeddings.py
+│   ├── inspect_db.py
+│   ├── sync_google_drive_pricing.py
+│   └── test_llm_connection.py
+│
+├── tests/                      # Unit Tests
+│   ├── __init__.py
+│   └── test_workflow.py
+│
+├── docs/                       # Documentation
+│   ├── DATABASE_ANALYSIS.md
+│   ├── RAG_SETUP.md
+│   └── CLEANUP_DONE.md
+│
+├── .env.example               # ✅ Vollständiges Environment Template
+├── .env.minimal               # Minimale LLM-Test Config
+├── TODO.md                    # 🆕 Detaillierter Entwicklungsplan
+├── CLEANUP_SUMMARY.md         # ✅ Cleanup & Update Zusammenfassung
+├── QUICK_START.md             # Quick Start Guide
+├── TEST_GUIDE.md              # Testing Guide
+├── requirements.txt           # Python Dependencies
+└── README.md                  # Diese Datei
 ```
 
 ## 🔧 Tools & Integrationen
@@ -208,5 +252,40 @@ Bearbeite `.env`:
 
 ---
 
-**Version**: 1.0.0 (Architecture Phase)
-**Datum**: 2025-11-26
+## 🆕 Latest Updates (2025-12-08)
+
+### ✅ Environment Configuration
+- **`.env.example`** vollständig aktualisiert mit allen Secrets
+- Neue Sections: OpenAI, Database Pool, Embeddings, Google Drive, API Server, Security, Performance, Feature Flags
+- **`.env.minimal`** für schnelle LLM-Tests
+
+### ✅ Katalog-Templates erstellt
+Alle fehlenden Kataloge haben jetzt vollständige JSON-Templates:
+- **Garment Catalog** - Anzüge, Hemden, Hosen, Sakkos, Westen, Mäntel
+- **Shirt Catalog** - Hemden-Stoffe (72SH, 70SH, 73SH, 74SH) + Konfigurationen
+- **Options Catalog** - HENK2 Maßkonfektion-Optionen
+- **Style Catalog** - Dress Codes, Farb-Kombinationen, Style Rules, Body Types
+
+### ✅ Code-Qualität
+- Code-Formatierung mit **black** durchgeführt (24 Dateien)
+- Alle **ruff** Checks bestanden
+- Unused Imports entfernt
+- Bare except-Statements behoben
+
+### ✅ Dokumentation
+- **TODO.md** - Detaillierter Entwicklungsplan für heute
+- **CLEANUP_SUMMARY.md** - Vollständige Zusammenfassung aller Änderungen
+- **README.md** - Aktualisierte Projekt-Struktur
+
+### 📋 Nächste Schritte
+Siehe **[TODO.md](TODO.md)** für den detaillierten Entwicklungsplan:
+1. Google Drive nach Hemden-Stoffen durchsuchen (72SH, 70SH, 73SH, 74SH)
+2. Kataloge mit echten Daten befüllen
+3. Fabric Embeddings generieren: `python scripts/generate_fabric_embeddings.py`
+4. RAG-System validieren: `python scripts/verify_embeddings.py`
+5. Agent-Tests erweitern
+
+---
+
+**Version**: 1.1.0 (Cleanup & Catalog Templates)
+**Datum**: 2025-12-08

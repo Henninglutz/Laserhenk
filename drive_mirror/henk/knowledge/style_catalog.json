@@ -1,0 +1,177 @@
+{
+  "meta": {
+    "catalog_name": "Style & Knowledge Catalog",
+    "version": "1.0",
+    "last_updated": "2025-12-08",
+    "description": "Style-Richtlinien, Empfehlungen und Kombinationsregeln",
+    "note": "Daten müssen aus Google Drive Knowledge Base importiert werden"
+  },
+  "dress_codes": {
+    "business_formal": {
+      "name": "Business Formal",
+      "description": "TODO: Beschreibung aus Knowledge Base",
+      "occasions": ["Wichtige Geschäftstermine", "Vorstellungsgespräche", "Formelle Events"],
+      "required_items": ["Anzug dreiteilig oder zweiteilig", "Business Hemd", "Krawatte"],
+      "fabric_recommendations": ["CAT 7-9", "Dunkle Farben", "Unifarben oder feine Streifen"],
+      "color_palette": ["Dunkelblau", "Anthrazit", "Schwarz"],
+      "avoid": ["Helle Farben", "Auffällige Muster", "Casual Schnitte"],
+      "tips": []
+    },
+    "business_casual": {
+      "name": "Business Casual",
+      "description": "TODO: Beschreibung aus Knowledge Base",
+      "occasions": ["Normale Arbeitstage", "Meetings", "Business Lunch"],
+      "required_items": ["Sakko", "Hemd oder Polo", "Stoffhose"],
+      "optional_items": ["Krawatte"],
+      "fabric_recommendations": ["CAT 5-7", "Mittlere Farben", "Dezente Muster erlaubt"],
+      "color_palette": ["Blau", "Grau", "Beige", "Braun"],
+      "avoid": ["Jeans", "T-Shirts", "Sneakers"],
+      "tips": []
+    },
+    "smart_casual": {
+      "name": "Smart Casual",
+      "description": "TODO: Beschreibung aus Knowledge Base",
+      "occasions": ["Freizeit", "Restaurant", "Private Events"],
+      "required_items": ["Hemd oder Polo", "Chino oder Stoffhose"],
+      "optional_items": ["Sakko", "Blazer"],
+      "fabric_recommendations": ["CAT 5", "Alle Farben", "Muster erlaubt"],
+      "color_palette": ["Alle Farben außer Neon"],
+      "avoid": ["Zu sportlich", "Zerrissen", "Schlabbrig"],
+      "tips": []
+    },
+    "formal_evening": {
+      "name": "Formal Evening / Black Tie",
+      "description": "TODO: Beschreibung aus Knowledge Base",
+      "occasions": ["Hochzeit", "Gala", "Oper", "Ball"],
+      "required_items": ["Smoking oder Frack", "Weißes Hemd", "Fliege", "Kummerbund oder Weste"],
+      "fabric_recommendations": ["CAT 9", "Schwarz", "Mitternachtsblau"],
+      "color_palette": ["Schwarz", "Mitternachtsblau"],
+      "avoid": ["Krawatten statt Fliege", "Bunte Farben", "Auffällige Muster"],
+      "tips": []
+    }
+  },
+  "color_combinations": {
+    "suit_and_shirt": {
+      "navy_suit": {
+        "suit_color": "Dunkelblau",
+        "recommended_shirts": ["Weiß", "Hellblau", "Rosa"],
+        "avoid_shirts": ["Dunkelblau", "Schwarz"],
+        "tie_recommendations": ["Bordeaux", "Dunkelrot", "Gelb", "Grün"]
+      },
+      "charcoal_suit": {
+        "suit_color": "Anthrazit",
+        "recommended_shirts": ["Weiß", "Hellblau", "Hellgrau"],
+        "avoid_shirts": ["Dunkelgrau", "Schwarz"],
+        "tie_recommendations": ["Blau", "Bordeaux", "Silber"]
+      },
+      "grey_suit": {
+        "suit_color": "Grau",
+        "recommended_shirts": ["Weiß", "Hellblau", "Rosa", "Flieder"],
+        "avoid_shirts": ["Grau"],
+        "tie_recommendations": ["Blau", "Bordeaux", "Lila", "Grün"]
+      },
+      "brown_suit": {
+        "suit_color": "Braun",
+        "recommended_shirts": ["Weiß", "Creme", "Hellblau"],
+        "avoid_shirts": ["Braun", "Orange"],
+        "tie_recommendations": ["Grün", "Orange", "Blau", "Bordeaux"]
+      }
+    }
+  },
+  "style_rules": {
+    "fit_guidelines": {
+      "jacket": {
+        "shoulder": "Schulternaht sollte am Schulterknochen enden",
+        "length": "Sakko sollte Gesäßansatz bedecken",
+        "sleeve": "Ärmel endet am Handgelenkknochen, Hemd ca. 1cm sichtbar",
+        "button_stance": "Bei 2-Knopf-Sakko: oberer Knopf zu, unterer offen"
+      },
+      "trousers": {
+        "waist": "Bund sitzt auf Hüfte, nicht zu eng",
+        "length": "Leichter Bruch auf Schuh oder No-Break bei modernem Schnitt",
+        "break": "Klassisch: kleiner Bruch, Modern: kein Bruch"
+      },
+      "shirt": {
+        "collar": "Kragen schließt ohne Lücke",
+        "cuff": "Ca. 1cm Manschette unter Sakkoärmel sichtbar",
+        "length": "In der Hose getragen, nicht zu kurz"
+      }
+    },
+    "pattern_mixing": {
+      "rules": [
+        "Maximal 2 Muster kombinieren",
+        "Muster unterschiedlicher Größe wählen",
+        "Mindestens ein unifarbenes Teil",
+        "Farben sollten harmonieren"
+      ],
+      "examples": [
+        "Nadelstreifen-Anzug + unifarbenes Hemd + gemusterte Krawatte",
+        "Unifarbener Anzug + gestreiftes Hemd + Punkt-Krawatte",
+        "Karoanzug + unifarbenes Hemd + unifarbene Krawatte"
+      ]
+    },
+    "seasonal_guidelines": {
+      "spring_summer": {
+        "fabrics": ["Leichter Wolle", "Leinen", "Baumwolle", "Tropische Wolle"],
+        "colors": ["Hellblau", "Beige", "Creme", "Hellgrau", "Pastelltöne"],
+        "patterns": ["Größere Muster erlaubt", "Hellere Farben"]
+      },
+      "fall_winter": {
+        "fabrics": ["Flanell", "Tweed", "Kaschmir", "Schwere Wolle"],
+        "colors": ["Dunkelblau", "Grau", "Braun", "Dunkelgrün", "Bordeaux"],
+        "patterns": ["Karo", "Fischgrät", "Dunkle Streifen"]
+      }
+    }
+  },
+  "body_type_recommendations": {
+    "athletic": {
+      "description": "Breite Schultern, schmale Taille",
+      "jacket_fit": "Slim Fit oder Tailored Fit",
+      "lapel": "Mittlere bis schmale Revers",
+      "pattern": "Vertikale Streifen betonen V-Form",
+      "avoid": ["Zu weite Schnitte", "Aufgesetzte Taschen"]
+    },
+    "slim": {
+      "description": "Schmale Statur, wenig Körperbreite",
+      "jacket_fit": "Slim Fit",
+      "lapel": "Schmale Revers",
+      "pattern": "Horizontale Elemente, Karo",
+      "tips": ["Strukturierte Stoffe", "Weste für mehr Volumen"],
+      "avoid": ["Zu weite Schnitte", "Zu lange Sakkos"]
+    },
+    "regular": {
+      "description": "Ausgeglichene Proportionen",
+      "jacket_fit": "Regular Fit oder Tailored Fit",
+      "lapel": "Mittlere Revers",
+      "pattern": "Alle Muster erlaubt",
+      "tips": ["Klassische Schnitte", "Alle Optionen stehen offen"]
+    },
+    "heavy": {
+      "description": "Kräftigere Statur, Bauchansatz",
+      "jacket_fit": "Comfort Fit",
+      "lapel": "Breitere Revers",
+      "pattern": "Vertikale Streifen strecken",
+      "tips": ["Dunklere Farben", "Einreiher bevorzugt", "Ohne Bundfalte"],
+      "avoid": ["Zu enge Schnitte", "Horizontale Streifen", "Helle Farben"]
+    },
+    "tall": {
+      "description": "Über 1,85m Körpergröße",
+      "jacket_fit": "Längere Sakkos",
+      "tips": ["Drei-Knopf-Sakkos", "Bundfalten", "Aufschläge an Hose"],
+      "avoid": ["Zu kurze Sakkos", "No-Break Hosen"]
+    },
+    "short": {
+      "description": "Unter 1,70m Körpergröße",
+      "jacket_fit": "Kürzere Sakkos",
+      "tips": ["Zwei-Knopf-Sakkos", "Ohne Bundfalte", "No-Break Hosen", "Vertikale Streifen"],
+      "avoid": ["Zu lange Sakkos", "Aufschläge", "Große Muster"]
+    }
+  },
+  "notes": [
+    "Alle Style-Richtlinien müssen aus Google Drive Knowledge Base importiert werden",
+    "Detaillierte Tipps und Beispiele für jeden Dress Code",
+    "Farb-Kombinationen erweitern mit konkreten Beispielen",
+    "Körpertyp-Empfehlungen mit HENK2 Maßdaten verknüpfen",
+    "RAG-Chunks nach Import generieren"
+  ]
+}

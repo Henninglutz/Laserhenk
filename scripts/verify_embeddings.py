@@ -5,7 +5,7 @@ Korrigierte Version mit vector_dims() statt array_length().
 
 import asyncio
 import os
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 from dotenv import load_dotenv
 
@@ -29,16 +29,22 @@ async def check_embedding_dimensions():
     """Prüft die Embedding-Dimensionen in allen relevanten Tabellen."""
 
     # Support both DATABASE_URL and POSTGRES_CONNECTION_STRING
-    connection_string = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_CONNECTION_STRING")
+    connection_string = os.getenv("DATABASE_URL") or os.getenv(
+        "POSTGRES_CONNECTION_STRING"
+    )
     if not connection_string:
         print("❌ DATABASE_URL oder POSTGRES_CONNECTION_STRING nicht in .env gefunden")
         return
 
     # Convert to asyncpg URL if needed
     if connection_string.startswith("postgresql://"):
-        connection_string = connection_string.replace("postgresql://", "postgresql+asyncpg://", 1)
+        connection_string = connection_string.replace(
+            "postgresql://", "postgresql+asyncpg://", 1
+        )
     elif connection_string.startswith("postgres://"):
-        connection_string = connection_string.replace("postgres://", "postgresql+asyncpg://", 1)
+        connection_string = connection_string.replace(
+            "postgres://", "postgresql+asyncpg://", 1
+        )
 
     # Async Engine für asyncpg
     engine = create_async_engine(connection_string, echo=False)
@@ -54,12 +60,14 @@ async def check_embedding_dimensions():
         for table_name, column_name in TABLES_TO_CHECK:
             try:
                 # Korrigierte SQL-Abfrage mit vector_dims()
-                query = text(f"""
+                query = text(
+                    f"""
                     SELECT vector_dims({column_name}) as dim
                     FROM {table_name}
                     WHERE {column_name} IS NOT NULL
                     LIMIT 1
-                """)
+                """
+                )
 
                 result = await conn.execute(query)
                 row = result.fetchone()
@@ -68,10 +76,14 @@ async def check_embedding_dimensions():
                     actual_dims = row[0]
                     status = "✅" if actual_dims == EXPECTED_DIMS else "⚠️"
                     results[f"{table_name}.{column_name}"] = actual_dims
-                    print(f"{status} {table_name}.{column_name}: {actual_dims} Dimensionen")
+                    print(
+                        f"{status} {table_name}.{column_name}: {actual_dims} Dimensionen"
+                    )
 
                     if actual_dims != EXPECTED_DIMS:
-                        print(f"   WARNUNG: Erwartet {EXPECTED_DIMS}, gefunden {actual_dims}")
+                        print(
+                            f"   WARNUNG: Erwartet {EXPECTED_DIMS}, gefunden {actual_dims}"
+                        )
                 else:
                     print(f"ℹ️  {table_name}.{column_name}: Keine Daten vorhanden")
                     results[f"{table_name}.{column_name}"] = None
@@ -86,10 +98,14 @@ async def check_embedding_dimensions():
     print("📊 ZUSAMMENFASSUNG")
     print("=" * 70)
 
-    has_data = [k for k, v in results.items() if v is not None and not isinstance(v, str)]
+    has_data = [
+        k for k, v in results.items() if v is not None and not isinstance(v, str)
+    ]
     no_data = [k for k, v in results.items() if v is None]
     errors = [k for k, v in results.items() if isinstance(v, str)]
-    mismatches = [k for k, v in results.items() if isinstance(v, int) and v != EXPECTED_DIMS]
+    mismatches = [
+        k for k, v in results.items() if isinstance(v, int) and v != EXPECTED_DIMS
+    ]
 
     if has_data:
         print(f"\n✅ Tabellen mit Embeddings: {len(has_data)}")

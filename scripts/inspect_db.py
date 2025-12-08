@@ -56,12 +56,16 @@ async def inspect_database():
         print("3. Database Tables")
         print("=" * 60)
         try:
-            result = await session.execute(text("""
+            result = await session.execute(
+                text(
+                    """
                 SELECT table_name
                 FROM information_schema.tables
                 WHERE table_schema = 'public'
                 ORDER BY table_name
-            """))
+            """
+                )
+            )
             tables = result.fetchall()
             if tables:
                 print(f"✅ Found {len(tables)} tables:")
@@ -76,7 +80,9 @@ async def inspect_database():
         print("4. Vector Columns (pgvector)")
         print("=" * 60)
         try:
-            result = await session.execute(text("""
+            result = await session.execute(
+                text(
+                    """
                 SELECT
                     c.table_name,
                     c.column_name,
@@ -85,7 +91,9 @@ async def inspect_database():
                 WHERE c.table_schema = 'public'
                   AND c.udt_name = 'vector'
                 ORDER BY c.table_name, c.column_name
-            """))
+            """
+                )
+            )
             vectors = result.fetchall()
             if vectors:
                 print(f"✅ Found {len(vectors)} vector column(s):")

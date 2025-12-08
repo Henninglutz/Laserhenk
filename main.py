@@ -3,7 +3,6 @@
 from typing import Optional
 
 from agents.operator import OperatorAgent
-from models.customer import Customer
 from models.graph_state import create_initial_graph_state
 
 

@@ -1,0 +1,95 @@
+{
+  "meta": {
+    "catalog_name": "Garment Catalog",
+    "version": "1.0",
+    "last_updated": "2025-12-08",
+    "description": "Katalog aller Kleidungsstücke mit Beschreibungen und Eigenschaften",
+    "total_garments": 0,
+    "categories": [
+      "Anzüge",
+      "Hemden",
+      "Hosen",
+      "Sakkos",
+      "Westen",
+      "Mäntel",
+      "Jacken"
+    ]
+  },
+  "garments": {
+    "anzug_dreiteilig": {
+      "name": "Anzug dreiteilig",
+      "category": "Anzüge",
+      "description": "TODO: Beschreibung für dreiteiligen Anzug aus Google Drive",
+      "components": ["Sakko", "Weste", "Hose"],
+      "occasions": ["Business", "Formal", "Hochzeit"],
+      "seasons": ["Ganzjährig"],
+      "style_notes": "TODO: Style-Empfehlungen",
+      "measurement_requirements": [
+        "Brustumfang",
+        "Taillenumfang",
+        "Hüftumfang",
+        "Armlänge",
+        "Rückenlänge",
+        "Schulterbreite",
+        "Hosenlänge",
+        "Schrittlänge"
+      ]
+    },
+    "anzug_zweiteilig": {
+      "name": "Anzug zweiteilig",
+      "category": "Anzüge",
+      "description": "TODO: Beschreibung für zweiteiligen Anzug",
+      "components": ["Sakko", "Hose"],
+      "occasions": ["Business", "Casual-Business"],
+      "seasons": ["Ganzjährig"],
+      "style_notes": "TODO: Style-Empfehlungen"
+    },
+    "hemd_business": {
+      "name": "Business Hemd",
+      "category": "Hemden",
+      "description": "TODO: Beschreibung für Business-Hemden",
+      "fabric_references_prefix": ["72SH", "70SH", "73SH", "74SH"],
+      "occasions": ["Business", "Formal"],
+      "collar_types": ["Kent", "Haifisch", "Button-Down"],
+      "cuff_types": ["Umschlagmanschette", "Knopfmanschette"],
+      "style_notes": "TODO: Hemd-Stoffe aus Google Drive importieren"
+    },
+    "hose_anzug": {
+      "name": "Anzughose",
+      "category": "Hosen",
+      "description": "TODO: Beschreibung für Anzughosen",
+      "occasions": ["Business", "Formal"],
+      "waistband_types": ["Mit Bundfalte", "Ohne Bundfalte"],
+      "style_notes": "TODO: Style-Empfehlungen"
+    },
+    "sakko": {
+      "name": "Sakko",
+      "category": "Sakkos",
+      "description": "TODO: Beschreibung für Sakkos",
+      "occasions": ["Business", "Casual-Business", "Smart Casual"],
+      "button_styles": ["Einreiher", "Zweireiher"],
+      "style_notes": "TODO: Style-Empfehlungen"
+    },
+    "weste": {
+      "name": "Weste",
+      "category": "Westen",
+      "description": "TODO: Beschreibung für Westen",
+      "occasions": ["Business", "Formal", "Hochzeit"],
+      "style_notes": "TODO: Style-Empfehlungen"
+    },
+    "mantel": {
+      "name": "Mantel",
+      "category": "Mäntel",
+      "description": "TODO: Beschreibung für Mäntel",
+      "occasions": ["Business", "Formal", "Casual"],
+      "seasons": ["Herbst", "Winter"],
+      "style_notes": "TODO: Style-Empfehlungen"
+    }
+  },
+  "notes": [
+    "Dieses Template muss mit Daten aus Google Drive gefüllt werden",
+    "Hemd-Stoffe (72SH, 70SH, 73SH, 74SH) fehlen noch",
+    "Detaillierte Beschreibungen für jedes Kleidungsstück erforderlich",
+    "Style-Empfehlungen und Kombinationsregeln hinzufügen"
+  ]
+}

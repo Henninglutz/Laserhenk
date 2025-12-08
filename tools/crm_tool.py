@@ -27,9 +27,7 @@ class CRMTool:
         self.api_key = api_key
         # TODO: Initialize API client
 
-    async def create_lead(
-        self, lead_data: CRMLeadCreate
-    ) -> CRMLeadResponse:
+    async def create_lead(self, lead_data: CRMLeadCreate) -> CRMLeadResponse:
         """
         Create new lead in PIPEDRIVE.
 
@@ -47,9 +45,7 @@ class CRMTool:
             message="Lead created (placeholder)",
         )
 
-    async def update_lead(
-        self, update_data: CRMLeadUpdate
-    ) -> CRMLeadResponse:
+    async def update_lead(self, update_data: CRMLeadUpdate) -> CRMLeadResponse:
         """
         Update existing lead in PIPEDRIVE.
 

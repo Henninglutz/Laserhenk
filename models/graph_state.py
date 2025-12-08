@@ -7,7 +7,6 @@ from langgraph.graph import add_messages
 from models.customer import (
     Customer,
     DesignPreferences,
-    Measurements,
     SessionState,
 )
 

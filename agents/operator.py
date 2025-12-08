@@ -1,9 +1,7 @@
 """Operator Agent - Routes to specialized agents."""
 
-from typing import Optional
-
 from agents.base import AgentDecision, BaseAgent
-from models.customer import CustomerType, SessionState
+from models.customer import SessionState
 
 
 class OperatorAgent(BaseAgent):
@@ -37,10 +35,7 @@ class OperatorAgent(BaseAgent):
             )
 
         # Design Phase: Design HENK
-        if (
-            state.customer.customer_id
-            and not state.design_preferences.revers_type
-        ):
+        if state.customer.customer_id and not state.design_preferences.revers_type:
             return AgentDecision(
                 next_agent="design_henk",
                 message="Routing to Design HENK for design preferences",
@@ -49,10 +44,7 @@ class OperatorAgent(BaseAgent):
             )
 
         # Measurement Phase: LASERHENK
-        if (
-            state.design_preferences.revers_type
-            and not state.measurements
-        ):
+        if state.design_preferences.revers_type and not state.measurements:
             return AgentDecision(
                 next_agent="laserhenk",
                 message="Routing to LASERHENK for measurements",

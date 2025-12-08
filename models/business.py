@@ -47,7 +47,9 @@ class CRMDeal(BaseModel):
     # Status
     stage: DealStage = Field(default=DealStage.INITIAL_CONTACT)
     value: Optional[float] = Field(None, description="Estimated value in EUR", ge=0)
-    won: Optional[bool] = Field(None, description="True if won, False if lost, None if open")
+    won: Optional[bool] = Field(
+        None, description="True if won, False if lost, None if open"
+    )
 
     # Context
     occasion: Optional[str] = Field(None, description="e.g., 'wedding', 'business'")
@@ -94,7 +96,9 @@ class OrderItem(BaseModel):
     fabric_code: str = Field(..., description="Selected fabric")
 
     # Specifications from agent handoffs
-    measurements_id: Optional[str] = Field(None, description="Reference to measurements")
+    measurements_id: Optional[str] = Field(
+        None, description="Reference to measurements"
+    )
     design_preferences: dict = Field(
         default_factory=dict, description="Revers, buttons, pockets, etc."
     )
@@ -117,7 +121,9 @@ class Order(BaseModel):
     customer_id: str = Field(..., description="Reference to customer")
 
     # Linked resources
-    session_id: Optional[str] = Field(None, description="Agent session that created order")
+    session_id: Optional[str] = Field(
+        None, description="Agent session that created order"
+    )
     deal_id: Optional[str] = Field(None, description="CRM deal")
 
     # Items
@@ -142,12 +148,8 @@ class Order(BaseModel):
     hitl_notes: Optional[str] = None
 
     # Customer communication
-    customer_notes: Optional[str] = Field(
-        None, description="Notes visible to customer"
-    )
-    internal_notes: Optional[str] = Field(
-        None, description="Internal notes"
-    )
+    customer_notes: Optional[str] = Field(None, description="Notes visible to customer")
+    internal_notes: Optional[str] = Field(None, description="Internal notes")
 
     # Generated assets
     visualization_urls: list[str] = Field(
@@ -166,7 +168,9 @@ class OrderHistory(BaseModel):
 
     customer_id: str
     current_order: Optional[Order] = Field(None, description="Active order")
-    past_orders: list[Order] = Field(default_factory=list, description="Completed orders")
+    past_orders: list[Order] = Field(
+        default_factory=list, description="Completed orders"
+    )
     total_orders: int = Field(default=0, ge=0)
     total_spent: float = Field(default=0.0, ge=0)
 

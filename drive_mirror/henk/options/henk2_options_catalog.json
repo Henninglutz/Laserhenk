@@ -1,0 +1,250 @@
+{
+  "meta": {
+    "catalog_name": "HENK2 Options Catalog",
+    "version": "1.0",
+    "last_updated": "2025-12-08",
+    "description": "Alle Maßkonfektion-Optionen aus HENK2 System",
+    "total_options": 0,
+    "note": "Daten müssen aus HENK2 System und Google Drive importiert werden"
+  },
+  "jacket_options": {
+    "lapel": {
+      "category": "Revers",
+      "options": {
+        "notch": {
+          "name": "Stegrevers (Notch Lapel)",
+          "description": "TODO: Beschreibung aus HENK2",
+          "formality": "Business/Casual",
+          "price_modifier": 0
+        },
+        "peak": {
+          "name": "Spitzrevers (Peak Lapel)",
+          "description": "TODO: Beschreibung aus HENK2",
+          "formality": "Formal",
+          "price_modifier": 0
+        },
+        "shawl": {
+          "name": "Schalkragen (Shawl Lapel)",
+          "description": "TODO: Beschreibung aus HENK2",
+          "formality": "Formal/Smoking",
+          "price_modifier": 50
+        }
+      }
+    },
+    "buttons": {
+      "category": "Knöpfe",
+      "options": {
+        "standard": {
+          "name": "Standard Knöpfe",
+          "description": "TODO: Materialien und Optionen",
+          "materials": ["Horn", "Kunststoff", "Perlmutt"],
+          "price_modifier": 0
+        },
+        "premium": {
+          "name": "Premium Knöpfe",
+          "description": "TODO: Hochwertige Materialien",
+          "materials": ["Büffelhorn", "Echter Perlmutt"],
+          "price_modifier": 30
+        }
+      }
+    },
+    "lining": {
+      "category": "Innenfutter",
+      "options": {
+        "full": {
+          "name": "Vollfutter",
+          "description": "TODO: Beschreibung Vollfutter",
+          "seasons": ["Herbst", "Winter"],
+          "price_modifier": 0
+        },
+        "half": {
+          "name": "Halbfutter",
+          "description": "TODO: Beschreibung Halbfutter",
+          "seasons": ["Frühling", "Sommer"],
+          "price_modifier": -20
+        },
+        "quarter": {
+          "name": "Viertelfutter",
+          "description": "TODO: Beschreibung Viertelfutter",
+          "seasons": ["Sommer"],
+          "price_modifier": -30
+        }
+      }
+    },
+    "shoulder_padding": {
+      "category": "Schulterpolster",
+      "options": {
+        "standard": {
+          "name": "Standard Schulterpolster",
+          "description": "TODO: Beschreibung",
+          "style": "Klassisch",
+          "price_modifier": 0
+        },
+        "light": {
+          "name": "Leichte Schulterpolster",
+          "description": "TODO: Beschreibung",
+          "style": "Modern/Weich",
+          "price_modifier": 0
+        },
+        "none": {
+          "name": "Ohne Schulterpolster",
+          "description": "TODO: Beschreibung",
+          "style": "Neapolitanisch",
+          "price_modifier": 0
+        }
+      }
+    },
+    "vents": {
+      "category": "Schlitze",
+      "options": {
+        "center": {
+          "name": "Mittelschlitz",
+          "description": "TODO: Beschreibung",
+          "style": "Britisch",
+          "price_modifier": 0
+        },
+        "side": {
+          "name": "Seitenschlitze",
+          "description": "TODO: Beschreibung",
+          "style": "Italienisch",
+          "price_modifier": 0
+        },
+        "none": {
+          "name": "Ohne Schlitz",
+          "description": "TODO: Beschreibung",
+          "style": "Formal",
+          "price_modifier": 0
+        }
+      }
+    },
+    "pockets": {
+      "category": "Taschen",
+      "options": {
+        "flap": {
+          "name": "Pattentaschen",
+          "description": "TODO: Beschreibung",
+          "formality": "Business",
+          "price_modifier": 0
+        },
+        "jetted": {
+          "name": "Leistentaschen",
+          "description": "TODO: Beschreibung",
+          "formality": "Formal",
+          "price_modifier": 0
+        },
+        "patch": {
+          "name": "Aufgesetzte Taschen",
+          "description": "TODO: Beschreibung",
+          "formality": "Casual",
+          "price_modifier": 0
+        }
+      }
+    }
+  },
+  "trouser_options": {
+    "waistband": {
+      "category": "Hosenbund",
+      "options": {
+        "standard": {
+          "name": "Standard Bund",
+          "description": "TODO: Beschreibung",
+          "price_modifier": 0
+        },
+        "extended": {
+          "name": "Hoher Bund",
+          "description": "TODO: Beschreibung",
+          "price_modifier": 20
+        },
+        "side_adjusters": {
+          "name": "Seitliche Versteller",
+          "description": "TODO: Beschreibung",
+          "price_modifier": 30
+        }
+      }
+    },
+    "pleats": {
+      "category": "Bundfalten",
+      "options": {
+        "none": {
+          "name": "Ohne Bundfalte",
+          "description": "Modern und schlank",
+          "price_modifier": 0
+        },
+        "single": {
+          "name": "Eine Bundfalte",
+          "description": "Klassisch",
+          "price_modifier": 0
+        },
+        "double": {
+          "name": "Zwei Bundfalten",
+          "description": "Traditionell",
+          "price_modifier": 10
+        }
+      }
+    },
+    "cuffs": {
+      "category": "Aufschläge",
+      "options": {
+        "none": {
+          "name": "Ohne Aufschlag",
+          "description": "Modern",
+          "price_modifier": 0
+        },
+        "with_cuffs": {
+          "name": "Mit Aufschlag",
+          "description": "Klassisch",
+          "price_modifier": 15
+        }
+      }
+    }
+  },
+  "vest_options": {
+    "back_style": {
+      "category": "Rückenteil",
+      "options": {
+        "fabric": {
+          "name": "Stoff-Rücken",
+          "description": "Matching zum Anzug",
+          "price_modifier": 0
+        },
+        "lining": {
+          "name": "Futter-Rücken",
+          "description": "Mit Schnalle zum Verstellen",
+          "price_modifier": -20
+        }
+      }
+    },
+    "button_count": {
+      "category": "Knopfanzahl",
+      "options": {
+        "single_breasted_4": {
+          "name": "Einreiher 4 Knöpfe",
+          "description": "Modern",
+          "price_modifier": 0
+        },
+        "single_breasted_5": {
+          "name": "Einreiher 5 Knöpfe",
+          "description": "Klassisch",
+          "price_modifier": 0
+        },
+        "single_breasted_6": {
+          "name": "Einreiher 6 Knöpfe",
+          "description": "Formal",
+          "price_modifier": 0
+        },
+        "double_breasted": {
+          "name": "Zweireiher",
+          "description": "Sehr formal",
+          "price_modifier": 30
+        }
+      }
+    }
+  },
+  "notes": [
+    "Alle Optionen müssen aus HENK2 System exportiert werden",
+    "Detaillierte Beschreibungen für jede Option erforderlich",
+    "Preismodifikatoren (price_modifier) müssen validiert werden",
+    "Style-Empfehlungen und Kombinationsregeln hinzufügen",
+    "RAG-Chunks nach Import generieren"
+  ]
+}

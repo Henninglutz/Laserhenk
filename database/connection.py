@@ -39,28 +39,29 @@ class Database:
             return
 
         # Support both DATABASE_URL and POSTGRES_CONNECTION_STRING
-        self.database_url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_CONNECTION_STRING")
+        self.database_url = os.getenv("DATABASE_URL") or os.getenv(
+            "POSTGRES_CONNECTION_STRING"
+        )
         if not self.database_url:
-            raise ValueError("DATABASE_URL or POSTGRES_CONNECTION_STRING not set in environment")
+            raise ValueError(
+                "DATABASE_URL or POSTGRES_CONNECTION_STRING not set in environment"
+            )
 
         # Convert postgresql:// to postgresql+asyncpg:// for async support
         if self.database_url.startswith("postgresql://"):
-            self.database_url = self.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            self.database_url = self.database_url.replace(
+                "postgresql://", "postgresql+asyncpg://", 1
+            )
 
         # Embedding Dimension (384 für sentence-transformers/all-MiniLM-L6-v2)
         self.embedding_dim = int(os.getenv("EMBEDDING_DIMENSION", "384"))
 
         self.engine = create_async_engine(
-            self.database_url,
-            echo=False,
-            pool_size=10,
-            max_overflow=20
+            self.database_url, echo=False, pool_size=10, max_overflow=20
         )
 
         self.AsyncSessionLocal = sessionmaker(
-            self.engine,
-            class_=AsyncSession,
-            expire_on_commit=False
+            self.engine, class_=AsyncSession, expire_on_commit=False
         )
 
         self._initialized = True

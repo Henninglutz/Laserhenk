@@ -22,9 +22,7 @@ class DALLETool:
         self.api_key = api_key
         # TODO: Initialize OpenAI client
 
-    async def generate_image(
-        self, request: DALLEImageRequest
-    ) -> DALLEImageResponse:
+    async def generate_image(self, request: DALLEImageRequest) -> DALLEImageResponse:
         """
         Generate image with DALLE.
 

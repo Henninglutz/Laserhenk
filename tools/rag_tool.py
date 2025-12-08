@@ -41,9 +41,7 @@ class RAGTool:
             metadata={"query": query_request.query},
         )
 
-    async def retrieve_customer_context(
-        self, customer_id: str
-    ) -> RAGResult:
+    async def retrieve_customer_context(self, customer_id: str) -> RAGResult:
         """
         Retrieve customer-specific context from RAG.
 

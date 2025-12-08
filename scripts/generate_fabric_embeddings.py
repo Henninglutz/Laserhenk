@@ -24,11 +24,10 @@ import asyncio
 import os
 import sys
 from typing import List, Dict, Any, Optional
-from datetime import datetime
 import argparse
 import json
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from dotenv import load_dotenv
 import openai
@@ -39,7 +38,9 @@ load_dotenv()
 # Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # Support both DATABASE_URL and POSTGRES_CONNECTION_STRING
-POSTGRES_CONNECTION_STRING = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_CONNECTION_STRING")
+POSTGRES_CONNECTION_STRING = os.getenv("DATABASE_URL") or os.getenv(
+    "POSTGRES_CONNECTION_STRING"
+)
 EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "384"))
 EMBEDDING_MODEL = "text-embedding-3-small"  # Supports flexible dimensions
 
@@ -83,17 +84,18 @@ class FabricEmbeddingGenerator:
         # Convert to asyncpg URL if needed
         connection_string = POSTGRES_CONNECTION_STRING
         if connection_string.startswith("postgresql://"):
-            connection_string = connection_string.replace("postgresql://", "postgresql+asyncpg://", 1)
+            connection_string = connection_string.replace(
+                "postgresql://", "postgresql+asyncpg://", 1
+            )
         elif connection_string.startswith("postgres://"):
-            connection_string = connection_string.replace("postgres://", "postgresql+asyncpg://", 1)
+            connection_string = connection_string.replace(
+                "postgres://", "postgresql+asyncpg://", 1
+            )
 
         self.engine = create_async_engine(
-            connection_string,
-            echo=False,
-            pool_size=10,
-            max_overflow=20
+            connection_string, echo=False, pool_size=10, max_overflow=20
         )
-        print(f"✅ Database connection established")
+        print("✅ Database connection established")
 
     async def close(self):
         """Close database connection."""
@@ -127,15 +129,14 @@ class FabricEmbeddingGenerator:
             characteristics_parts.append(f"Muster: {fabric['pattern']}")
 
         if characteristics_parts:
-            chunks.append({
-                "chunk_id": f"{fabric_code}_characteristics",
-                "chunk_type": "characteristics",
-                "content": f"{name} - " + ", ".join(characteristics_parts),
-                "metadata": {
-                    "fabric_code": fabric_code,
-                    "chunk_index": 0
+            chunks.append(
+                {
+                    "chunk_id": f"{fabric_code}_characteristics",
+                    "chunk_type": "characteristics",
+                    "content": f"{name} - " + ", ".join(characteristics_parts),
+                    "metadata": {"fabric_code": fabric_code, "chunk_index": 0},
                 }
-            })
+            )
 
         # Chunk 2: Visual Description
         visual_parts = []
@@ -147,22 +148,25 @@ class FabricEmbeddingGenerator:
         # Extract visual hints from additional_metadata if available
         if fabric.get("additional_metadata"):
             try:
-                metadata = json.loads(fabric["additional_metadata"]) if isinstance(fabric["additional_metadata"], str) else fabric["additional_metadata"]
+                metadata = (
+                    json.loads(fabric["additional_metadata"])
+                    if isinstance(fabric["additional_metadata"], str)
+                    else fabric["additional_metadata"]
+                )
                 if "eigenschaften" in metadata:
                     visual_parts.append(f"Eigenschaften: {metadata['eigenschaften']}")
-            except:
+            except Exception:
                 pass
 
         if visual_parts:
-            chunks.append({
-                "chunk_id": f"{fabric_code}_visual",
-                "chunk_type": "visual",
-                "content": f"{name} - Visuell: " + ", ".join(visual_parts),
-                "metadata": {
-                    "fabric_code": fabric_code,
-                    "chunk_index": 1
+            chunks.append(
+                {
+                    "chunk_id": f"{fabric_code}_visual",
+                    "chunk_type": "visual",
+                    "content": f"{name} - Visuell: " + ", ".join(visual_parts),
+                    "metadata": {"fabric_code": fabric_code, "chunk_index": 1},
                 }
-            })
+            )
 
         # Chunk 3: Usage Context
         usage_parts = []
@@ -181,15 +185,14 @@ class FabricEmbeddingGenerator:
             usage_parts.append("Anlass: Casual, Freizeit")
 
         if usage_parts:
-            chunks.append({
-                "chunk_id": f"{fabric_code}_usage",
-                "chunk_type": "usage",
-                "content": f"{name} - Verwendung: " + ", ".join(usage_parts),
-                "metadata": {
-                    "fabric_code": fabric_code,
-                    "chunk_index": 2
+            chunks.append(
+                {
+                    "chunk_id": f"{fabric_code}_usage",
+                    "chunk_type": "usage",
+                    "content": f"{name} - Verwendung: " + ", ".join(usage_parts),
+                    "metadata": {"fabric_code": fabric_code, "chunk_index": 2},
                 }
-            })
+            )
 
         # Chunk 4: Technical Details
         technical_parts = []
@@ -201,15 +204,14 @@ class FabricEmbeddingGenerator:
             technical_parts.append(f"Pflege: {fabric['care_instructions']}")
 
         if technical_parts:
-            chunks.append({
-                "chunk_id": f"{fabric_code}_technical",
-                "chunk_type": "technical",
-                "content": f"{name} - Technisch: " + ", ".join(technical_parts),
-                "metadata": {
-                    "fabric_code": fabric_code,
-                    "chunk_index": 3
+            chunks.append(
+                {
+                    "chunk_id": f"{fabric_code}_technical",
+                    "chunk_type": "technical",
+                    "content": f"{name} - Technisch: " + ", ".join(technical_parts),
+                    "metadata": {"fabric_code": fabric_code, "chunk_index": 3},
                 }
-            })
+            )
 
         return chunks
 
@@ -228,7 +230,7 @@ class FabricEmbeddingGenerator:
                 openai.embeddings.create,
                 input=texts,
                 model=EMBEDDING_MODEL,
-                dimensions=EMBEDDING_DIMENSION
+                dimensions=EMBEDDING_DIMENSION,
             )
 
             embeddings = [item.embedding for item in response.data]
@@ -240,7 +242,9 @@ class FabricEmbeddingGenerator:
             print(f"❌ OpenAI API Error: {e}")
             raise
 
-    async def fetch_fabrics(self, offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
+    async def fetch_fabrics(
+        self, offset: int = 0, limit: int = 50
+    ) -> List[Dict[str, Any]]:
         """
         Fetch a batch of fabrics from database.
 
@@ -251,7 +255,8 @@ class FabricEmbeddingGenerator:
         Returns:
             List of fabric dictionaries
         """
-        query = text("""
+        query = text(
+            """
             SELECT
                 id,
                 fabric_code,
@@ -269,7 +274,8 @@ class FabricEmbeddingGenerator:
             FROM fabrics
             ORDER BY created_at ASC
             LIMIT :limit OFFSET :offset
-        """)
+        """
+        )
 
         async with self.engine.begin() as conn:
             result = await conn.execute(query, {"limit": limit, "offset": offset})
@@ -277,21 +283,23 @@ class FabricEmbeddingGenerator:
 
         fabrics = []
         for row in rows:
-            fabrics.append({
-                "id": str(row.id),
-                "fabric_code": row.fabric_code,
-                "name": row.name,
-                "supplier": row.supplier,
-                "composition": row.composition,
-                "weight": row.weight,
-                "color": row.color,
-                "pattern": row.pattern,
-                "category": row.category,
-                "stock_status": row.stock_status,
-                "origin": row.origin,
-                "care_instructions": row.care_instructions,
-                "additional_metadata": row.additional_metadata
-            })
+            fabrics.append(
+                {
+                    "id": str(row.id),
+                    "fabric_code": row.fabric_code,
+                    "name": row.name,
+                    "supplier": row.supplier,
+                    "composition": row.composition,
+                    "weight": row.weight,
+                    "color": row.color,
+                    "pattern": row.pattern,
+                    "category": row.category,
+                    "stock_status": row.stock_status,
+                    "origin": row.origin,
+                    "care_instructions": row.care_instructions,
+                    "additional_metadata": row.additional_metadata,
+                }
+            )
 
         return fabrics
 
@@ -343,7 +351,7 @@ class FabricEmbeddingGenerator:
                     data["chunk_type"],
                     data["content"],
                     data["embedding"],
-                    data["embedding_metadata"]
+                    data["embedding_metadata"],
                 )
 
             # Commit the transaction
@@ -388,21 +396,25 @@ class FabricEmbeddingGenerator:
         # Prepare data for insertion
         embeddings_data = []
         for chunk, embedding in zip(all_chunks, embeddings):
-            embeddings_data.append({
-                "fabric_id": fabric_id_map[chunk["chunk_id"]],
-                "chunk_id": chunk["chunk_id"],
-                "chunk_type": chunk["chunk_type"],
-                "content": chunk["content"],
-                "embedding": str(embedding),  # Convert to string for PostgreSQL
-                "embedding_metadata": json.dumps(chunk["metadata"])
-            })
+            embeddings_data.append(
+                {
+                    "fabric_id": fabric_id_map[chunk["chunk_id"]],
+                    "chunk_id": chunk["chunk_id"],
+                    "chunk_type": chunk["chunk_type"],
+                    "content": chunk["content"],
+                    "embedding": str(embedding),  # Convert to string for PostgreSQL
+                    "embedding_metadata": json.dumps(chunk["metadata"]),
+                }
+            )
 
         # Insert into database
         await self.insert_embeddings(embeddings_data)
 
         self.stats["fabrics_processed"] += len(fabrics)
 
-        print(f"✅ Batch complete: {len(fabrics)} fabrics, {len(embeddings)} embeddings")
+        print(
+            f"✅ Batch complete: {len(fabrics)} fabrics, {len(embeddings)} embeddings"
+        )
 
     async def run(self):
         """Main execution loop."""
@@ -480,19 +492,18 @@ async def main():
         "--batch-size",
         type=int,
         default=50,
-        help="Number of fabrics to process in each batch (default: 50)"
+        help="Number of fabrics to process in each batch (default: 50)",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Run without inserting data (for testing)"
+        help="Run without inserting data (for testing)",
     )
 
     args = parser.parse_args()
 
     generator = FabricEmbeddingGenerator(
-        batch_size=args.batch_size,
-        dry_run=args.dry_run
+        batch_size=args.batch_size, dry_run=args.dry_run
     )
 
     await generator.run()

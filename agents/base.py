@@ -11,21 +11,13 @@ from models.customer import SessionState
 class AgentDecision(BaseModel):
     """Agent decision output."""
 
-    next_agent: Optional[str] = Field(
-        None, description="Next agent to route to"
-    )
-    message: Optional[str] = Field(
-        None, description="Message to user or next agent"
-    )
+    next_agent: Optional[str] = Field(None, description="Next agent to route to")
+    message: Optional[str] = Field(None, description="Message to user or next agent")
     action: Optional[str] = Field(
         None, description="Action to perform (e.g., 'query_rag', 'create_lead')"
     )
-    action_params: Optional[dict] = Field(
-        None, description="Parameters for the action"
-    )
-    should_continue: bool = Field(
-        True, description="Whether to continue conversation"
-    )
+    action_params: Optional[dict] = Field(None, description="Parameters for the action")
+    should_continue: bool = Field(True, description="Whether to continue conversation")
 
 
 class BaseAgent(ABC):
@@ -48,9 +40,7 @@ class BaseAgent(ABC):
         """
         pass
 
-    def _update_state(
-        self, state: SessionState, **updates
-    ) -> SessionState:
+    def _update_state(self, state: SessionState, **updates) -> SessionState:
         """Helper to update state."""
         updated_data = state.model_dump()
         updated_data.update(updates)

@@ -1,0 +1,112 @@
+{
+  "meta": {
+    "catalog_name": "Shirt Catalog",
+    "version": "1.0",
+    "last_updated": "2025-12-08",
+    "description": "Katalog aller Hemden-Optionen, Konfigurationen und Stoffe",
+    "total_shirts": 0,
+    "fabric_prefixes": ["72SH", "70SH", "73SH", "74SH"],
+    "note": "Hemden-Stoffe müssen noch aus Google Drive importiert werden"
+  },
+  "fabrics": {
+    "72SH_series": {
+      "prefix": "72SH",
+      "description": "TODO: Beschreibung für 72SH Hemden-Stoffe",
+      "category": "TODO: CAT Kategorie",
+      "price_tier": "TODO: Einstieg/Premium/Luxus",
+      "fabrics": []
+    },
+    "70SH_series": {
+      "prefix": "70SH",
+      "description": "TODO: Beschreibung für 70SH Hemden-Stoffe",
+      "category": "TODO: CAT Kategorie",
+      "price_tier": "TODO: Einstieg/Premium/Luxus",
+      "fabrics": []
+    },
+    "73SH_series": {
+      "prefix": "73SH",
+      "description": "TODO: Beschreibung für 73SH Hemden-Stoffe",
+      "category": "TODO: CAT Kategorie",
+      "price_tier": "TODO: Einstieg/Premium/Luxus",
+      "fabrics": []
+    },
+    "74SH_series": {
+      "prefix": "74SH",
+      "description": "TODO: Beschreibung für 74SH Hemden-Stoffe",
+      "category": "TODO: CAT Kategorie",
+      "price_tier": "TODO: Einstieg/Premium/Luxus",
+      "fabrics": []
+    }
+  },
+  "configurations": {
+    "collar_types": {
+      "kent": {
+        "name": "Kent Kragen",
+        "description": "Klassischer Businesskragen",
+        "formality": "Business/Formal",
+        "suitable_for": ["Anzug", "Business"]
+      },
+      "button_down": {
+        "name": "Button-Down Kragen",
+        "description": "Sportlicher Kragen mit Knöpfen",
+        "formality": "Business Casual",
+        "suitable_for": ["Smart Casual", "Casual Business"]
+      },
+      "haifisch": {
+        "name": "Haifischkragen",
+        "description": "Weit gespreizter Kragen",
+        "formality": "Formal",
+        "suitable_for": ["Anzug", "Formal Events"]
+      },
+      "stehkragen": {
+        "name": "Stehkragen",
+        "description": "Ohne umgelegten Kragen",
+        "formality": "Casual/Modern",
+        "suitable_for": ["Casual", "Modern"]
+      }
+    },
+    "cuff_types": {
+      "umschlagmanschette": {
+        "name": "Umschlagmanschette",
+        "description": "Doppelte Manschette für Manschettenknöpfe",
+        "formality": "Formal",
+        "requires": ["Manschettenknöpfe"]
+      },
+      "knopfmanschette": {
+        "name": "Knopfmanschette",
+        "description": "Standard Manschette mit Knöpfen",
+        "formality": "Business/Casual"
+      }
+    },
+    "pocket_types": {
+      "no_pocket": {
+        "name": "Ohne Brusttasche",
+        "formality": "Formal"
+      },
+      "patch_pocket": {
+        "name": "Mit Brusttasche",
+        "formality": "Business/Casual"
+      }
+    },
+    "fit_types": {
+      "slim_fit": {
+        "name": "Slim Fit",
+        "description": "Tailliert geschnitten"
+      },
+      "regular_fit": {
+        "name": "Regular Fit",
+        "description": "Klassischer Schnitt"
+      },
+      "comfort_fit": {
+        "name": "Comfort Fit",
+        "description": "Weiter geschnitten"
+      }
+    }
+  },
+  "notes": [
+    "Hemden-Stoffe (72SH, 70SH, 73SH, 74SH) müssen aus Google Drive importiert werden",
+    "Jede Serie benötigt: Referenznummer, Beschreibung, CAT-Kategorie, Preise",
+    "Struktur analog zu fabric_catalog.json verwenden",
+    "RAG-Chunks nach Import generieren"
+  ]
+}

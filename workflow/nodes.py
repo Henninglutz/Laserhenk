@@ -59,10 +59,10 @@ def get_agent(agent_name: str):
     if agent_name not in _agent_instances:
         if agent_name == "henk1":
             _agent_instances[agent_name] = Henk1Agent()
-            logger.info(f"[Singleton] Henk1Agent created")
+            logger.info("[Singleton] Henk1Agent created")
         elif agent_name == "design_henk":
             _agent_instances[agent_name] = DesignHenkAgent()
-            logger.info(f"[Singleton] DesignHenkAgent created")
+            logger.info("[Singleton] DesignHenkAgent created")
         # TODO: Weitere Agents hier hinzufügen
         else:
             logger.warning(f"[Factory] Unknown agent: {agent_name}")
@@ -94,12 +94,14 @@ async def validate_query_node(state: HenkGraphState) -> HenkGraphState:
     # Basis-Check: Minimale Länge
     if not user_input or len(user_input.strip()) < 3:
         state["is_valid"] = False
-        state["messages"].append({
-            "role": "system",
-            "content": "Eingabe zu kurz. Bitte mindestens 3 Zeichen eingeben.",
-            "sender": "validator",
-            "timestamp": None
-        })
+        state["messages"].append(
+            {
+                "role": "system",
+                "content": "Eingabe zu kurz. Bitte mindestens 3 Zeichen eingeben.",
+                "sender": "validator",
+                "timestamp": None,
+            }
+        )
         logger.warning(f"[Validator] Rejected: '{user_input}' (too short)")
         return state
 
@@ -141,9 +143,7 @@ async def smart_operator_node(state: HenkGraphState) -> HenkGraphState:
     # Supervisor trifft Entscheidung
     supervisor = get_supervisor()
     decision = await supervisor.decide_next_step(
-        user_input,
-        session_state,
-        conversation_history
+        user_input, session_state, conversation_history
     )
 
     # Update State basierend auf Decision
@@ -155,15 +155,17 @@ async def smart_operator_node(state: HenkGraphState) -> HenkGraphState:
 
     # Bei clarification: Sofort Rückfrage an User
     if decision.next_destination == "clarification" and decision.user_message:
-        state["messages"].append({
-            "role": "assistant",
-            "content": decision.user_message,
-            "sender": "supervisor",
-            "metadata": {
-                "reasoning": decision.reasoning,
-                "confidence": decision.confidence
+        state["messages"].append(
+            {
+                "role": "assistant",
+                "content": decision.user_message,
+                "sender": "supervisor",
+                "metadata": {
+                    "reasoning": decision.reasoning,
+                    "confidence": decision.confidence,
+                },
             }
-        })
+        )
         state["awaiting_user_input"] = True
 
     logger.info(
@@ -202,11 +204,13 @@ async def conversation_node(state: HenkGraphState) -> HenkGraphState:
     if not agent:
         logger.error(f"[Conversation] Unknown agent: {current_agent_name}")
         state["next_agent"] = "clarification"
-        state["messages"].append({
-            "role": "system",
-            "content": "Interner Fehler: Agent nicht gefunden.",
-            "sender": "system"
-        })
+        state["messages"].append(
+            {
+                "role": "system",
+                "content": "Interner Fehler: Agent nicht gefunden.",
+                "sender": "system",
+            }
+        )
         return state
 
     # Entscheide: LLM oder Rule-based?
@@ -227,12 +231,14 @@ async def conversation_node(state: HenkGraphState) -> HenkGraphState:
         state["phase_complete"] = decision.phase_complete
 
         # Append Agent-Response zu Messages
-        state["messages"].append({
-            "role": "assistant",
-            "content": decision.response_text,
-            "sender": current_agent_name,
-            "metadata": decision.metadata
-        })
+        state["messages"].append(
+            {
+                "role": "assistant",
+                "content": decision.response_text,
+                "sender": current_agent_name,
+                "metadata": decision.metadata,
+            }
+        )
 
         logger.info(
             f"[Conversation] Decision: next_agent='{decision.next_agent}', "
@@ -244,11 +250,13 @@ async def conversation_node(state: HenkGraphState) -> HenkGraphState:
 
         # Fallback bei Fehler
         state["next_agent"] = "clarification"
-        state["messages"].append({
-            "role": "assistant",
-            "content": "Entschuldigung, ich hatte ein Problem. Kannst du das nochmal sagen?",
-            "sender": current_agent_name
-        })
+        state["messages"].append(
+            {
+                "role": "assistant",
+                "content": "Entschuldigung, ich hatte ein Problem. Kannst du das nochmal sagen?",
+                "sender": current_agent_name,
+            }
+        )
         state["awaiting_user_input"] = True
 
     return state
@@ -272,7 +280,9 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
     next_agent = state["next_agent"]
     action_params = state.get("pending_action") or {}
 
-    logger.info(f"[ToolsDispatcher] Executing tool='{next_agent}' with params={action_params}")
+    logger.info(
+        f"[ToolsDispatcher] Executing tool='{next_agent}' with params={action_params}"
+    )
 
     try:
         if next_agent == "rag_tool":
@@ -289,22 +299,22 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
             result = "Tool nicht gefunden."
 
         # Append Result zu Messages
-        state["messages"].append({
-            "role": "assistant",
-            "content": result,
-            "sender": next_agent
-        })
+        state["messages"].append(
+            {"role": "assistant", "content": result, "sender": next_agent}
+        )
 
         logger.info(f"[ToolsDispatcher] Tool '{next_agent}' executed successfully")
 
     except Exception as e:
         logger.error(f"[ToolsDispatcher] Tool failed: {e}", exc_info=True)
 
-        state["messages"].append({
-            "role": "assistant",
-            "content": f"Entschuldigung, das Tool '{next_agent}' hatte ein Problem.",
-            "sender": next_agent
-        })
+        state["messages"].append(
+            {
+                "role": "assistant",
+                "content": f"Entschuldigung, das Tool '{next_agent}' hatte ein Problem.",
+                "sender": next_agent,
+            }
+        )
 
     state["awaiting_user_input"] = True
     return state
@@ -330,7 +340,9 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> st
     fabric_type = params.get("fabric_type")
     pattern = params.get("pattern")
 
-    logger.info(f"[RAGTool] Searching: query='{query}', fabric_type={fabric_type}, pattern={pattern}")
+    logger.info(
+        f"[RAGTool] Searching: query='{query}', fabric_type={fabric_type}, pattern={pattern}"
+    )
 
     rag = RAGTool()
     results = await rag.search(query, fabric_type=fabric_type, pattern=pattern)
@@ -352,7 +364,9 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> st
     return formatted
 
 
-async def _execute_comparison_tool(params: Dict[str, Any], state: HenkGraphState) -> str:
+async def _execute_comparison_tool(
+    params: Dict[str, Any], state: HenkGraphState
+) -> str:
     """
     Comparison Tool: Vergleicht Optionen (Stoffe, Designs, etc.).
 
@@ -366,7 +380,9 @@ async def _execute_comparison_tool(params: Dict[str, Any], state: HenkGraphState
     items = params.get("items", [])
     comparison_type = params.get("comparison_type", "general")
 
-    logger.info(f"[ComparisonTool] Comparing {len(items)} items of type '{comparison_type}'")
+    logger.info(
+        f"[ComparisonTool] Comparing {len(items)} items of type '{comparison_type}'"
+    )
 
     if len(items) < 2:
         return "Ich brauche mindestens 2 Optionen zum Vergleichen."
@@ -401,7 +417,9 @@ async def _execute_pricing_tool(params: Dict[str, Any], state: HenkGraphState) -
 
     customer_data = state["session_state"].get("customer_data", {})
     fabric_code = params.get("fabric_code") or customer_data.get("selected_fabric")
-    garment_type = params.get("garment_type") or customer_data.get("garment_type", "suit")
+    garment_type = params.get("garment_type") or customer_data.get(
+        "garment_type", "suit"
+    )
 
     logger.info(
         f"[PricingTool] Calculating price: fabric_code={fabric_code}, "
@@ -439,13 +457,13 @@ Soll ich dir passende Stoffe zeigen? Dann kann ich direkt den Preis kalkulieren.
         logger.info("[PricingTool] Using fallback pricing (RAG not available)")
         # Basis-Preise für Bespoke-Anfertigung
         base_prices = {
-            "suit": 1800,        # 2-Teiler
-            "three_piece": 2100, # 3-Teiler
-            "jacket": 1200,      # Sakko einzeln
-            "trousers": 600,     # Hose einzeln
-            "vest": 400,         # Weste einzeln
-            "coat": 2500,        # Mantel
-            "tuxedo": 2200,      # Smoking
+            "suit": 1800,  # 2-Teiler
+            "three_piece": 2100,  # 3-Teiler
+            "jacket": 1200,  # Sakko einzeln
+            "trousers": 600,  # Hose einzeln
+            "vest": 400,  # Weste einzeln
+            "coat": 2500,  # Mantel
+            "tuxedo": 2200,  # Smoking
         }
         fabric_price = base_prices.get(garment_type, 1800)
 

@@ -80,9 +80,7 @@ class FabricData(BaseModel):
     category: Optional[str] = Field(
         None, description="Fabric category (e.g., 'suiting', 'casual')"
     )
-    seasons: list[Season] = Field(
-        default_factory=list, description="Suitable seasons"
-    )
+    seasons: list[Season] = Field(default_factory=list, description="Suitable seasons")
 
     # Availability
     stock_status: Optional[str] = Field(None, description="Stock status")
@@ -90,15 +88,11 @@ class FabricData(BaseModel):
     origin: Optional[str] = Field(None, description="Country of origin")
 
     # Metadata
-    description: Optional[str] = Field(
-        None, description="Human-readable description"
-    )
+    description: Optional[str] = Field(None, description="Human-readable description")
     care_instructions: Optional[str] = Field(
         None, description="Care and maintenance instructions"
     )
-    image_urls: list[str] = Field(
-        default_factory=list, description="Fabric image URLs"
-    )
+    image_urls: list[str] = Field(default_factory=list, description="Fabric image URLs")
     local_image_paths: list[str] = Field(
         default_factory=list, description="Local paths to downloaded images"
     )
@@ -127,15 +121,9 @@ class FabricSearchCriteria(BaseModel):
     """
 
     # From HENK1 handoff
-    colors: Optional[list[str]] = Field(
-        None, description="Preferred colors"
-    )
-    patterns: Optional[list[str]] = Field(
-        None, description="Preferred patterns"
-    )
-    season: Optional[Season] = Field(
-        None, description="Season requirement"
-    )
+    colors: Optional[list[str]] = Field(None, description="Preferred colors")
+    patterns: Optional[list[str]] = Field(None, description="Preferred patterns")
+    season: Optional[Season] = Field(None, description="Season requirement")
     occasion: Optional[str] = Field(
         None, description="Occasion (e.g., 'wedding', 'business')"
     )
@@ -145,14 +133,10 @@ class FabricSearchCriteria(BaseModel):
     budget_max: Optional[float] = Field(None, description="Max budget EUR")
 
     # Stock requirement
-    in_stock_only: bool = Field(
-        default=True, description="Only show in-stock fabrics"
-    )
+    in_stock_only: bool = Field(default=True, description="Only show in-stock fabrics")
 
     # Limit results
-    limit: int = Field(
-        default=10, description="Max number of results", ge=1, le=50
-    )
+    limit: int = Field(default=10, description="Max number of results", ge=1, le=50)
 
 
 class FabricRecommendation(BaseModel):
@@ -203,9 +187,7 @@ class OutfitSpec(BaseModel):
     Used by agents to request outfit visualizations.
     """
 
-    occasion: str = Field(
-        ..., description="e.g., 'wedding', 'business', 'casual'"
-    )
+    occasion: str = Field(..., description="e.g., 'wedding', 'business', 'casual'")
     season: str = Field(..., description="e.g., 'summer', 'winter'")
     style_preferences: list[str] = Field(
         default_factory=list,
@@ -240,18 +222,12 @@ class GeneratedOutfit(BaseModel):
     fabrics_used: list[str] = Field(
         default_factory=list, description="Fabric codes used"
     )
-    dalle_prompt: str = Field(
-        ..., description="Prompt sent to DALL-E"
-    )
-    image_url: Optional[str] = Field(
-        None, description="Generated image URL"
-    )
+    dalle_prompt: str = Field(..., description="Prompt sent to DALL-E")
+    image_url: Optional[str] = Field(None, description="Generated image URL")
     local_image_path: Optional[str] = Field(
         None, description="Local path to saved image"
     )
-    revised_prompt: Optional[str] = Field(
-        None, description="DALL-E's revised prompt"
-    )
+    revised_prompt: Optional[str] = Field(None, description="DALL-E's revised prompt")
     generation_date: Optional[str] = Field(
         None, description="ISO timestamp of generation"
     )
