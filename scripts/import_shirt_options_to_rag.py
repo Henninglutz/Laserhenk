@@ -361,8 +361,11 @@ STANDARD Stoffe: €{pricing['standard']['price_eur']}
 
                 # Insert into database
                 async with self.engine.begin() as conn:
-                    query = text(
-                        """
+                    # Use raw connection for asyncpg
+                    raw_conn = await conn.get_raw_connection()
+                    async_conn = raw_conn.driver_connection
+
+                    query_str = """
                         INSERT INTO rag_docs (
                             document_id,
                             category,
@@ -371,12 +374,7 @@ STANDARD Stoffe: €{pricing['standard']['price_eur']}
                             metadata,
                             created_at
                         ) VALUES (
-                            :document_id,
-                            :category,
-                            :content,
-                            :embedding::vector,
-                            :metadata::jsonb,
-                            :created_at
+                            $1, $2, $3, $4::vector, $5::jsonb, $6
                         )
                         ON CONFLICT (document_id) DO UPDATE SET
                             content = EXCLUDED.content,
@@ -384,18 +382,15 @@ STANDARD Stoffe: €{pricing['standard']['price_eur']}
                             metadata = EXCLUDED.metadata,
                             updated_at = NOW()
                     """
-                    )
 
-                    await conn.execute(
-                        query,
-                        {
-                            "document_id": chunk["chunk_id"],
-                            "category": chunk["category"],
-                            "content": chunk["content"],
-                            "embedding": str(embedding),
-                            "metadata": json.dumps(chunk["metadata"]),
-                            "created_at": datetime.now(),
-                        },
+                    await async_conn.execute(
+                        query_str,
+                        chunk["chunk_id"],
+                        chunk["category"],
+                        chunk["content"],
+                        str(embedding),
+                        json.dumps(chunk["metadata"]),
+                        datetime.now(),
                     )
 
                 self.stats["inserted"] += 1
