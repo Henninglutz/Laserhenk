@@ -72,9 +72,156 @@ python scripts/inspect_db.py
 
 ---
 
-## 🔮 SCHRITT 2: Fabric Embeddings generieren (KRITISCH!)
+## 🎽 SCHRITT 2: Hemden-Stoffe von Google Drive laden
 
-### 2.1 Warum ist das kritisch?
+### 2.1 Shirt Catalog von Google Drive synchronisieren
+
+**Status:** Scripts vorhanden und bereit!
+
+```bash
+# Prüfe die Scripts
+ls -lh scripts/sync_shirts_from_drive.py
+ls -lh scripts/import_shirts_to_db.py
+```
+
+### 2.2 Google Drive Credentials einrichten
+
+```bash
+# .env aktualisieren
+nano .env
+
+# Füge hinzu:
+GOOGLE_DRIVE_CREDENTIALS_PATH=./credentials/google_drive_credentials.json
+GOOGLE_DRIVE_FOLDER_ID=your_folder_id_from_drive_mirror
+```
+
+**Wo finde ich die Folder ID?**
+- Öffne Google Drive: drive_mirror → shirts Ordner
+- Kopiere die ID aus der URL: `https://drive.google.com/drive/folders/FOLDER_ID_HIER`
+
+### 2.3 Google Service Account Credentials
+
+Falls noch nicht vorhanden, erstelle einen Service Account:
+
+1. Google Cloud Console: https://console.cloud.google.com
+2. APIs & Services → Credentials
+3. Create Credentials → Service Account
+4. Download JSON Credentials
+5. Speichere als `credentials/google_drive_credentials.json`
+6. Gib dem Service Account Zugriff auf den drive_mirror Ordner
+
+### 2.4 Shirt Catalog herunterladen
+
+```bash
+# Synchronisiere die Hemden-Dateien
+python scripts/sync_shirts_from_drive.py
+
+# Erwartete Ausgabe:
+# ======================================================================
+# 📥 SYNC SHIRT CATALOG FROM GOOGLE DRIVE
+# ======================================================================
+#
+# ✅ Lade Credentials von: ./credentials/google_drive_credentials.json
+# 📁 Google Drive Folder ID: abc123xyz...
+#
+# ======================================================================
+# 📄 Datei: shirt_catalog.json
+# ======================================================================
+# 🔍 Suche nach 'shirt_catalog.json'...
+# ✅ Gefunden: shirt_catalog.json
+#    ID: file_id_here
+#    Link: https://drive.google.com/...
+# 📥 Lade herunter nach: drive_mirror/henk/shirts/shirt_catalog.json
+#    Download 100% complete
+# ✅ Download complete!
+#
+# 📊 Datei-Analyse:
+#    Type: <class 'dict'>
+#    Keys: ['meta', 'fabrics']
+#    Meta: {'catalog_name': 'Shirt Catalog', 'version': '1.0', ...}
+#    Fabric Series: ['72SH_series', '70SH_series', '73SH_series', '74SH_series']
+#
+# ======================================================================
+# 📄 Datei: rag_shirts_chunk.jsonl
+# ======================================================================
+# 🔍 Suche nach 'rag_shirts_chunk.jsonl'...
+# ✅ Gefunden: rag_shirts_chunk.jsonl
+#    ID: file_id_here
+# ...
+#
+# ======================================================================
+# 📊 ZUSAMMENFASSUNG
+# ======================================================================
+#
+# ✅ Erfolgreich: 2
+#    - shirt_catalog.json
+#    - rag_shirts_chunk.jsonl
+#
+# ✅ Alle Dateien erfolgreich synchronisiert!
+```
+
+### 2.5 Hemden-Stoffe in Datenbank importieren
+
+```bash
+# Importiere die Hemden-Stoffe
+python scripts/import_shirts_to_db.py
+
+# Erwartete Ausgabe:
+# 📂 Lade drive_mirror/henk/shirts/shirt_catalog.json...
+#
+# 📊 Katalog-Info:
+#    Name: Shirt Catalog
+#    Version: 1.0
+#    Total Shirts: 200
+#    Fabric Prefixes: ['72SH', '70SH', '73SH', '74SH']
+#
+#    72SH_series: 80 Stoffe gefunden
+#    70SH_series: 60 Stoffe gefunden
+#    73SH_series: 40 Stoffe gefunden
+#    74SH_series: 20 Stoffe gefunden
+#
+# 📦 Gesamt gefunden: 200 Hemden-Stoffe
+#
+# 🔄 Importiere in Datenbank...
+#    → 50 Stoffe importiert...
+#    → 100 Stoffe importiert...
+#    → 150 Stoffe importiert...
+#    → 200 Stoffe importiert...
+#
+# ✅ Import abgeschlossen!
+#    Eingefügt/Aktualisiert: 200
+#    Übersprungen: 0
+#
+# ======================================================================
+# 🎯 NÄCHSTE SCHRITTE
+# ======================================================================
+#
+# 1. Embeddings für Hemden-Stoffe generieren:
+#    python scripts/generate_fabric_embeddings.py --batch-size 50
+#
+# 2. Embeddings verifizieren:
+#    python scripts/verify_embeddings.py
+#
+# 3. RAG-System testen:
+#    python scripts/test_rag_fabric_search.py
+```
+
+### 2.6 Datenbank-Status prüfen
+
+```bash
+# Prüfe ob Hemden-Stoffe importiert wurden
+psql -U henk_user -d henk_rag -c "SELECT COUNT(*) FROM fabrics WHERE fabric_code LIKE '72SH%' OR fabric_code LIKE '70SH%' OR fabric_code LIKE '73SH%' OR fabric_code LIKE '74SH%';"
+
+# Erwartete Ausgabe: ~200 (oder mehr, je nach Katalog)
+```
+
+**✅ Checkpoint:** Hemden-Stoffe von Google Drive geladen und in Datenbank importiert
+
+---
+
+## 🔮 SCHRITT 3: Fabric Embeddings generieren (KRITISCH!)
+
+### 3.1 Warum ist das kritisch?
 
 **Problem:**
 - RAG Tool kann Stoffe NICHT semantisch suchen
@@ -86,7 +233,7 @@ python scripts/inspect_db.py
 - 4 Chunks pro Stoff = 7.952 Embeddings
 - Speichern in `fabric_embeddings` Tabelle
 
-### 2.2 Script existiert bereits!
+### 3.2 Script existiert bereits!
 
 ```bash
 # Das Script ist schon da:
@@ -95,7 +242,7 @@ ls -lh scripts/generate_fabric_embeddings.py
 # 16 KB, komplett implementiert
 ```
 
-### 2.3 Dry Run Test
+### 3.3 Dry Run Test
 
 ```bash
 # Zuerst testen ohne DB-Änderungen
@@ -115,7 +262,7 @@ python scripts/generate_fabric_embeddings.py --dry-run --batch-size 10
 # ✅ Batch complete: 10 fabrics, 40 embeddings
 ```
 
-### 2.4 Echte Generierung (15-30 Minuten)
+### 3.4 Echte Generierung (15-30 Minuten)
 
 ```bash
 # Jetzt echt generieren
@@ -161,7 +308,7 @@ python scripts/generate_fabric_embeddings.py --batch-size 50
 
 **Dauer:** 15-30 Minuten (abhängig von OpenAI API)
 
-### 2.5 Embeddings verifizieren
+### 3.5 Embeddings verifizieren
 
 ```bash
 # Nach Generierung prüfen
@@ -190,9 +337,9 @@ python scripts/verify_embeddings.py
 
 ---
 
-## 🧪 SCHRITT 3: RAG-System testen
+## 🧪 SCHRITT 4: RAG-System testen
 
-### 3.1 Test-Script erstellen
+### 4.1 Test-Script erstellen
 
 Das Script ist schon in TODO_RECHNER.md dokumentiert, aber hier nochmal:
 
@@ -294,7 +441,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### 3.2 Tests ausführen
+### 4.2 Tests ausführen
 
 ```bash
 python scripts/test_rag_fabric_search.py
@@ -338,11 +485,11 @@ python scripts/test_rag_fabric_search.py
 
 ---
 
-## 💰 SCHRITT 4: Pricing Schema erstellen (Optional)
+## 💰 SCHRITT 5: Pricing Schema erstellen (Optional)
 
 **Status:** Die DB hat schon `price_category` Feld!
 
-### 4.1 Pricing Rules Tabelle erstellen
+### 5.1 Pricing Rules Tabelle erstellen
 
 ```sql
 -- In psql oder als Script
@@ -398,7 +545,7 @@ INSERT INTO pricing_rules (price_category, garment_type, base_price_eur, descrip
 ('9', 'tuxedo', 2800.00, 'Smoking');
 ```
 
-### 4.2 Pricing Query Test
+### 5.2 Pricing Query Test
 
 ```sql
 -- Test: Preis für CAT 7 Zwei-Teiler
@@ -418,11 +565,11 @@ LIMIT 5;
 
 ---
 
-## 🤖 SCHRITT 5: Agent-Prompts integrieren
+## 🤖 SCHRITT 6: Agent-Prompts integrieren
 
 **Status:** Prompts vorhanden, müssen in Agents geladen werden
 
-### 5.1 Prompt Loader (bereits erstellt in vorherigem TODO)
+### 6.1 Prompt Loader (bereits erstellt in vorherigem TODO)
 
 ```python
 # agents/prompt_loader.py
@@ -449,9 +596,9 @@ def get_prompts():
 
 ---
 
-## 📝 SCHRITT 6: Dokumentation aktualisieren
+## 📝 SCHRITT 7: Dokumentation aktualisieren
 
-### 6.1 CLEANUP_SUMMARY.md ergänzen
+### 7.1 CLEANUP_SUMMARY.md ergänzen
 
 ```bash
 nano CLEANUP_SUMMARY.md
@@ -474,7 +621,7 @@ nano CLEANUP_SUMMARY.md
 - Datenbank-Größe: 1.988 Stoffe, 7.952 Embeddings
 ```
 
-### 6.2 README.md aktualisieren
+### 7.2 README.md aktualisieren
 
 ```bash
 nano README.md
@@ -499,9 +646,9 @@ nano README.md
 
 ---
 
-## 🚀 SCHRITT 7: End-to-End Test
+## 🚀 SCHRITT 8: End-to-End Test
 
-### 7.1 Kompletter Workflow-Test
+### 8.1 Kompletter Workflow-Test
 
 ```bash
 # Test kompletter Agent-Workflow
@@ -514,7 +661,7 @@ python tests/test_workflow.py
 # ✅ Workflow complete
 ```
 
-### 7.2 Manuelle RAG-Query
+### 8.2 Manuelle RAG-Query
 
 ```python
 # In Python REPL oder Jupyter
@@ -545,25 +692,31 @@ asyncio.run(test())
 ### ✅ Heute komplett:
 
 1. **Datenbank-Status geklärt**
-   - 1.988 Stoffe in henk_rag
+   - 1.988 Anzug-Stoffe in henk_rag
    - 483 RAG-Docs vorhanden
 
-2. **Fabric Embeddings generiert**
-   - 7.952 Embeddings (1.988 × 4)
-   - Kosten: $0.008
-   - Dauer: ~20 Minuten
+2. **Hemden-Stoffe von Google Drive integriert**
+   - Scripts erstellt: sync_shirts_from_drive.py + import_shirts_to_db.py
+   - Hemden-Stoffe (72SH, 70SH, 73SH, 74SH) ready für Import
+   - Automatische Synchronisierung von Google Drive
+   - Datenbank-Import mit ON CONFLICT handling
 
-3. **RAG-System validiert**
+3. **Fabric Embeddings generiert**
+   - 7.952+ Embeddings (1.988 Anzug + ~200 Hemden × 4 Chunks)
+   - Kosten: ~$0.01
+   - Dauer: ~25 Minuten
+
+4. **RAG-System validiert**
    - Semantic Search funktioniert
    - Similarity Scores 0.8+
    - Query-Zeit <100ms
 
-4. **Pricing Schema**
+5. **Pricing Schema**
    - CAT 1-9 Kategorien
    - Alle Garment-Types
    - Bereit für Integration
 
-5. **Prompts verfügbar**
+6. **Prompts verfügbar**
    - 4 Prompts (Core + HENK1/2/3)
    - Loader implementiert
    - Bereit für Agent-Integration
@@ -593,27 +746,38 @@ asyncio.run(test())
 
 **Die Datenbank läuft!** 🎉
 
-- **1.988 Stoffe** sind bereits drin (nicht 140!)
+- **1.988 Anzug-Stoffe** sind bereits drin (nicht 140!)
+- **Hemden-Stoffe** können jetzt von Google Drive geladen werden
 - **Embeddings MÜSSEN generiert werden** (aktuell 0)
-- **Script ist ready:** `python scripts/generate_fabric_embeddings.py`
-- **Kosten minimal:** ~$0.008 (unter 1 Cent)
-- **Dauer:** 15-30 Minuten
+- **Scripts sind ready:** sync + import + generate embeddings
+- **Kosten minimal:** ~$0.01 (1 Cent)
+- **Dauer:** 25-35 Minuten total
 
-**Nächster Schritt:**
+**Nächste Schritte:**
 ```bash
-# 1. .env mit richtiger DB-Verbindung aktualisieren
-# 2. Embeddings generieren:
+# 1. .env mit richtiger DB-Verbindung und Google Drive aktualisieren
+#    - DATABASE_URL=postgresql://henk_user:PASSWORD@localhost:5432/henk_rag
+#    - GOOGLE_DRIVE_CREDENTIALS_PATH=./credentials/google_drive_credentials.json
+#    - GOOGLE_DRIVE_FOLDER_ID=your_folder_id_here
+
+# 2. Hemden-Stoffe von Google Drive laden:
+python scripts/sync_shirts_from_drive.py
+
+# 3. Hemden-Stoffe in Datenbank importieren:
+python scripts/import_shirts_to_db.py
+
+# 4. Embeddings für ALLE Stoffe (Anzüge + Hemden) generieren:
 python scripts/generate_fabric_embeddings.py --batch-size 50
 
-# 3. Verifizieren:
+# 5. Verifizieren:
 python scripts/verify_embeddings.py
 
-# 4. Testen:
+# 6. Testen:
 python scripts/test_rag_fabric_search.py
 ```
 
 ---
 
-**Version**: 2.0 (Nach DB-Check)
+**Version**: 3.0 (Mit Hemden-Integration)
 **Datum**: 2025-12-08
-**Status**: ✅ READY - EMBEDDINGS GENERIEREN!
+**Status**: ✅ READY - GOOGLE DRIVE + EMBEDDINGS!

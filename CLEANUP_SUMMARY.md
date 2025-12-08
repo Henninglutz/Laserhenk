@@ -130,6 +130,18 @@ drive_mirror/henk/
 
 ## 🔧 Scripts & Tools
 
+### Google Drive Integration (NEU! 🆕)
+- `scripts/sync_shirts_from_drive.py` - Lädt Hemden-Daten von Google Drive
+  - shirt_catalog.json (72SH, 70SH, 73SH, 74SH Serien)
+  - rag_shirts_chunk.jsonl (RAG-Chunks für Hemden)
+  - Rekursive Ordnersuche
+  - Service Account Authentifizierung
+- `scripts/import_shirts_to_db.py` - Importiert Hemden-Stoffe in Datenbank
+  - Liest shirt_catalog.json
+  - Extrahiert Stoffe aus allen Serien
+  - ON CONFLICT handling (Update oder Insert)
+  - Fortschritts-Tracking
+
 ### Embedding-Tools
 - `scripts/generate_fabric_embeddings.py` - Generiert Embeddings für Stoffe
 - `scripts/verify_embeddings.py` - Verifiziert Embedding-Dimensionen (384)
@@ -175,13 +187,52 @@ drive_mirror/henk/
 
 ## ⚠️ Wichtige Hinweise
 
-1. **Hemden-Stoffe** sind kritisch und müssen aus Google Drive importiert werden
-2. **RAG-Chunks** können erst nach Import der Kataloge generiert werden
-3. **Embeddings** für fabric_catalog können bereits generiert werden
-4. **Code-Formatierung** sollte vor dem nächsten Commit durchgeführt werden
-5. **Tests** erweitern für vollständige Agent-Interaktion
+1. ✅ **Hemden-Stoffe Scripts erstellt** - sync_shirts_from_drive.py + import_shirts_to_db.py
+2. **Google Drive Credentials erforderlich** - Service Account JSON und Folder ID in .env
+3. **RAG-Chunks** können nach Hemden-Import generiert werden
+4. **Embeddings** für alle Stoffe (Anzüge + Hemden) müssen generiert werden
+5. **Code-Formatierung** abgeschlossen mit black + ruff
 
 ---
 
-**Letzte Aktualisierung**: 2025-12-08
-**Nächster Schritt**: Google Drive nach Hemden-Stoffen durchsuchen
+## 🎯 Neue Features (2025-12-08)
+
+### ✅ Google Drive Sync für Hemden-Stoffe
+**Problem gelöst:** Hemden-Stoffe (72SH, 70SH, 73SH, 74SH) waren nicht im Repository
+
+**Lösung:**
+1. **sync_shirts_from_drive.py** - Lädt Dateien von Google Drive:
+   - Rekursive Suche in drive_mirror/shirts Ordner
+   - Downloads: shirt_catalog.json + rag_shirts_chunk.jsonl
+   - Automatische JSON-Analyse
+   - Detaillierte Fortschritts-Ausgabe
+
+2. **import_shirts_to_db.py** - Importiert Stoffe in PostgreSQL:
+   - Liest shirt_catalog.json
+   - Extrahiert alle Serien (72SH, 70SH, 73SH, 74SH)
+   - INSERT ... ON CONFLICT DO UPDATE (idempotent)
+   - Tracking: inserted, skipped, errors
+   - Zeigt nächste Schritte (Embeddings generieren)
+
+**Workflow:**
+```bash
+# 1. Google Drive Credentials in .env setzen
+GOOGLE_DRIVE_CREDENTIALS_PATH=./credentials/google_drive_credentials.json
+GOOGLE_DRIVE_FOLDER_ID=your_folder_id_here
+
+# 2. Hemden-Daten herunterladen
+python scripts/sync_shirts_from_drive.py
+
+# 3. In Datenbank importieren
+python scripts/import_shirts_to_db.py
+
+# 4. Embeddings generieren
+python scripts/generate_fabric_embeddings.py --batch-size 50
+```
+
+**Status:** ✅ Scripts fertig, ready für Ausführung
+
+---
+
+**Letzte Aktualisierung**: 2025-12-08 (Update 2)
+**Nächster Schritt**: Google Drive Credentials setzen → Hemden-Sync ausführen

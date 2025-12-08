@@ -110,6 +110,8 @@ laserhenk/
 │           └── style_catalog.json
 │
 ├── scripts/                    # Utility Scripts
+│   ├── sync_shirts_from_drive.py      # 🆕 Google Drive Sync (Hemden)
+│   ├── import_shirts_to_db.py         # 🆕 Hemden-Stoffe Import
 │   ├── generate_fabric_embeddings.py
 │   ├── verify_embeddings.py
 │   ├── inspect_db.py
@@ -266,6 +268,16 @@ Alle fehlenden Kataloge haben jetzt vollständige JSON-Templates:
 - **Options Catalog** - HENK2 Maßkonfektion-Optionen
 - **Style Catalog** - Dress Codes, Farb-Kombinationen, Style Rules, Body Types
 
+### ✅ Google Drive Integration (NEU! 🆕)
+- **`scripts/sync_shirts_from_drive.py`** - Lädt Hemden-Daten von Google Drive
+  - Rekursive Suche nach shirt_catalog.json und rag_shirts_chunk.jsonl
+  - Service Account Authentifizierung
+  - Automatische JSON-Analyse
+- **`scripts/import_shirts_to_db.py`** - Importiert Hemden-Stoffe in Datenbank
+  - Extrahiert alle Serien (72SH, 70SH, 73SH, 74SH)
+  - ON CONFLICT handling (Update oder Insert)
+  - Fortschritts-Tracking
+
 ### ✅ Code-Qualität
 - Code-Formatierung mit **black** durchgeführt (24 Dateien)
 - Alle **ruff** Checks bestanden
@@ -273,19 +285,21 @@ Alle fehlenden Kataloge haben jetzt vollständige JSON-Templates:
 - Bare except-Statements behoben
 
 ### ✅ Dokumentation
-- **TODO.md** - Detaillierter Entwicklungsplan für heute
+- **TODO_RECHNER.md** - Technischer Entwicklungsplan mit Step-by-Step Anleitung
+- **TODO_SMARTPHONE.md** - Mobile-freundliche Entscheidungsliste
 - **CLEANUP_SUMMARY.md** - Vollständige Zusammenfassung aller Änderungen
 - **README.md** - Aktualisierte Projekt-Struktur
 
 ### 📋 Nächste Schritte
-Siehe **[TODO.md](TODO.md)** für den detaillierten Entwicklungsplan:
-1. Google Drive nach Hemden-Stoffen durchsuchen (72SH, 70SH, 73SH, 74SH)
-2. Kataloge mit echten Daten befüllen
-3. Fabric Embeddings generieren: `python scripts/generate_fabric_embeddings.py`
-4. RAG-System validieren: `python scripts/verify_embeddings.py`
-5. Agent-Tests erweitern
+Siehe **[TODO_RECHNER.md](TODO_RECHNER.md)** für den detaillierten technischen Plan:
+1. Google Drive Credentials in .env setzen
+2. Hemden-Stoffe von Google Drive laden: `python scripts/sync_shirts_from_drive.py`
+3. Hemden in Datenbank importieren: `python scripts/import_shirts_to_db.py`
+4. Fabric Embeddings generieren: `python scripts/generate_fabric_embeddings.py --batch-size 50`
+5. RAG-System validieren: `python scripts/verify_embeddings.py`
+6. Semantic Search testen: `python scripts/test_rag_fabric_search.py`
 
 ---
 
-**Version**: 1.1.0 (Cleanup & Catalog Templates)
+**Version**: 1.2.0 (Google Drive Sync + Hemden-Integration)
 **Datum**: 2025-12-08
