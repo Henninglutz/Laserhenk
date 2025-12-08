@@ -1,209 +1,209 @@
 {
-Anzug dreiteilig: {
-Einstieg: {
-verkaufspreis_brutto: 1000,
-verkaufspreis_netto: 840.3361344537816,
-interne_ek: 343,
-marge_absolut: 497.3361344537816,
-quelle_cat: "CAT 5"
+"Anzug dreiteilig": {
+"Einstieg": {
+"verkaufspreis_brutto": 1000,
+"verkaufspreis_netto": 840.3361344537816,
+"interne_ek": 343,
+"marge_absolut": 497.3361344537816,
+"quelle_cat": "CAT 5"
 },
-Premium: {
-verkaufspreis_brutto: 1800,
-verkaufspreis_netto: 1512.6050420168067,
-interne_ek: 386,
-marge_absolut: 1126.6050420168067,
-quelle_cat: "CAT 7"
+"Premium": {
+"verkaufspreis_brutto": 1800,
+"verkaufspreis_netto": 1512.6050420168067,
+"interne_ek": 386,
+"marge_absolut": 1126.6050420168067,
+"quelle_cat": "CAT 7"
 },
-Luxus: {
-verkaufspreis_brutto: 2000,
-verkaufspreis_netto: 1680.6722689075632,
-interne_ek: 430,
-marge_absolut: 1250.6722689075632,
-quelle_cat: "CAT 9"
+"Luxus": {
+"verkaufspreis_brutto": 2000,
+"verkaufspreis_netto": 1680.6722689075632,
+"interne_ek": 430,
+"marge_absolut": 1250.6722689075632,
+"quelle_cat": "CAT 9"
 }
 },
-Anzug zweiteilig: {
-Einstieg: {
-verkaufspreis_brutto: 870,
-verkaufspreis_netto: 731.0924369747898,
-interne_ek: 272,
-marge_absolut: 459.09243697478985,
-quelle_cat: "CAT 5"
+"Anzug zweiteilig": {
+"Einstieg": {
+"verkaufspreis_brutto": 870,
+"verkaufspreis_netto": 731.0924369747898,
+"interne_ek": 272,
+"marge_absolut": 459.09243697478985,
+"quelle_cat": "CAT 5"
 },
-Premium: {
-verkaufspreis_brutto: 1500,
-verkaufspreis_netto: 1260.5042016806722,
-interne_ek: 304,
-marge_absolut: 956.5042016806722,
-quelle_cat: "CAT 7"
+"Premium": {
+"verkaufspreis_brutto": 1500,
+"verkaufspreis_netto": 1260.5042016806722,
+"interne_ek": 304,
+"marge_absolut": 956.5042016806722,
+"quelle_cat": "CAT 7"
 },
-Luxus: {
-verkaufspreis_brutto: 1500,
-verkaufspreis_netto: 1260.5042016806722,
-interne_ek: 348,
-marge_absolut: 912.5042016806722,
-quelle_cat: "CAT 9"
+"Luxus": {
+"verkaufspreis_brutto": 1500,
+"verkaufspreis_netto": 1260.5042016806722,
+"interne_ek": 348,
+"marge_absolut": 912.5042016806722,
+"quelle_cat": "CAT 9"
 }
 },
-Hemd: {
-Einstieg: {
-verkaufspreis_brutto: 180,
-verkaufspreis_netto: 151.26050420168067,
-interne_ek: 85,
-marge_absolut: 66.26050420168067,
-quelle_cat: "CAT 5"
+"Hemd": {
+"Einstieg": {
+"verkaufspreis_brutto": 180,
+"verkaufspreis_netto": 151.26050420168067,
+"interne_ek": 85,
+"marge_absolut": 66.26050420168067,
+"quelle_cat": "CAT 5"
 },
-Premium: {
-verkaufspreis_brutto: 200,
-verkaufspreis_netto: 168.0672268907563,
-interne_ek: 95,
-marge_absolut: 73.0672268907563,
-quelle_cat: "CAT 7"
+"Premium": {
+"verkaufspreis_brutto": 200,
+"verkaufspreis_netto": 168.0672268907563,
+"interne_ek": 95,
+"marge_absolut": 73.0672268907563,
+"quelle_cat": "CAT 7"
 },
-Luxus: {
-verkaufspreis_brutto: 250,
-verkaufspreis_netto: 210.0840336134454,
-interne_ek: 104,
-marge_absolut: 106.0840336134454,
-quelle_cat: "CAT 9"
+"Luxus": {
+"verkaufspreis_brutto": 250,
+"verkaufspreis_netto": 210.0840336134454,
+"interne_ek": 104,
+"marge_absolut": 106.0840336134454,
+"quelle_cat": "CAT 9"
 }
 },
-Hose: {
-Einstieg: {
-verkaufspreis_brutto: 260,
-verkaufspreis_netto: 218.48739495798318,
-interne_ek: 90,
-marge_absolut: 128.48739495798318,
-quelle_cat: "CAT 5"
+"Hose": {
+"Einstieg": {
+"verkaufspreis_brutto": 260,
+"verkaufspreis_netto": 218.48739495798318,
+"interne_ek": 90,
+"marge_absolut": 128.48739495798318,
+"quelle_cat": "CAT 5"
 },
-Premium: {
-verkaufspreis_brutto: 400,
-verkaufspreis_netto: 336.1344537815126,
-interne_ek: 102,
-marge_absolut: 234.1344537815126,
-quelle_cat: "CAT 7"
+"Premium": {
+"verkaufspreis_brutto": 400,
+"verkaufspreis_netto": 336.1344537815126,
+"interne_ek": 102,
+"marge_absolut": 234.1344537815126,
+"quelle_cat": "CAT 7"
 },
-Luxus: {
-verkaufspreis_brutto: 500,
-verkaufspreis_netto: 420.1680672268908,
-interne_ek: 120,
-marge_absolut: 300.1680672268908,
-quelle_cat: "CAT 9"
+"Luxus": {
+"verkaufspreis_brutto": 500,
+"verkaufspreis_netto": 420.1680672268908,
+"interne_ek": 120,
+"marge_absolut": 300.1680672268908,
+"quelle_cat": "CAT 9"
 }
 },
-Jacke: {
-Einstieg: {
-verkaufspreis_brutto: 500,
-verkaufspreis_netto: 420.1680672268908,
-interne_ek: 155,
-marge_absolut: 265.1680672268908,
-quelle_cat: "CAT 5"
+"Jacke": {
+"Einstieg": {
+"verkaufspreis_brutto": 500,
+"verkaufspreis_netto": 420.1680672268908,
+"interne_ek": 155,
+"marge_absolut": 265.1680672268908,
+"quelle_cat": "CAT 5"
 },
-Premium: {
-verkaufspreis_brutto: 670,
-verkaufspreis_netto: 563.0252100840337,
-interne_ek: 172,
-marge_absolut: 391.0252100840337,
-quelle_cat: "CAT 7"
+"Premium": {
+"verkaufspreis_brutto": 670,
+"verkaufspreis_netto": 563.0252100840337,
+"interne_ek": 172,
+"marge_absolut": 391.0252100840337,
+"quelle_cat": "CAT 7"
 },
-Luxus: {
-verkaufspreis_brutto: 800,
-verkaufspreis_netto: 672.2689075630252,
-interne_ek: 190,
-marge_absolut: 482.2689075630252,
-quelle_cat: "CAT 9"
+"Luxus": {
+"verkaufspreis_brutto": 800,
+"verkaufspreis_netto": 672.2689075630252,
+"interne_ek": 190,
+"marge_absolut": 482.2689075630252,
+"quelle_cat": "CAT 9"
 }
 },
-Mantel: {
-Einstieg: {
-verkaufspreis_brutto: 770,
-verkaufspreis_netto: 647.0588235294118,
-interne_ek: 219,
-marge_absolut: 428.0588235294118,
-quelle_cat: "CAT 5"
+"Mantel": {
+"Einstieg": {
+"verkaufspreis_brutto": 770,
+"verkaufspreis_netto": 647.0588235294118,
+"interne_ek": 219,
+"marge_absolut": 428.0588235294118,
+"quelle_cat": "CAT 5"
 },
-Premium: {
-verkaufspreis_brutto: 850,
-verkaufspreis_netto: 714.2857142857143,
-interne_ek: 237,
-marge_absolut: 477.28571428571433,
-quelle_cat: "CAT 7"
+"Premium": {
+"verkaufspreis_brutto": 850,
+"verkaufspreis_netto": 714.2857142857143,
+"interne_ek": 237,
+"marge_absolut": 477.28571428571433,
+"quelle_cat": "CAT 7"
 },
-Luxus: {
-verkaufspreis_brutto: 1500,
-verkaufspreis_netto: 1260.5042016806722,
-interne_ek: 265,
-marge_absolut: 995.5042016806722,
-quelle_cat: "CAT 9"
+"Luxus": {
+"verkaufspreis_brutto": 1500,
+"verkaufspreis_netto": 1260.5042016806722,
+"interne_ek": 265,
+"marge_absolut": 995.5042016806722,
+"quelle_cat": "CAT 9"
 }
 },
-Regenmantel: {
-Einstieg: {
-verkaufspreis_brutto: 770,
-verkaufspreis_netto: 647.0588235294118,
-interne_ek: 225,
-marge_absolut: 422.0588235294118,
-quelle_cat: "CAT 5"
+"Regenmantel": {
+"Einstieg": {
+"verkaufspreis_brutto": 770,
+"verkaufspreis_netto": 647.0588235294118,
+"interne_ek": 225,
+"marge_absolut": 422.0588235294118,
+"quelle_cat": "CAT 5"
 },
-Premium: {
-verkaufspreis_brutto: 1100,
-verkaufspreis_netto: 924.3697478991596,
-interne_ek: 260,
-marge_absolut: 664.3697478991596,
-quelle_cat: "CAT 7"
+"Premium": {
+"verkaufspreis_brutto": 1100,
+"verkaufspreis_netto": 924.3697478991596,
+"interne_ek": 260,
+"marge_absolut": 664.3697478991596,
+"quelle_cat": "CAT 7"
 },
-Luxus: {
-verkaufspreis_brutto: 1400,
-verkaufspreis_netto: 1176.4705882352941,
-interne_ek: 292,
-marge_absolut: 884.4705882352941,
-quelle_cat: "CAT 9"
+"Luxus": {
+"verkaufspreis_brutto": 1400,
+"verkaufspreis_netto": 1176.4705882352941,
+"interne_ek": 292,
+"marge_absolut": 884.4705882352941,
+"quelle_cat": "CAT 9"
 }
 },
-Sakko: {
-Einstieg: {
-verkaufspreis_brutto: 500,
-verkaufspreis_netto: 420.1680672268908,
-interne_ek: 188,
-marge_absolut: 232.1680672268908,
-quelle_cat: "CAT 5"
+"Sakko": {
+"Einstieg": {
+"verkaufspreis_brutto": 500,
+"verkaufspreis_netto": 420.1680672268908,
+"interne_ek": 188,
+"marge_absolut": 232.1680672268908,
+"quelle_cat": "CAT 5"
 },
-Premium: {
-verkaufspreis_brutto: 800,
-verkaufspreis_netto: 672.2689075630252,
-interne_ek: 209,
-marge_absolut: 463.2689075630252,
-quelle_cat: "CAT 7"
+"Premium": {
+"verkaufspreis_brutto": 800,
+"verkaufspreis_netto": 672.2689075630252,
+"interne_ek": 209,
+"marge_absolut": 463.2689075630252,
+"quelle_cat": "CAT 7"
 },
-Luxus: {
-verkaufspreis_brutto: 1000,
-verkaufspreis_netto: 840.3361344537816,
-interne_ek: 232,
-marge_absolut: 608.3361344537816,
-quelle_cat: "CAT 9"
+"Luxus": {
+"verkaufspreis_brutto": 1000,
+"verkaufspreis_netto": 840.3361344537816,
+"interne_ek": 232,
+"marge_absolut": 608.3361344537816,
+"quelle_cat": "CAT 9"
 }
 },
-Weste: {
-Einstieg: {
-verkaufspreis_brutto: 250,
-verkaufspreis_netto: 210.0840336134454,
-interne_ek: 78,
-marge_absolut: 132.0840336134454,
-quelle_cat: "CAT 5"
+"Weste": {
+"Einstieg": {
+"verkaufspreis_brutto": 250,
+"verkaufspreis_netto": 210.0840336134454,
+"interne_ek": 78,
+"marge_absolut": 132.0840336134454,
+"quelle_cat": "CAT 5"
 },
-Premium: {
-verkaufspreis_brutto: 300,
-verkaufspreis_netto: 252.10084033613444,
-interne_ek: 85,
-marge_absolut: 167.10084033613444,
-quelle_cat: "CAT 7"
+"Premium": {
+"verkaufspreis_brutto": 300,
+"verkaufspreis_netto": 252.10084033613444,
+"interne_ek": 85,
+"marge_absolut": 167.10084033613444,
+"quelle_cat": "CAT 7"
 },
-Luxus: {
-verkaufspreis_brutto: 400,
-verkaufspreis_netto: 336.1344537815126,
-interne_ek: 95,
-marge_absolut: 241.1344537815126,
-quelle_cat: "CAT 9"
+"Luxus": {
+"verkaufspreis_brutto": 400,
+"verkaufspreis_netto": 336.1344537815126,
+"interne_ek": 95,
+"marge_absolut": 241.1344537815126,
+"quelle_cat": "CAT 9"
 }
 }
 }
