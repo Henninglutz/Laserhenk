@@ -1,7 +1,13 @@
 """Test script to debug the RAG infinite loop issue."""
 
 import asyncio
+import sys
 import uuid
+from pathlib import Path
+
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 from models.graph_state import create_initial_graph_state
 from workflow import create_workflow
