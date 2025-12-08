@@ -187,52 +187,67 @@ drive_mirror/henk/
 
 ## ⚠️ Wichtige Hinweise
 
-1. ✅ **Hemden-Stoffe Scripts erstellt** - sync_shirts_from_drive.py + import_shirts_to_db.py
-2. **Google Drive Credentials erforderlich** - Service Account JSON und Folder ID in .env
-3. **RAG-Chunks** können nach Hemden-Import generiert werden
-4. **Embeddings** für alle Stoffe (Anzüge + Hemden) müssen generiert werden
-5. **Code-Formatierung** abgeschlossen mit black + ruff
+1. ✅ **Hemdenstoffe sind BEREITS in der Datenbank!** (7XSHXXX = 72SH, 70SH, 73SH, 74SH)
+2. ✅ **Hemden-Konfigurationen vollständig** - Kragen, Manschetten, Fit-Typen in shirt_catalog.json
+3. ✅ **Style-Katalog komplett** - Dress Codes, Farb-Kombinationen, Body Types
+4. ❌ **Embeddings fehlen** - KRITISCH für Semantic Search (aktuell 0 von 7.952)
+5. ✅ **Code-Formatierung** abgeschlossen mit black + ruff
+6. ✅ **Test Import Fix** - test_workflow.py jetzt ausführbar
 
 ---
 
-## 🎯 Neue Features (2025-12-08)
+## 🎯 Aktuelle Erkenntnisse (2025-12-08 Update 3)
 
-### ✅ Google Drive Sync für Hemden-Stoffe
-**Problem gelöst:** Hemden-Stoffe (72SH, 70SH, 73SH, 74SH) waren nicht im Repository
+### ✅ Hemdenstoffe bereits in Datenbank!
+**Wichtige Erkenntnis:** Die 1.988 Stoffe enthalten BEIDE Kategorien:
 
-**Lösung:**
-1. **sync_shirts_from_drive.py** - Lädt Dateien von Google Drive:
-   - Rekursive Suche in drive_mirror/shirts Ordner
-   - Downloads: shirt_catalog.json + rag_shirts_chunk.jsonl
-   - Automatische JSON-Analyse
-   - Detaillierte Fortschritts-Ausgabe
+**Anzugstoffe:**
+- Referenzmuster: 6xxxxx, 5xxxxx, etc.
+- Supplier: VITALE BARBERIS, LORO PIANA, CERRUTI, etc.
+- CAT 5-9 Kategorien
 
-2. **import_shirts_to_db.py** - Importiert Stoffe in PostgreSQL:
-   - Liest shirt_catalog.json
-   - Extrahiert alle Serien (72SH, 70SH, 73SH, 74SH)
-   - INSERT ... ON CONFLICT DO UPDATE (idempotent)
-   - Tracking: inserted, skipped, errors
-   - Zeigt nächste Schritte (Embeddings generieren)
+**Hemdenstoffe:**
+- Referenzmuster: **72SH, 70SH, 73SH, 74SH** (7XSHXXX Pattern)
+- Bereits in der Datenbank `henk_rag`
+- Kein separater Import von Google Drive nötig!
 
-**Workflow:**
-```bash
-# 1. Google Drive Credentials in .env setzen
-GOOGLE_DRIVE_CREDENTIALS_PATH=./credentials/google_drive_credentials.json
-GOOGLE_DRIVE_FOLDER_ID=your_folder_id_here
-
-# 2. Hemden-Daten herunterladen
-python scripts/sync_shirts_from_drive.py
-
-# 3. In Datenbank importieren
-python scripts/import_shirts_to_db.py
-
-# 4. Embeddings generieren
-python scripts/generate_fabric_embeddings.py --batch-size 50
+**Hemden-Konfigurationen (bereits definiert):**
+```json
+{
+  "collar_types": ["Kent", "Button-Down", "Haifisch", "Stehkragen"],
+  "cuff_types": ["Umschlagmanschette", "Knopfmanschette"],
+  "pocket_types": ["no_pocket", "patch_pocket"],
+  "fit_types": ["slim_fit", "regular_fit", "comfort_fit"]
+}
 ```
 
-**Status:** ✅ Scripts fertig, ready für Ausführung
+**Style-Katalog (vollständig):**
+- 4 Dress Codes (Business Formal, Business Casual, Smart Casual, Formal Evening)
+- Farb-Kombinationen für jeden Anzugtyp
+- 6 Body Types mit spezifischen Empfehlungen
+- Fit Guidelines, Pattern Mixing, Seasonal Guidelines
+
+### 🚀 Google Drive Sync Scripts (für zukünftige Nutzung)
+
+Die Scripts existieren für potenzielle Updates:
+1. **sync_shirts_from_drive.py** - Google Drive Sync (falls Updates nötig)
+2. **import_shirts_to_db.py** - Datenbank-Import (falls neue Stoffe hinzukommen)
+
+**Aktuell NICHT benötigt**, da Daten bereits vorhanden!
+
+### ⚡ Nächster kritischer Schritt
+
+**Embeddings generieren für alle 1.988 Stoffe:**
+```bash
+# Embeddings für Anzüge + Hemden gemeinsam generieren
+python scripts/generate_fabric_embeddings.py --batch-size 50
+
+# Kosten: ~$0.008 (unter 1 Cent)
+# Dauer: 20-30 Minuten
+# Output: 7.952 Embeddings (1.988 × 4 Chunks)
+```
 
 ---
 
-**Letzte Aktualisierung**: 2025-12-08 (Update 2)
-**Nächster Schritt**: Google Drive Credentials setzen → Hemden-Sync ausführen
+**Letzte Aktualisierung**: 2025-12-08 (Update 3 - Hemdenstoffe in DB erkannt)
+**Nächster Schritt**: Embeddings generieren für RAG Semantic Search

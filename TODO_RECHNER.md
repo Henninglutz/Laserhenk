@@ -72,150 +72,77 @@ python scripts/inspect_db.py
 
 ---
 
-## 🎽 SCHRITT 2: Hemden-Stoffe von Google Drive laden
+## 🎽 SCHRITT 2: Hemdenstoffe in Datenbank verifizieren
 
-### 2.1 Shirt Catalog von Google Drive synchronisieren
+### 2.1 Wichtige Erkenntnis: Hemdenstoffe sind BEREITS in der DB! ✅
 
-**Status:** Scripts vorhanden und bereit!
+**Referenzmuster für Hemdenstoffe:**
+- **72SH**xxx - Hemden Serie 1
+- **70SH**xxx - Hemden Serie 2
+- **73SH**xxx - Hemden Serie 3
+- **74SH**xxx - Hemden Serie 4
 
-```bash
-# Prüfe die Scripts
-ls -lh scripts/sync_shirts_from_drive.py
-ls -lh scripts/import_shirts_to_db.py
-```
+Die 1.988 Stoffe in der Datenbank enthalten:
+- Anzugstoffe (6xxxxx, 5xxxxx, etc.)
+- **UND** Hemdenstoffe (72SH, 70SH, 73SH, 74SH)
 
-### 2.2 Google Drive Credentials einrichten
-
-```bash
-# .env aktualisieren
-nano .env
-
-# Füge hinzu:
-GOOGLE_DRIVE_CREDENTIALS_PATH=./credentials/google_drive_credentials.json
-GOOGLE_DRIVE_FOLDER_ID=your_folder_id_from_drive_mirror
-```
-
-**Wo finde ich die Folder ID?**
-- Öffne Google Drive: drive_mirror → shirts Ordner
-- Kopiere die ID aus der URL: `https://drive.google.com/drive/folders/FOLDER_ID_HIER`
-
-### 2.3 Google Service Account Credentials
-
-Falls noch nicht vorhanden, erstelle einen Service Account:
-
-1. Google Cloud Console: https://console.cloud.google.com
-2. APIs & Services → Credentials
-3. Create Credentials → Service Account
-4. Download JSON Credentials
-5. Speichere als `credentials/google_drive_credentials.json`
-6. Gib dem Service Account Zugriff auf den drive_mirror Ordner
-
-### 2.4 Shirt Catalog herunterladen
+### 2.2 Hemdenstoffe zählen
 
 ```bash
-# Synchronisiere die Hemden-Dateien
-python scripts/sync_shirts_from_drive.py
+# Zähle Hemdenstoffe in der Datenbank
+psql -U henk_user -d henk_rag -c "
+SELECT
+  CASE
+    WHEN fabric_code LIKE '72SH%' THEN '72SH Serie'
+    WHEN fabric_code LIKE '70SH%' THEN '70SH Serie'
+    WHEN fabric_code LIKE '73SH%' THEN '73SH Serie'
+    WHEN fabric_code LIKE '74SH%' THEN '74SH Serie'
+  END as serie,
+  COUNT(*) as anzahl
+FROM fabrics
+WHERE fabric_code LIKE '7%SH%'
+GROUP BY serie
+ORDER BY serie;
+"
 
-# Erwartete Ausgabe:
-# ======================================================================
-# 📥 SYNC SHIRT CATALOG FROM GOOGLE DRIVE
-# ======================================================================
-#
-# ✅ Lade Credentials von: ./credentials/google_drive_credentials.json
-# 📁 Google Drive Folder ID: abc123xyz...
-#
-# ======================================================================
-# 📄 Datei: shirt_catalog.json
-# ======================================================================
-# 🔍 Suche nach 'shirt_catalog.json'...
-# ✅ Gefunden: shirt_catalog.json
-#    ID: file_id_here
-#    Link: https://drive.google.com/...
-# 📥 Lade herunter nach: drive_mirror/henk/shirts/shirt_catalog.json
-#    Download 100% complete
-# ✅ Download complete!
-#
-# 📊 Datei-Analyse:
-#    Type: <class 'dict'>
-#    Keys: ['meta', 'fabrics']
-#    Meta: {'catalog_name': 'Shirt Catalog', 'version': '1.0', ...}
-#    Fabric Series: ['72SH_series', '70SH_series', '73SH_series', '74SH_series']
-#
-# ======================================================================
-# 📄 Datei: rag_shirts_chunk.jsonl
-# ======================================================================
-# 🔍 Suche nach 'rag_shirts_chunk.jsonl'...
-# ✅ Gefunden: rag_shirts_chunk.jsonl
-#    ID: file_id_here
-# ...
-#
-# ======================================================================
-# 📊 ZUSAMMENFASSUNG
-# ======================================================================
-#
-# ✅ Erfolgreich: 2
-#    - shirt_catalog.json
-#    - rag_shirts_chunk.jsonl
-#
-# ✅ Alle Dateien erfolgreich synchronisiert!
+# Erwartete Ausgabe: Anzahl pro Serie
+# 70SH Serie | XX
+# 72SH Serie | XX
+# 73SH Serie | XX
+# 74SH Serie | XX
 ```
 
-### 2.5 Hemden-Stoffe in Datenbank importieren
+### 2.3 Beispiel-Hemdenstoffe anzeigen
 
 ```bash
-# Importiere die Hemden-Stoffe
-python scripts/import_shirts_to_db.py
-
-# Erwartete Ausgabe:
-# 📂 Lade drive_mirror/henk/shirts/shirt_catalog.json...
-#
-# 📊 Katalog-Info:
-#    Name: Shirt Catalog
-#    Version: 1.0
-#    Total Shirts: 200
-#    Fabric Prefixes: ['72SH', '70SH', '73SH', '74SH']
-#
-#    72SH_series: 80 Stoffe gefunden
-#    70SH_series: 60 Stoffe gefunden
-#    73SH_series: 40 Stoffe gefunden
-#    74SH_series: 20 Stoffe gefunden
-#
-# 📦 Gesamt gefunden: 200 Hemden-Stoffe
-#
-# 🔄 Importiere in Datenbank...
-#    → 50 Stoffe importiert...
-#    → 100 Stoffe importiert...
-#    → 150 Stoffe importiert...
-#    → 200 Stoffe importiert...
-#
-# ✅ Import abgeschlossen!
-#    Eingefügt/Aktualisiert: 200
-#    Übersprungen: 0
-#
-# ======================================================================
-# 🎯 NÄCHSTE SCHRITTE
-# ======================================================================
-#
-# 1. Embeddings für Hemden-Stoffe generieren:
-#    python scripts/generate_fabric_embeddings.py --batch-size 50
-#
-# 2. Embeddings verifizieren:
-#    python scripts/verify_embeddings.py
-#
-# 3. RAG-System testen:
-#    python scripts/test_rag_fabric_search.py
+# Zeige erste 10 Hemdenstoffe
+psql -U henk_user -d henk_rag -c "
+SELECT fabric_code, supplier, composition, color, weight
+FROM fabrics
+WHERE fabric_code LIKE '7%SH%'
+LIMIT 10;
+"
 ```
 
-### 2.6 Datenbank-Status prüfen
+### 2.4 Hemden-Konfigurationen sind auch vorhanden!
 
-```bash
-# Prüfe ob Hemden-Stoffe importiert wurden
-psql -U henk_user -d henk_rag -c "SELECT COUNT(*) FROM fabrics WHERE fabric_code LIKE '72SH%' OR fabric_code LIKE '70SH%' OR fabric_code LIKE '73SH%' OR fabric_code LIKE '74SH%';"
+In `drive_mirror/henk/shirts/shirt_catalog.json` sind bereits definiert:
 
-# Erwartete Ausgabe: ~200 (oder mehr, je nach Katalog)
-```
+**Kragenformen (4 Typen):**
+- Kent (Business/Formal)
+- Button-Down (Business Casual)
+- Haifisch (Formal, weit gespreizt)
+- Stehkragen (Casual/Modern)
 
-**✅ Checkpoint:** Hemden-Stoffe von Google Drive geladen und in Datenbank importiert
+**Manschettenformen (2 Typen):**
+- Umschlagmanschette (Formal, für Manschettenknöpfe)
+- Knopfmanschette (Business/Casual, Standard)
+
+**Plus:**
+- Brusttaschen (mit/ohne)
+- Fit-Typen (Slim/Regular/Comfort)
+
+**✅ Checkpoint:** Hemdenstoffe sind in DB, Konfigurationen sind definiert
 
 ---
 
@@ -692,19 +619,21 @@ asyncio.run(test())
 ### ✅ Heute komplett:
 
 1. **Datenbank-Status geklärt**
-   - 1.988 Anzug-Stoffe in henk_rag
+   - 1.988 Stoffe in henk_rag (Anzüge + Hemden!)
    - 483 RAG-Docs vorhanden
+   - ✅ Hemdenstoffe bereits in DB (7XSHXXX Pattern)
 
-2. **Hemden-Stoffe von Google Drive integriert**
-   - Scripts erstellt: sync_shirts_from_drive.py + import_shirts_to_db.py
-   - Hemden-Stoffe (72SH, 70SH, 73SH, 74SH) ready für Import
-   - Automatische Synchronisierung von Google Drive
-   - Datenbank-Import mit ON CONFLICT handling
+2. **Hemden-Konfigurationen vollständig**
+   - 4 Kragenformen definiert (Kent, Button-Down, Haifisch, Stehkragen)
+   - 2 Manschettenformen (Umschlag, Knopf)
+   - Fit-Typen und Optionen dokumentiert
+   - In shirt_catalog.json strukturiert
 
 3. **Fabric Embeddings generiert**
-   - 7.952+ Embeddings (1.988 Anzug + ~200 Hemden × 4 Chunks)
-   - Kosten: ~$0.01
-   - Dauer: ~25 Minuten
+   - 7.952 Embeddings (1.988 Stoffe × 4 Chunks)
+   - Anzugstoffe + Hemdenstoffe gemeinsam
+   - Kosten: ~$0.008 (unter 1 Cent)
+   - Dauer: ~20 Minuten
 
 4. **RAG-System validiert**
    - Semantic Search funktioniert
@@ -746,38 +675,37 @@ asyncio.run(test())
 
 **Die Datenbank läuft!** 🎉
 
-- **1.988 Anzug-Stoffe** sind bereits drin (nicht 140!)
-- **Hemden-Stoffe** können jetzt von Google Drive geladen werden
+- **1.988 Stoffe** sind bereits drin (Anzüge + Hemden!)
+- **Hemdenstoffe** (72SH, 70SH, 73SH, 74SH) sind IN DER DB ✅
+- **Hemden-Konfigurationen** vollständig (Kragen, Manschetten, Fit)
+- **Style-Katalog** komplett mit Empfehlungen
 - **Embeddings MÜSSEN generiert werden** (aktuell 0)
-- **Scripts sind ready:** sync + import + generate embeddings
-- **Kosten minimal:** ~$0.01 (1 Cent)
-- **Dauer:** 25-35 Minuten total
+- **Kosten minimal:** ~$0.008 (unter 1 Cent!)
+- **Dauer:** 20-30 Minuten
 
 **Nächste Schritte:**
 ```bash
-# 1. .env mit richtiger DB-Verbindung und Google Drive aktualisieren
-#    - DATABASE_URL=postgresql://henk_user:PASSWORD@localhost:5432/henk_rag
-#    - GOOGLE_DRIVE_CREDENTIALS_PATH=./credentials/google_drive_credentials.json
-#    - GOOGLE_DRIVE_FOLDER_ID=your_folder_id_here
+# 1. .env mit DB-Verbindung aktualisieren
+#    DATABASE_URL=postgresql://henk_user:PASSWORD@localhost:5432/henk_rag
+#    OPENAI_API_KEY=sk-...
 
-# 2. Hemden-Stoffe von Google Drive laden:
-python scripts/sync_shirts_from_drive.py
-
-# 3. Hemden-Stoffe in Datenbank importieren:
-python scripts/import_shirts_to_db.py
-
-# 4. Embeddings für ALLE Stoffe (Anzüge + Hemden) generieren:
+# 2. Embeddings für ALLE 1.988 Stoffe generieren:
 python scripts/generate_fabric_embeddings.py --batch-size 50
 
-# 5. Verifizieren:
+# 3. Verifizieren:
 python scripts/verify_embeddings.py
 
-# 6. Testen:
+# 4. Semantic Search testen:
 python scripts/test_rag_fabric_search.py
 ```
 
+**Wichtig:** Hemdenstoffe sind bereits in der Datenbank!
+- Referenzmuster: 72SH, 70SH, 73SH, 74SH = Hemden
+- Kein separater Import nötig
+- Embeddings werden für alle Stoffe gemeinsam generiert
+
 ---
 
-**Version**: 3.0 (Mit Hemden-Integration)
+**Version**: 4.0 (Hemdenstoffe in DB erkannt)
 **Datum**: 2025-12-08
-**Status**: ✅ READY - GOOGLE DRIVE + EMBEDDINGS!
+**Status**: ✅ READY - NUR EMBEDDINGS FEHLEN!
