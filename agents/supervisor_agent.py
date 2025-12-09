@@ -12,13 +12,17 @@ Key Features:
 """
 
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent as PydanticAgent
 from typing import Literal, Optional, Dict, Any, List
 import logging
 
 from agents.prompt_loader import prompt_registry
 
 logger = logging.getLogger(__name__)
+
+try:  # Optional dependency: allow offline rule-based fallback in tests
+    from pydantic_ai import Agent as PydanticAgent  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - exercised via offline path
+    PydanticAgent = None
 
 
 class SupervisorDecision(BaseModel):
@@ -102,10 +106,17 @@ class SupervisorAgent:
                   und deutlich günstiger als gpt-4
         """
         self.model = model
-        self.pydantic_agent = PydanticAgent(
-            model, result_type=SupervisorDecision, retries=2
-        )
-        logger.info(f"[SupervisorAgent] Initialized with model={model}")
+
+        if PydanticAgent is None:
+            self.pydantic_agent = None
+            logger.warning(
+                "[SupervisorAgent] pydantic_ai not installed. Falling back to rule-based routing"
+            )
+        else:
+            self.pydantic_agent = PydanticAgent(
+                model, result_type=SupervisorDecision, retries=2
+            )
+            logger.info(f"[SupervisorAgent] Initialized with model={model}")
 
     async def decide_next_step(
         self,
@@ -143,6 +154,15 @@ class SupervisorAgent:
             >>> decision.action_params
             {'pattern': 'pinstripe', 'query': 'Nadelstreifen'}
         """
+        if self.pydantic_agent is None:
+            logger.info("[SupervisorAgent] Using clarification fallback (no LLM available)")
+            return SupervisorDecision(
+                next_destination="clarification",
+                reasoning="pydantic_ai not installed",
+                user_message="Kannst du deine Anfrage noch einmal formulieren?",
+                confidence=0.0,
+            )
+
         system_prompt = self._build_supervisor_prompt(session_state)
 
         try:

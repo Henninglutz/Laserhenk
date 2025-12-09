@@ -5,7 +5,8 @@
  */
 
 const CONFIG = {
-  BACKEND_URL: "/api/orchestrator/chat", // HENK1-3 orchestrator endpoint with full flow
+  // Laserhenk backend chat endpoint
+  BACKEND_URL: "/api/chat",
   USE_SPEECH: true,                      // voice input if supported
   MAX_HISTORY: 20                        // how many last messages to send along
 };
@@ -26,6 +27,7 @@ let recognizing = false;
 let recognition = null;
 let currentStage = "HENK1"; // Track orchestrator stage
 let lastPayload = null; // Store last orchestrator payload
+let sessionId = null; // Wird nach erstem API-Call gesetzt
 
 // Init labels
 els.backendLabel.textContent = CONFIG.BACKEND_URL;
@@ -129,6 +131,7 @@ function setBusy(isBusy){
 async function sendMessage(userText){
   const payload = {
     message: userText,
+    session_id: sessionId,
     history: history.slice(-CONFIG.MAX_HISTORY),
     stage: currentStage
   };
@@ -160,6 +163,10 @@ async function sendMessage(userText){
     }
     const data = await res.json();
     const reply = (data && data.reply) ? String(data.reply) : "(no reply)";
+
+    if (data.session_id) {
+      sessionId = data.session_id;
+    }
 
     // Update stage and payload from orchestrator
     if (data.stage) {
@@ -231,6 +238,7 @@ els.clear.addEventListener("click", () => {
   history = [];
   currentStage = "HENK1";
   lastPayload = null;
+  sessionId = null;
   els.chat.innerHTML = "";
   addMessage("assistant",
     "Hallo! Ich bin HENK, dein persönlicher Maßschneider für exklusive Herrenmode.\n\n" +

@@ -11,12 +11,16 @@ Nodes:
 - tools_dispatcher_node: Dispatched zu verschiedenen Tools
 """
 
+import os
 from typing import Dict, Any
 import logging
 
-from agents.supervisor_agent import SupervisorAgent
+from agents.operator import OperatorAgent
+from agents.supervisor_agent import SupervisorAgent, SupervisorDecision
 from agents.henk1 import Henk1Agent
 from agents.design_henk import DesignHenkAgent
+from agents.laserhenk import LaserHenkAgent
+from models.customer import Measurements, SessionState
 from workflow.graph_state import HenkGraphState
 
 logger = logging.getLogger(__name__)
@@ -63,7 +67,9 @@ def get_agent(agent_name: str):
         elif agent_name == "design_henk":
             _agent_instances[agent_name] = DesignHenkAgent()
             logger.info("[Singleton] DesignHenkAgent created")
-        # TODO: Weitere Agents hier hinzufügen
+        elif agent_name == "laserhenk":
+            _agent_instances[agent_name] = LaserHenkAgent()
+            logger.info("[Singleton] LaserHenkAgent created")
         else:
             logger.warning(f"[Factory] Unknown agent: {agent_name}")
             return None
@@ -91,10 +97,11 @@ async def validate_query_node(state: HenkGraphState) -> HenkGraphState:
     """
     user_input = state.get("user_input", "")
 
+    messages = list(state.get("messages", []))
+
     # Basis-Check: Minimale Länge
     if not user_input or len(user_input.strip()) < 3:
-        state["is_valid"] = False
-        state["messages"].append(
+        messages.append(
             {
                 "role": "system",
                 "content": "Eingabe zu kurz. Bitte mindestens 3 Zeichen eingeben.",
@@ -103,17 +110,15 @@ async def validate_query_node(state: HenkGraphState) -> HenkGraphState:
             }
         )
         logger.warning(f"[Validator] Rejected: '{user_input}' (too short)")
-        return state
+        return {"is_valid": False, "messages": messages, "awaiting_user_input": True}
 
     # TODO: Weitere Validierungen
     # - Profanity Filter
     # - Spam Detection
     # - Rate Limiting (via session_id)
 
-    state["is_valid"] = True
     logger.info(f"[Validator] Approved: '{user_input[:50]}...'")
-
-    return state
+    return {"is_valid": True, "messages": messages}
 
 
 async def smart_operator_node(state: HenkGraphState) -> HenkGraphState:
@@ -140,22 +145,41 @@ async def smart_operator_node(state: HenkGraphState) -> HenkGraphState:
 
     logger.info(f"[SmartOperator] Analyzing: '{user_input[:60]}...'")
 
-    # Supervisor trifft Entscheidung
-    supervisor = get_supervisor()
-    decision = await supervisor.decide_next_step(
-        user_input, session_state, conversation_history
-    )
+    # Supervisor trifft Entscheidung (mit Offline-Fallback, damit Tests ohne API-Key laufen)
+    if not os.environ.get("OPENAI_API_KEY"):
+        logger.info("[SmartOperator] Offline routing fallback (no OPENAI_API_KEY)")
+        operator = OperatorAgent()
+        op_decision = await operator.process(session_state)
+        decision = SupervisorDecision(
+            next_destination=op_decision.next_agent or "end",
+            reasoning="Rule-based fallback routing",
+            action_params=op_decision.action_params or {},
+            user_message=op_decision.message,
+            confidence=1.0,
+        )
+    else:
+        supervisor = get_supervisor()
+        decision = await supervisor.decide_next_step(
+            user_input,
+            session_state.model_dump() if isinstance(session_state, SessionState) else session_state,
+            conversation_history,
+        )
 
-    # Update State basierend auf Decision
-    state["next_agent"] = decision.next_destination
-    state["current_agent"] = decision.next_destination
-    state["pending_action"] = decision.action_params
-    state["metadata"]["supervisor_reasoning"] = decision.reasoning
-    state["metadata"]["confidence"] = decision.confidence
+    metadata = dict(state.get("metadata", {}))
+    metadata["supervisor_reasoning"] = decision.reasoning
+    metadata["confidence"] = decision.confidence
+
+    updates: Dict[str, Any] = {
+        "next_agent": decision.next_destination,
+        "current_agent": decision.next_destination,
+        "pending_action": decision.action_params,
+        "metadata": metadata,
+    }
 
     # Bei clarification: Sofort Rückfrage an User
     if decision.next_destination == "clarification" and decision.user_message:
-        state["messages"].append(
+        messages = list(state.get("messages", []))
+        messages.append(
             {
                 "role": "assistant",
                 "content": decision.user_message,
@@ -166,14 +190,15 @@ async def smart_operator_node(state: HenkGraphState) -> HenkGraphState:
                 },
             }
         )
-        state["awaiting_user_input"] = True
+        updates["messages"] = messages
+        updates["awaiting_user_input"] = True
 
     logger.info(
         f"[SmartOperator] Routed to '{decision.next_destination}' "
         f"(confidence={decision.confidence:.2f})"
     )
 
-    return state
+    return updates
 
 
 async def conversation_node(state: HenkGraphState) -> HenkGraphState:
@@ -196,70 +221,99 @@ async def conversation_node(state: HenkGraphState) -> HenkGraphState:
     user_input = state.get("user_input", "")
     session_state = state["session_state"]
 
+    if isinstance(session_state, dict):
+        session_state = SessionState(**session_state)
+
     logger.info(f"[Conversation] Processing with agent='{current_agent_name}'")
 
-    # Hol Agent
     agent = get_agent(current_agent_name)
 
     if not agent:
         logger.error(f"[Conversation] Unknown agent: {current_agent_name}")
-        state["next_agent"] = "clarification"
-        state["messages"].append(
+        messages = list(state.get("messages", []))
+        messages.append(
             {
                 "role": "system",
                 "content": "Interner Fehler: Agent nicht gefunden.",
                 "sender": "system",
             }
         )
-        return state
-
-    # Entscheide: LLM oder Rule-based?
-    input_data = {"user_input": user_input}
+        return {
+            "next_agent": "clarification",
+            "messages": messages,
+            "awaiting_user_input": True,
+        }
 
     try:
-        if agent.needs_llm(session_state, input_data):
-            logger.info(f"[Conversation] Using LLM for {current_agent_name}")
-            decision = await agent.process_with_llm(session_state, user_input)
-        else:
-            logger.info(f"[Conversation] Using rules for {current_agent_name}")
-            decision = await agent.process(session_state, input_data)
+        decision = await agent.process(session_state)
 
-        # Update State mit Agent-Decision
-        state["next_agent"] = decision.next_agent
-        state["pending_action"] = decision.action
-        state["awaiting_user_input"] = decision.awaiting_input
-        state["phase_complete"] = decision.phase_complete
+        updated_session_state = session_state.model_copy()
 
-        # Append Agent-Response zu Messages
-        state["messages"].append(
+        if decision.action == "query_rag":
+            if current_agent_name == "henk1":
+                updated_session_state.henk1_rag_queried = True
+            if current_agent_name == "design_henk":
+                updated_session_state.design_rag_queried = True
+
+        if current_agent_name == "henk1" and not updated_session_state.henk1_rag_queried:
+            updated_session_state.henk1_rag_queried = True
+
+        if current_agent_name == "henk1" and not updated_session_state.customer.customer_id:
+            updated_session_state.customer.customer_id = (
+                f"TEMP_{updated_session_state.session_id[:8]}"
+            )
+
+        if decision.action == "request_saia_measurement":
+            updated_session_state.measurements = updated_session_state.measurements or Measurements(
+                measurement_id=f"MOCK_{updated_session_state.session_id[:8]}",
+                source="saia",
+            )
+            updated_session_state.customer.has_measurements = True
+
+        messages = list(state.get("messages", []))
+        messages.append(
             {
                 "role": "assistant",
-                "content": decision.response_text,
+                "content": decision.message
+                or "Konversation abgeschlossen. Nächster Schritt wird vorbereitet.",
                 "sender": current_agent_name,
-                "metadata": decision.metadata,
+                "metadata": {"action": decision.action},
             }
         )
 
+        updates = {
+            "session_state": updated_session_state,
+            "current_agent": current_agent_name,
+            "next_agent": decision.next_agent,
+            "pending_action": decision.action_params or {},
+            "awaiting_user_input": not decision.should_continue,
+            "phase_complete": not decision.should_continue,
+            "messages": messages,
+        }
+
         logger.info(
             f"[Conversation] Decision: next_agent='{decision.next_agent}', "
-            f"phase_complete={decision.phase_complete}"
+            f"should_continue={decision.should_continue}"
         )
 
     except Exception as e:
         logger.error(f"[Conversation] Agent failed: {e}", exc_info=True)
 
-        # Fallback bei Fehler
-        state["next_agent"] = "clarification"
-        state["messages"].append(
+        messages = list(state.get("messages", []))
+        messages.append(
             {
                 "role": "assistant",
                 "content": "Entschuldigung, ich hatte ein Problem. Kannst du das nochmal sagen?",
                 "sender": current_agent_name,
             }
         )
-        state["awaiting_user_input"] = True
+        return {
+            "next_agent": "clarification",
+            "messages": messages,
+            "awaiting_user_input": True,
+        }
 
-    return state
+    return updates
 
 
 async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
@@ -284,6 +338,8 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
         f"[ToolsDispatcher] Executing tool='{next_agent}' with params={action_params}"
     )
 
+    messages = list(state.get("messages", []))
+
     try:
         if next_agent == "rag_tool":
             result = await _execute_rag_tool(action_params, state)
@@ -298,17 +354,14 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
             logger.warning(f"[ToolsDispatcher] Unknown tool: {next_agent}")
             result = "Tool nicht gefunden."
 
-        # Append Result zu Messages
-        state["messages"].append(
-            {"role": "assistant", "content": result, "sender": next_agent}
-        )
+        messages.append({"role": "assistant", "content": result, "sender": next_agent})
 
         logger.info(f"[ToolsDispatcher] Tool '{next_agent}' executed successfully")
 
     except Exception as e:
         logger.error(f"[ToolsDispatcher] Tool failed: {e}", exc_info=True)
 
-        state["messages"].append(
+        messages.append(
             {
                 "role": "assistant",
                 "content": f"Entschuldigung, das Tool '{next_agent}' hatte ein Problem.",
@@ -316,8 +369,7 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
             }
         )
 
-    state["awaiting_user_input"] = True
-    return state
+    return {"messages": messages, "awaiting_user_input": True}
 
 
 # ==================== Tool Implementations ====================

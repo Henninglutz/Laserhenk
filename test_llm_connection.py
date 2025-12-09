@@ -4,12 +4,14 @@ Schneller Test: Ist HENK LLM erreichbar und antwortet ohne Fehler?
 
 import asyncio
 import os
+import pytest
 from dotenv import load_dotenv
 
 # Lade .env
 load_dotenv()
 
 
+@pytest.mark.skip(reason="LLM-Integrationstest, erfordert Netzwerkzugang")
 async def test_llm_connection():
     """Teste ob LLM erreichbar ist und ohne Fehler antwortet."""
 
