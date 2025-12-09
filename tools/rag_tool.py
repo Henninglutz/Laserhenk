@@ -142,10 +142,12 @@ class RAGTool:
             query_embedding = await self.embedding_service.generate_embedding(
                 query_text
             )
+            embedding_str = str(query_embedding)
 
-            # Build SQL with filters
+            # Build SQL with filters using positional parameters ($1, $2, ...)
             where_clauses = []
-            params = {"query_embedding": str(query_embedding), "limit": criteria.limit}
+            params = [embedding_str]  # $1 = query_embedding
+            param_count = 1
 
             # Budget filter
             if criteria.budget_min or criteria.budget_max:
@@ -162,6 +164,11 @@ class RAGTool:
             where_sql = ""
             if where_clauses:
                 where_sql = "AND " + " AND ".join(where_clauses)
+
+            # Add limit as last parameter
+            param_count += 1
+            limit_param = f"${param_count}"
+            params.append(criteria.limit)
 
             # Query fabric_embeddings with join to fabrics
             query_str = f"""
@@ -181,13 +188,13 @@ class RAGTool:
                     f.description,
                     f.additional_metadata,
                     fe.content,
-                    1 - (fe.embedding <=> :query_embedding::vector) as similarity
+                    1 - (fe.embedding <=> $1::vector) as similarity
                 FROM fabric_embeddings fe
                 JOIN fabrics f ON fe.fabric_id = f.id
                 WHERE 1=1
                 {where_sql}
-                ORDER BY fe.embedding <=> :query_embedding::vector
-                LIMIT :limit
+                ORDER BY fe.embedding <=> $1::vector
+                LIMIT {limit_param}
             """
 
             engine = self._get_engine()
@@ -196,7 +203,7 @@ class RAGTool:
                 raw_conn = await conn.get_raw_connection()
                 async_conn = raw_conn.driver_connection
 
-                results = await async_conn.fetch(query_str, **params)
+                results = await async_conn.fetch(query_str, *params)
 
             # Format results as FabricRecommendation
             recommendations = []
@@ -321,26 +328,36 @@ class RAGTool:
         try:
             # Generate embedding for query
             query_embedding = await self.embedding_service.generate_embedding(query)
+            embedding_str = str(query_embedding)
 
-            # Build query with optional filters
+            # Build query with optional filters using positional parameters ($1, $2, ...)
             where_clauses = []
-            params = {"query_embedding": str(query_embedding), "limit": limit}
+            params = [embedding_str]  # $1 = query_embedding
+            param_count = 1
 
             if category:
-                where_clauses.append("meta_json->>'category' = :category")
-                params["category"] = category
+                param_count += 1
+                where_clauses.append(f"meta_json->>'category' = ${param_count}")
+                params.append(category)
 
             if fabric_type:
-                where_clauses.append("content ILIKE :fabric_type")
-                params["fabric_type"] = f"%{fabric_type}%"
+                param_count += 1
+                where_clauses.append(f"content ILIKE ${param_count}")
+                params.append(f"%{fabric_type}%")
 
             if pattern:
-                where_clauses.append("content ILIKE :pattern")
-                params["pattern"] = f"%{pattern}%"
+                param_count += 1
+                where_clauses.append(f"content ILIKE ${param_count}")
+                params.append(f"%{pattern}%")
 
             where_sql = ""
             if where_clauses:
                 where_sql = "WHERE " + " AND ".join(where_clauses)
+
+            # Add limit as last parameter
+            param_count += 1
+            limit_param = f"${param_count}"
+            params.append(limit)
 
             # Execute similarity search
             query_str = f"""
@@ -349,11 +366,11 @@ class RAGTool:
                     meta_json->>'chunk_id' as chunk_id,
                     meta_json->>'category' as category,
                     content,
-                    1 - (embedding <=> :query_embedding::vector) as similarity
+                    1 - (embedding <=> $1::vector) as similarity
                 FROM rag_docs
                 {where_sql}
-                ORDER BY embedding <=> :query_embedding::vector
-                LIMIT :limit
+                ORDER BY embedding <=> $1::vector
+                LIMIT {limit_param}
             """
 
             engine = self._get_engine()
@@ -362,7 +379,7 @@ class RAGTool:
                 raw_conn = await conn.get_raw_connection()
                 async_conn = raw_conn.driver_connection
 
-                results = await async_conn.fetch(query_str, **params)
+                results = await async_conn.fetch(query_str, *params)
 
             # Format results
             formatted_results = []
