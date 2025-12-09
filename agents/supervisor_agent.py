@@ -199,9 +199,24 @@ class SupervisorAgent:
             )
 
             # Handle both pydantic-ai API versions
-            # v0.0.x: result.data contains the decision
-            # v1.0+: result IS the decision (no .data attribute)
-            decision = getattr(result, 'data', result)
+            # Different versions use different attribute names for the result
+            result_attrs = [a for a in dir(result) if not a.startswith('_')]
+            logger.info(f"[SupervisorAgent] Result type: {type(result).__name__}, attrs: {result_attrs[:10]}")
+
+            # Try different attribute patterns
+            if hasattr(result, 'data'):
+                decision = result.data  # v0.0.x pattern
+                logger.info("[SupervisorAgent] Using result.data (v0.0.x)")
+            elif hasattr(result, 'output'):
+                decision = result.output  # Common v1.0+ pattern
+                logger.info("[SupervisorAgent] Using result.output (v1.0+)")
+            elif isinstance(result, SupervisorDecision):
+                decision = result  # Result IS the decision
+                logger.info("[SupervisorAgent] Result is SupervisorDecision")
+            else:
+                # Fallback: try other common names
+                decision = getattr(result, 'result', getattr(result, 'value', result))
+                logger.info(f"[SupervisorAgent] Using fallback, decision type: {type(decision).__name__}")
 
             logger.info(
                 f"[SupervisorAgent] Decision: {decision.next_destination} "
