@@ -63,6 +63,7 @@ def should_continue_after_conversation(state: HenkGraphState) -> str:
     Routing-Logik nach Conversation.
 
     Entscheidet ob:
+    - Zu Tool (wenn Agent tool anfordert)
     - Zurück zu Operator (für nächste Entscheidung)
     - END (User-Input benötigt)
 
@@ -70,13 +71,19 @@ def should_continue_after_conversation(state: HenkGraphState) -> str:
         state: Aktueller Graph State
 
     Returns:
-        String: "smart_operator" oder END
+        String: "tools", "smart_operator" oder END
     """
     awaiting_input = state.get("awaiting_user_input", False)
+    next_dest = state.get("next_agent")
 
     if awaiting_input:
         logger.info("[Router] Awaiting user input, ending turn")
         return END
+
+    # Check if agent requested a tool
+    if next_dest in ["rag_tool", "comparison_tool", "pricing_tool"]:
+        logger.info(f"[Router] Agent requested tool: {next_dest}, routing to tools")
+        return "tools"
 
     # Sonst: Zurück zu Operator für nächste Entscheidung
     logger.info("[Router] Returning to operator for next decision")
@@ -134,11 +141,11 @@ def create_smart_workflow() -> StateGraph:
         {"conversation": "conversation", "tools": "tools", END: END},
     )
 
-    # conversation → smart_operator OR END (Feedback-Loop!)
+    # conversation → tools OR smart_operator OR END (Feedback-Loop!)
     workflow.add_conditional_edges(
         "conversation",
         should_continue_after_conversation,
-        {"smart_operator": "smart_operator", END: END},
+        {"tools": "tools", "smart_operator": "smart_operator", END: END},
     )
 
     # tools → smart_operator (immer zurück zum Supervisor)
