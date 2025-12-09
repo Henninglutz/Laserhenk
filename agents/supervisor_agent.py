@@ -198,7 +198,10 @@ class SupervisorAgent:
                 },
             )
 
-            decision = result.data
+            # Handle both pydantic-ai API versions
+            # v0.0.x: result.data contains the decision
+            # v1.0+: result IS the decision (no .data attribute)
+            decision = getattr(result, 'data', result)
 
             logger.info(
                 f"[SupervisorAgent] Decision: {decision.next_destination} "
