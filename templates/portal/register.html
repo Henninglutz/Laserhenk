@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registrierung - HENK Portal</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            max-width: 500px;
+            width: 100%;
+            padding: 40px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+        }
+        .logo {
+            font-size: 48px;
+            text-align: center;
+            margin-bottom: 30px;
+            letter-spacing: 8px;
+            font-weight: 100;
+        }
+        h1 {
+            font-size: 28px;
+            font-weight: 300;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: #ccc;
+        }
+        input[type="email"],
+        input[type="password"],
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+        input:focus {
+            outline: none;
+            border-color: #fff;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        input[type="checkbox"] {
+            margin-top: 4px;
+        }
+        .btn {
+            width: 100%;
+            padding: 15px;
+            font-size: 16px;
+            background: #fff;
+            color: #1a1a2e;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 10px;
+        }
+        .btn:hover {
+            background: #ccc;
+        }
+        .btn:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        .error {
+            background: rgba(255, 0, 0, 0.2);
+            padding: 12px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .success {
+            background: rgba(0, 255, 0, 0.2);
+            padding: 12px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .info {
+            background: rgba(100, 150, 255, 0.2);
+            padding: 12px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .links {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        .links a {
+            color: #fff;
+            text-decoration: none;
+        }
+        .links a:hover {
+            text-decoration: underline;
+        }
+        .qr-code {
+            text-align: center;
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 5px;
+        }
+        .recovery-codes {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            font-family: monospace;
+        }
+        .recovery-codes code {
+            display: block;
+            margin: 5px 0;
+            color: #fff;
+        }
+        #step2 {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">HENK</div>
+        <h1>Registrierung</h1>
+
+        <div id="error" class="error"></div>
+        <div id="success" class="success"></div>
+
+        <!-- Step 1: Registration Form -->
+        <form id="registerForm">
+            <div class="form-group">
+                <label for="email">E-Mail *</label>
+                <input type="email" id="email" name="email" required>
+            </div>
+
+            <div class="form-group">
+                <label for="password">Passwort * (min. 8 Zeichen)</label>
+                <input type="password" id="password" name="password" required minlength="8">
+            </div>
+
+            <div class="form-group">
+                <label for="password_confirm">Passwort wiederholen *</label>
+                <input type="password" id="password_confirm" name="password_confirm" required>
+            </div>
+
+            <div class="form-group checkbox-group">
+                <input type="checkbox" id="consent" name="consent" required>
+                <label for="consent">
+                    Ich stimme der <a href="/privacy" target="_blank" style="color: #fff;">Datenschutzerklärung</a> zu und erlaube HENK, meine Daten für die Bestellabwicklung zu speichern. *
+                </label>
+            </div>
+
+            <button type="submit" class="btn" id="registerBtn">Registrieren</button>
+        </form>
+
+        <!-- Step 2: 2FA Setup -->
+        <div id="step2">
+            <div class="info">
+                <strong>Wichtig:</strong> Speichere deine Recovery-Codes an einem sicheren Ort.
+                Du benötigst sie, falls du den Zugang zu deiner Authenticator-App verlierst.
+            </div>
+
+            <div class="recovery-codes" id="recoveryCodes"></div>
+
+            <div class="qr-code" id="qrCodeContainer">
+                <p style="color: #000; margin-bottom: 10px;"><strong>Scanne diesen QR-Code mit deiner Authenticator-App:</strong></p>
+                <img id="qrCodeImg" src="" alt="QR Code" style="max-width: 100%;">
+            </div>
+
+            <form id="verifyForm">
+                <div class="form-group">
+                    <label for="verification_code">E-Mail Verifikations-Code *</label>
+                    <input type="text" id="verification_code" name="verification_code" required maxlength="6">
+                    <small style="color: #ccc;">Prüfe deine E-Mails für den 6-stelligen Code</small>
+                </div>
+
+                <button type="submit" class="btn">E-Mail verifizieren & abschließen</button>
+            </form>
+        </div>
+
+        <div class="links">
+            <p>Bereits registriert? <a href="/portal/login">Anmelden</a></p>
+            <p><a href="/portal">← Zurück</a></p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script>
+        let registrationData = {};
+
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const passwordConfirm = document.getElementById('password_confirm').value;
+            const consent = document.getElementById('consent').checked;
+
+            const errorDiv = document.getElementById('error');
+            const successDiv = document.getElementById('success');
+            errorDiv.style.display = 'none';
+            successDiv.style.display = 'none';
+
+            if (password !== passwordConfirm) {
+                errorDiv.textContent = 'Passwörter stimmen nicht überein';
+                errorDiv.style.display = 'block';
+                return;
+            }
+
+            if (!consent) {
+                errorDiv.textContent = 'Bitte akzeptiere die Datenschutzerklärung';
+                errorDiv.style.display = 'block';
+                return;
+            }
+
+            document.getElementById('registerBtn').disabled = true;
+
+            try {
+                const response = await fetch('/auth/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        password: password,
+                        consent: consent,
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    errorDiv.textContent = data.error || 'Registrierung fehlgeschlagen';
+                    errorDiv.style.display = 'block';
+                    document.getElementById('registerBtn').disabled = false;
+                    return;
+                }
+
+                // Store registration data for verification
+                registrationData = data;
+
+                // Show recovery codes
+                const recoveryCodesDiv = document.getElementById('recoveryCodes');
+                recoveryCodesDiv.innerHTML = '<strong>Deine Recovery-Codes:</strong><br>';
+                data.recovery_codes.forEach(code => {
+                    recoveryCodesDiv.innerHTML += `<code>${code}</code>`;
+                });
+
+                // Generate QR code
+                const qrCodeImg = document.getElementById('qrCodeImg');
+                const canvas = document.createElement('canvas');
+                const qrCode = new QRCode(canvas, {
+                    text: data.totp_uri,
+                    width: 256,
+                    height: 256,
+                });
+                setTimeout(() => {
+                    qrCodeImg.src = canvas.toDataURL();
+                }, 100);
+
+                // Show step 2
+                document.getElementById('registerForm').style.display = 'none';
+                document.getElementById('step2').style.display = 'block';
+
+            } catch (error) {
+                errorDiv.textContent = 'Netzwerkfehler: ' + error.message;
+                errorDiv.style.display = 'block';
+                document.getElementById('registerBtn').disabled = false;
+            }
+        });
+
+        document.getElementById('verifyForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const verificationCode = document.getElementById('verification_code').value;
+            const errorDiv = document.getElementById('error');
+            const successDiv = document.getElementById('success');
+            errorDiv.style.display = 'none';
+            successDiv.style.display = 'none';
+
+            try {
+                const response = await fetch('/auth/verify-email', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        verification_id: registrationData.verification_id,
+                        code: verificationCode,
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    errorDiv.textContent = data.error || 'Verifikation fehlgeschlagen';
+                    errorDiv.style.display = 'block';
+                    return;
+                }
+
+                successDiv.textContent = 'Registrierung erfolgreich! Weiterleitung zum Login...';
+                successDiv.style.display = 'block';
+
+                setTimeout(() => {
+                    window.location.href = '/portal/login';
+                }, 2000);
+
+            } catch (error) {
+                errorDiv.textContent = 'Netzwerkfehler: ' + error.message;
+                errorDiv.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>

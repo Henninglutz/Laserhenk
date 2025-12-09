@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - HENK Portal</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            min-height: 100vh;
+        }
+        .header {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(10px);
+        }
+        .logo {
+            font-size: 32px;
+            letter-spacing: 6px;
+            font-weight: 100;
+        }
+        .user-menu {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        .btn-logout {
+            padding: 8px 20px;
+            background: transparent;
+            color: #fff;
+            border: 1px solid #fff;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .btn-logout:hover {
+            background: #fff;
+            color: #1a1a2e;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        h1 {
+            font-size: 36px;
+            font-weight: 300;
+            margin-bottom: 10px;
+        }
+        .welcome-text {
+            color: #ccc;
+            margin-bottom: 40px;
+        }
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .tab {
+            padding: 12px 24px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .tab:hover {
+            border-bottom-color: rgba(255, 255, 255, 0.5);
+        }
+        .tab.active {
+            border-bottom-color: #fff;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+        }
+        .card h3 {
+            font-size: 20px;
+            font-weight: 400;
+            margin-bottom: 15px;
+        }
+        .card-meta {
+            color: #ccc;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        .card-body {
+            line-height: 1.6;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+        .badge-primary {
+            background: rgba(100, 150, 255, 0.3);
+        }
+        .badge-success {
+            background: rgba(0, 255, 0, 0.2);
+        }
+        .badge-warning {
+            background: rgba(255, 200, 0, 0.3);
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #ccc;
+        }
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+        .error {
+            background: rgba(255, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">HENK</div>
+        <div class="user-menu">
+            <span id="userEmail">Laden...</span>
+            <button class="btn-logout" onclick="logout()">Abmelden</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <h1>Willkommen zurück!</h1>
+        <p class="welcome-text">Verwalte deine Style-Profile, Bestellungen und Maßdaten.</p>
+
+        <div id="error" class="error" style="display: none;"></div>
+
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('styleProfiles')">Style-Profile</div>
+            <div class="tab" onclick="switchTab('orders')">Bestellungen</div>
+            <div class="tab" onclick="switchTab('measurements')">Maßdaten</div>
+        </div>
+
+        <div id="styleProfiles" class="tab-content active">
+            <div class="loading">Lade Style-Profile...</div>
+        </div>
+
+        <div id="orders" class="tab-content">
+            <div class="loading">Lade Bestellungen...</div>
+        </div>
+
+        <div id="measurements" class="tab-content">
+            <div class="loading">Lade Maßdaten...</div>
+        </div>
+    </div>
+
+    <script>
+        let currentTab = 'styleProfiles';
+
+        // Check authentication
+        const accessToken = localStorage.getItem('access_token');
+        if (!accessToken) {
+            window.location.href = '/portal/login';
+        }
+
+        function switchTab(tabName) {
+            // Update tab styling
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            event.target.classList.add('active');
+
+            // Update content
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(tabName).classList.add('active');
+
+            currentTab = tabName;
+
+            // Load data if not loaded yet
+            if (tabName === 'styleProfiles' && !document.getElementById('styleProfiles').dataset.loaded) {
+                loadStyleProfiles();
+            } else if (tabName === 'orders' && !document.getElementById('orders').dataset.loaded) {
+                loadOrders();
+            } else if (tabName === 'measurements' && !document.getElementById('measurements').dataset.loaded) {
+                loadMeasurements();
+            }
+        }
+
+        async function apiCall(endpoint) {
+            const token = localStorage.getItem('access_token');
+            const response = await fetch(endpoint, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                },
+            });
+
+            if (response.status === 401) {
+                // Token expired, try to refresh
+                const refreshed = await refreshToken();
+                if (refreshed) {
+                    return apiCall(endpoint);
+                } else {
+                    window.location.href = '/portal/login';
+                    return null;
+                }
+            }
+
+            if (!response.ok) {
+                throw new Error('API call failed');
+            }
+
+            return await response.json();
+        }
+
+        async function refreshToken() {
+            const refreshToken = localStorage.getItem('refresh_token');
+            if (!refreshToken) return false;
+
+            try {
+                const response = await fetch('/auth/refresh', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        refresh_token: refreshToken,
+                    }),
+                });
+
+                if (!response.ok) return false;
+
+                const data = await response.json();
+                localStorage.setItem('access_token', data.access_token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                return true;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        async function loadProfile() {
+            try {
+                const data = await apiCall('/portal/api/profile');
+                document.getElementById('userEmail').textContent = data.email || 'HENK Kunde';
+            } catch (error) {
+                console.error('Failed to load profile:', error);
+            }
+        }
+
+        async function loadStyleProfiles() {
+            const container = document.getElementById('styleProfiles');
+            container.dataset.loaded = 'true';
+
+            try {
+                const data = await apiCall('/portal/api/style-profiles');
+
+                if (!data.style_profiles || data.style_profiles.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <p>Du hast noch keine Style-Profile erstellt.</p>
+                            <p>Starte einen Chat mit HENK, um dein erstes Outfit zu konfigurieren!</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = '';
+                data.style_profiles.forEach(profile => {
+                    const createdDate = profile.created_at ? new Date(profile.created_at).toLocaleDateString('de-DE') : 'N/A';
+                    const eventDate = profile.event_date ? new Date(profile.event_date).toLocaleDateString('de-DE') : 'Nicht angegeben';
+
+                    html += `
+                        <div class="card">
+                            <h3>${profile.event_type || 'Custom Style'}</h3>
+                            <div class="card-meta">Erstellt am ${createdDate}</div>
+                            <div class="card-body">
+                                ${profile.fabric_reference ? `<span class="badge badge-primary">Stoff: ${profile.fabric_reference}</span>` : ''}
+                                ${profile.vibe ? `<span class="badge badge-success">Stil: ${profile.vibe}</span>` : ''}
+                                ${profile.fit_preference ? `<span class="badge badge-warning">Passform: ${profile.fit_preference}</span>` : ''}
+                                <p style="margin-top: 10px;">
+                                    ${profile.event_date ? `Event-Datum: ${eventDate}` : ''}
+                                </p>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                container.innerHTML = html;
+
+            } catch (error) {
+                console.error('Failed to load style profiles:', error);
+                container.innerHTML = '<div class="error">Fehler beim Laden der Style-Profile</div>';
+            }
+        }
+
+        async function loadOrders() {
+            const container = document.getElementById('orders');
+            container.dataset.loaded = 'true';
+
+            try {
+                const data = await apiCall('/portal/api/orders');
+
+                if (!data.orders || data.orders.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <p>Du hast noch keine Bestellungen.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = '';
+                data.orders.forEach(order => {
+                    const createdDate = order.created_at ? new Date(order.created_at).toLocaleDateString('de-DE') : 'N/A';
+                    const statusText = {
+                        'pending_measurement': 'Wartet auf Maßtermin',
+                        'in_production': 'In Produktion',
+                        'ready': 'Bereit zur Abholung',
+                        'completed': 'Abgeschlossen',
+                    }[order.status] || order.status;
+
+                    html += `
+                        <div class="card">
+                            <h3>${order.outfit_name}</h3>
+                            <div class="card-meta">Bestellung vom ${createdDate}</div>
+                            <div class="card-body">
+                                <span class="badge badge-warning">${statusText}</span>
+                                ${order.fabric_reference ? `<span class="badge badge-primary">Stoff: ${order.fabric_reference}</span>` : ''}
+                                <p style="margin-top: 10px;">${order.outfit_description || ''}</p>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                container.innerHTML = html;
+
+            } catch (error) {
+                console.error('Failed to load orders:', error);
+                container.innerHTML = '<div class="error">Fehler beim Laden der Bestellungen</div>';
+            }
+        }
+
+        async function loadMeasurements() {
+            const container = document.getElementById('measurements');
+            container.dataset.loaded = 'true';
+
+            try {
+                const data = await apiCall('/portal/api/measurements');
+
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <p>${data.message || 'Maßdaten werden nach deinem Maßtermin hier hinterlegt.'}</p>
+                    </div>
+                `;
+
+            } catch (error) {
+                console.error('Failed to load measurements:', error);
+                container.innerHTML = '<div class="error">Fehler beim Laden der Maßdaten</div>';
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+            window.location.href = '/portal/login';
+        }
+
+        // Initial load
+        loadProfile();
+        loadStyleProfiles();
+    </script>
+</body>
+</html>

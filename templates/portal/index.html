@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HENK Customer Portal</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            max-width: 600px;
+            padding: 40px;
+            text-align: center;
+        }
+        h1 {
+            font-size: 48px;
+            font-weight: 300;
+            margin-bottom: 20px;
+            letter-spacing: 8px;
+        }
+        p {
+            font-size: 18px;
+            color: #ccc;
+            margin-bottom: 40px;
+            line-height: 1.6;
+        }
+        .buttons {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 15px 40px;
+            font-size: 16px;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: all 0.3s ease;
+            display: inline-block;
+        }
+        .btn-primary {
+            background: #fff;
+            color: #1a1a2e;
+            border: 2px solid #fff;
+        }
+        .btn-primary:hover {
+            background: transparent;
+            color: #fff;
+        }
+        .btn-secondary {
+            background: transparent;
+            color: #fff;
+            border: 2px solid #fff;
+        }
+        .btn-secondary:hover {
+            background: #fff;
+            color: #1a1a2e;
+        }
+        .logo {
+            font-size: 64px;
+            margin-bottom: 30px;
+            letter-spacing: 12px;
+            font-weight: 100;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">HENK</div>
+        <h1>Customer Portal</h1>
+        <p>
+            Willkommen im HENK Portal. Greife auf deine Style-Profile,
+            Bestellungen und Maßdaten zu – alles an einem Ort.
+        </p>
+        <div class="buttons">
+            <a href="/portal/login" class="btn btn-primary">Anmelden</a>
+            <a href="/portal/register" class="btn btn-secondary">Registrieren</a>
+        </div>
+    </div>
+</body>
+</html>
