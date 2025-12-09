@@ -113,31 +113,31 @@ class SupervisorAgent:
                 "[SupervisorAgent] pydantic_ai not installed. Falling back to rule-based routing"
             )
         else:
+            # Try both pydantic-ai API versions
+            # v1.0+ doesn't accept result_type in constructor
+            # v0.0.x requires result_type
             try:
-                # pydantic-ai v0.0.14+ uses different API
-                self.pydantic_agent = PydanticAgent(
-                    model,
-                    result_type=SupervisorDecision,
-                    retries=2
-                )
-                logger.info(f"[SupervisorAgent] Initialized with model={model}")
-            except TypeError as e:
-                # Fallback for newer pydantic-ai API (no result_type in constructor)
+                # Try new API first (v1.0+): No result_type parameter
+                self.pydantic_agent = PydanticAgent(model, retries=2)
+                logger.info(f"[SupervisorAgent] Initialized with model={model} (pydantic-ai v1.0+)")
+            except Exception as e1:
+                # New API failed, try old API (v0.0.x)
                 try:
-                    self.pydantic_agent = PydanticAgent(model, retries=2)
-                    logger.info(f"[SupervisorAgent] Initialized with model={model} (new API)")
+                    logger.debug(f"[SupervisorAgent] New API failed: {e1}, trying old API")
+                    self.pydantic_agent = PydanticAgent(
+                        model,
+                        result_type=SupervisorDecision,
+                        retries=2
+                    )
+                    logger.info(f"[SupervisorAgent] Initialized with model={model} (pydantic-ai v0.0.x)")
                 except Exception as e2:
+                    # Both APIs failed
                     self.pydantic_agent = None
                     logger.warning(
-                        f"[SupervisorAgent] Failed to initialize PydanticAgent: {e2}. "
+                        f"[SupervisorAgent] Failed to initialize PydanticAgent with both APIs. "
+                        f"New API error: {e1}, Old API error: {e2}. "
                         "Falling back to rule-based routing"
                     )
-            except Exception as e:
-                self.pydantic_agent = None
-                logger.warning(
-                    f"[SupervisorAgent] Failed to initialize PydanticAgent: {e}. "
-                    "Falling back to rule-based routing"
-                )
 
     async def decide_next_step(
         self,
