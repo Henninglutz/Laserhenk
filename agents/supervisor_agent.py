@@ -273,7 +273,12 @@ class SupervisorAgent:
         except Exception as e:
             logger.error(f"[SupervisorAgent] LLM call failed: {e}", exc_info=True)
 
-            # Fallback: Clarification bei Fehler
+            # If structured output failed (TypeError), use rule-based routing instead
+            if isinstance(e, TypeError) and "Expected SupervisorDecision" in str(e):
+                logger.warning("[SupervisorAgent] Structured output not working, using rule-based routing")
+                return self._rule_based_routing(user_message, session_state, conversation_history)
+
+            # Fallback: Clarification bei anderen Fehler
             return SupervisorDecision(
                 next_destination="clarification",
                 reasoning="LLM error occurred, requesting clarification",
@@ -417,6 +422,74 @@ Antworte mit SupervisorDecision Objekt!"""
             "clarification",
             "end",
         ]
+
+    def _rule_based_routing(
+        self,
+        user_message: str,
+        session_state: Dict[str, Any],
+        conversation_history: List[Dict[str, Any]],
+    ) -> SupervisorDecision:
+        """
+        Simple rule-based routing fallback.
+
+        Used when LLM-based routing fails (e.g., structured output issues).
+
+        Args:
+            user_message: User's message
+            session_state: Current session state
+            conversation_history: Message history
+
+        Returns:
+            SupervisorDecision based on simple rules
+        """
+        message_lower = user_message.lower()
+        current_phase = session_state.get("current_phase", "H0")
+
+        # Check for fabric/material queries
+        fabric_keywords = ["stoff", "stoffe", "material", "wolle", "leinen", "baumwolle",
+                          "seide", "fabric", "nadelstreifen", "muster"]
+        if any(keyword in message_lower for keyword in fabric_keywords):
+            return SupervisorDecision(
+                next_destination="rag_tool",
+                reasoning="User query contains fabric-related keywords",
+                confidence=0.7,
+            )
+
+        # Check for design queries
+        design_keywords = ["design", "stil", "farbe", "schnitt", "aussehen",
+                          "modern", "klassisch", "style"]
+        if any(keyword in message_lower for keyword in design_keywords):
+            return SupervisorDecision(
+                next_destination="design_henk",
+                reasoning="User query contains design-related keywords",
+                confidence=0.7,
+            )
+
+        # Check for measurement queries
+        measure_keywords = ["maß", "masse", "größe", "messen", "körpermaße",
+                           "measurement", "size"]
+        if any(keyword in message_lower for keyword in measure_keywords):
+            return SupervisorDecision(
+                next_destination="laserhenk",
+                reasoning="User query contains measurement-related keywords",
+                confidence=0.7,
+            )
+
+        # Check for pricing queries
+        price_keywords = ["preis", "kosten", "price", "cost", "budget"]
+        if any(keyword in message_lower for keyword in price_keywords):
+            return SupervisorDecision(
+                next_destination="pricing_tool",
+                reasoning="User query contains pricing-related keywords",
+                confidence=0.7,
+            )
+
+        # Default: Route to HENK1 for intake
+        return SupervisorDecision(
+            next_destination="henk1",
+            reasoning="Default routing to HENK1 for customer intake/clarification",
+            confidence=0.6,
+        )
 
     def _format_history(self, history: List[Dict[str, Any]]) -> List[Dict[str, str]]:
         """
