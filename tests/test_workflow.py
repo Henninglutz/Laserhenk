@@ -4,6 +4,7 @@ import asyncio
 import sys
 import uuid
 from pathlib import Path
+import pytest
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -14,6 +15,7 @@ from models.graph_state import create_initial_graph_state
 from workflow import create_workflow
 
 
+@pytest.mark.skip(reason="Manueller Debug-Flow, für lokale Integrationstests reserviert")
 async def test_workflow():
     """Test the workflow to identify the infinite loop issue."""
     print("=" * 80)

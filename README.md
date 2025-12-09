@@ -18,14 +18,23 @@ Der `main.py`-Entrypoint erzeugt eine Session, startet den LangGraph-Workflow un
 
 > ℹ️ **Kein Webserver notwendig:** Der Flow läuft komplett per CLI und öffnet keinen Port. Du brauchst nach dem Start kein Browser-Fenster – die gesamte Konversation erscheint direkt im Terminal.
 
-### Browser-Demo (optional)
-Falls du nur das HTML/JS-Frontend ansehen willst, kannst du es statisch ausliefern, z. B. so:
+## 🌐 Browser-Chat testen (mit Backend)
+Starte den integrierten HTTP-Server inkl. Frontend-Assets und öffne den Chat im Browser:
+
+```bash
+python server.py
+```
+
+Öffne danach `http://localhost:8000` und chatte mit HENK. Die API speichert den Graph-State pro Session-ID, die automatisch beim ersten Request erzeugt wird.
+
+### Nur Frontend ansehen (ohne Backend)
+Falls du ausschließlich das HTML/JS-Frontend anzeigen willst, kannst du es weiterhin statisch ausliefern:
 
 ```bash
 python -m http.server 8000 --directory templates
 ```
 
-Rufe anschließend `http://localhost:8000` im Browser auf. Die Demo spricht aktuell keinen API-Server an; der produktive Chat läuft über `python main.py` im Terminal.
+Dabei funktioniert der Senden-Button mangels Backend nicht; für echte Chats verwende den FastAPI-Start wie oben.
 
 ## 🏗️ Architektur
 
