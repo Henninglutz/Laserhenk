@@ -113,10 +113,17 @@ class SupervisorAgent:
                 "[SupervisorAgent] pydantic_ai not installed. Falling back to rule-based routing"
             )
         else:
-            self.pydantic_agent = PydanticAgent(
-                model, result_type=SupervisorDecision, retries=2
-            )
-            logger.info(f"[SupervisorAgent] Initialized with model={model}")
+            try:
+                self.pydantic_agent = PydanticAgent(
+                    model, result_type=SupervisorDecision, retries=2
+                )
+                logger.info(f"[SupervisorAgent] Initialized with model={model}")
+            except Exception as e:
+                self.pydantic_agent = None
+                logger.warning(
+                    f"[SupervisorAgent] Failed to initialize PydanticAgent: {e}. "
+                    "Falling back to rule-based routing"
+                )
 
     async def decide_next_step(
         self,
