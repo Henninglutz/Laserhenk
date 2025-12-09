@@ -15,6 +15,7 @@ import asyncio
 import json
 import os
 import sys
+import uuid
 from pathlib import Path
 from typing import List, Dict, Any
 from datetime import datetime
@@ -365,31 +366,41 @@ STANDARD Stoffe: €{pricing['standard']['price_eur']}
                     raw_conn = await conn.get_raw_connection()
                     async_conn = raw_conn.driver_connection
 
+                    # Actual rag_docs schema:
+                    # doc_id (uuid), content (text), meta_json (json), embedding (vector), created_at (timestamptz)
+
+                    # Generate UUID for doc_id
+                    doc_uuid = uuid.uuid4()
+
+                    # Merge category and metadata into meta_json
+                    meta_data = {
+                        "category": chunk["category"],
+                        "chunk_id": chunk["chunk_id"],
+                        **chunk["metadata"]
+                    }
+
                     query_str = """
                         INSERT INTO rag_docs (
-                            document_id,
-                            category,
+                            doc_id,
                             content,
+                            meta_json,
                             embedding,
-                            metadata,
                             created_at
                         ) VALUES (
-                            $1, $2, $3, $4::vector, $5::jsonb, $6
+                            $1::uuid, $2, $3::json, $4::vector, $5
                         )
-                        ON CONFLICT (document_id) DO UPDATE SET
+                        ON CONFLICT (doc_id) DO UPDATE SET
                             content = EXCLUDED.content,
-                            embedding = EXCLUDED.embedding,
-                            metadata = EXCLUDED.metadata,
-                            updated_at = NOW()
+                            meta_json = EXCLUDED.meta_json,
+                            embedding = EXCLUDED.embedding
                     """
 
                     await async_conn.execute(
                         query_str,
-                        chunk["chunk_id"],
-                        chunk["category"],
+                        str(doc_uuid),
                         chunk["content"],
+                        json.dumps(meta_data),
                         str(embedding),
-                        json.dumps(chunk["metadata"]),
                         datetime.now(),
                     )
 
