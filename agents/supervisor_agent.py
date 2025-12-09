@@ -114,10 +114,24 @@ class SupervisorAgent:
             )
         else:
             try:
+                # pydantic-ai v0.0.14+ uses different API
                 self.pydantic_agent = PydanticAgent(
-                    model, result_type=SupervisorDecision, retries=2
+                    model,
+                    result_type=SupervisorDecision,
+                    retries=2
                 )
                 logger.info(f"[SupervisorAgent] Initialized with model={model}")
+            except TypeError as e:
+                # Fallback for newer pydantic-ai API (no result_type in constructor)
+                try:
+                    self.pydantic_agent = PydanticAgent(model, retries=2)
+                    logger.info(f"[SupervisorAgent] Initialized with model={model} (new API)")
+                except Exception as e2:
+                    self.pydantic_agent = None
+                    logger.warning(
+                        f"[SupervisorAgent] Failed to initialize PydanticAgent: {e2}. "
+                        "Falling back to rule-based routing"
+                    )
             except Exception as e:
                 self.pydantic_agent = None
                 logger.warning(

@@ -1,6 +1,7 @@
 # Core Dependencies
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
+pydantic-ai>=0.0.14
 
 # LangGraph & LangChain
 langgraph>=0.0.20
