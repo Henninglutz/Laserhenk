@@ -88,6 +88,7 @@ def main(argv: Optional[Sequence[str]] = None):
     if args.customer_id:
         print(f"ℹ️  Existing customer ID injected: {args.customer_id}")
     print(f"💬 Erste Nachricht: {args.message}")
+    print("🔌 Kein Webserver nötig – der komplette Chat läuft hier im Terminal.")
     print()
 
     asyncio.run(run_agent_system(session_id, user_message=args.message))

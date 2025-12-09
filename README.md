@@ -6,7 +6,7 @@ Laserhenk ist ein **agentic AI System** basierend auf **LangGraph** für die aut
 
 Das System nutzt **Pydantic-Klassen** für strukturierte Datenvalidierung und mehrere spezialisierte KI-Agenten für unterschiedliche Phasen des Kundenprozesses.
 
-## 🚀 Ersten Chat starten
+## 🚀 Ersten Chat starten (CLI)
 
 ```bash
 python main.py --message "Ich brauche einen maßgeschneiderten Anzug"
@@ -15,6 +15,17 @@ python main.py --message "Ich brauche einen maßgeschneiderten Anzug" --customer
 ```
 
 Der `main.py`-Entrypoint erzeugt eine Session, startet den LangGraph-Workflow und gibt den Agenten-Dialog im Terminal aus.
+
+> ℹ️ **Kein Webserver notwendig:** Der Flow läuft komplett per CLI und öffnet keinen Port. Du brauchst nach dem Start kein Browser-Fenster – die gesamte Konversation erscheint direkt im Terminal.
+
+### Browser-Demo (optional)
+Falls du nur das HTML/JS-Frontend ansehen willst, kannst du es statisch ausliefern, z. B. so:
+
+```bash
+python -m http.server 8000 --directory templates
+```
+
+Rufe anschließend `http://localhost:8000` im Browser auf. Die Demo spricht aktuell keinen API-Server an; der produktive Chat läuft über `python main.py` im Terminal.
 
 ## 🏗️ Architektur
 
