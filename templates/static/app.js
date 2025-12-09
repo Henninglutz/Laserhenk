@@ -5,7 +5,8 @@
  */
 
 const CONFIG = {
-  BACKEND_URL: "/api/orchestrator/chat", // HENK1-3 orchestrator endpoint with full flow
+  // Laserhenk backend chat endpoint
+  BACKEND_URL: "/api/chat",
   USE_SPEECH: true,                      // voice input if supported
   MAX_HISTORY: 20                        // how many last messages to send along
 };

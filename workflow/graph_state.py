@@ -7,6 +7,8 @@ Typensicher durch TypedDict.
 
 from typing import TypedDict, Optional, Dict, Any, List
 
+from models.customer import Customer, DesignPreferences, SessionState
+
 
 class HenkGraphState(TypedDict):
     """
@@ -43,7 +45,7 @@ class HenkGraphState(TypedDict):
     messages: List[Dict[str, Any]]
 
     # ==================== Session Data ====================
-    session_state: Dict[str, Any]
+    session_state: SessionState
 
     # ==================== Metadata ====================
     metadata: Dict[str, Any]
@@ -73,15 +75,11 @@ def create_initial_state(session_id: str = "default") -> HenkGraphState:
         pending_action=None,
         phase_complete=False,
         messages=[],
-        session_state={
-            "session_id": session_id,
-            "customer_data": {},
-            "current_phase": "H0",
-            "measurement_data": {},
-            "design_choices": {},
-            "created_at": None,
-            "updated_at": None,
-        },
+        session_state=SessionState(
+            session_id=session_id,
+            customer=Customer(),
+            design_preferences=DesignPreferences(),
+        ),
         metadata={
             "supervisor_reasoning": None,
             "confidence": 1.0,

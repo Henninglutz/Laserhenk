@@ -2,8 +2,8 @@
 
 from typing import Optional
 
-from agents.operator import OperatorAgent
-from models.graph_state import create_initial_graph_state
+from workflow.graph_state import create_initial_state
+from workflow.workflow import create_smart_workflow
 
 
 def create_session(customer_id: Optional[str] = None) -> str:
@@ -19,7 +19,7 @@ def create_session(customer_id: Optional[str] = None) -> str:
     import uuid
 
     session_id = str(uuid.uuid4())
-    initial_state = create_initial_graph_state(session_id)
+    initial_state = create_initial_state(session_id)
 
     if customer_id:
         initial_state["session_state"].customer.customer_id = customer_id
@@ -27,29 +27,30 @@ def create_session(customer_id: Optional[str] = None) -> str:
     return session_id
 
 
-async def run_agent_system(session_id: str):
+async def run_agent_system(session_id: str, user_message: str = "Hallo HENK!"):
     """
     Run the HENK agent system for a given session.
 
     Args:
         session_id: Session identifier
 
-    This is a placeholder for the actual LangGraph workflow.
-    In Phase 2, this will be replaced with proper LangGraph execution.
+    Executes the LangGraph workflow using the configured nodes.
     """
     print(f"🚀 Starting HENK Agent System for session: {session_id}")
-    print("⚠️  Note: This is an architecture placeholder.")
-    print("📋 LangGraph workflow execution will be implemented in Phase 2.")
 
-    # Placeholder: Initialize operator
-    operator = OperatorAgent()
-    print(f"✅ Operator Agent initialized: {operator.agent_name}")
+    state = create_initial_state(session_id)
+    state["user_input"] = user_message
 
-    # TODO: Phase 2
-    # - Initialize LangGraph StateGraph
-    # - Add agent nodes
-    # - Define edges and conditional routing
-    # - Execute workflow
+    workflow = create_smart_workflow()
+
+    final_state = await workflow.ainvoke(state)
+
+    print("🧭 Workflow finished. Messages exchanged:")
+    for msg in final_state.get("messages", []):
+        sender = msg.get("sender", msg.get("role", "unknown"))
+        print(f"  - {sender}: {msg.get('content')}")
+
+    return final_state
 
 
 def main():
