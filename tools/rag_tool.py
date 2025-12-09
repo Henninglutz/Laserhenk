@@ -1,17 +1,25 @@
 """RAG Tool - PostgreSQL Database Interface."""
 
+import logging
+import os
 from typing import Optional
 
-from models.fabric import FabricRecommendation, FabricSearchCriteria
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
+
+from models.fabric import FabricRecommendation, FabricSearchCriteria, FabricData
 from models.tools import RAGQuery, RAGResult
+from tools.embedding_service import get_embedding_service
+
+logger = logging.getLogger(__name__)
 
 
 class RAGTool:
     """
     RAG Database Tool.
 
-    Interface für PostgreSQL RAG Datenbank.
-    (Implementierung bereits vorhanden - nur Interface hier)
+    Interface für PostgreSQL RAG Datenbank mit pgvector.
+    Unterstützt semantic search mit OpenAI embeddings.
     """
 
     def __init__(self, connection_string: Optional[str] = None):
@@ -19,10 +27,48 @@ class RAGTool:
         Initialize RAG Tool.
 
         Args:
-            connection_string: PostgreSQL connection string
+            connection_string: PostgreSQL connection string (defaults to env var)
         """
+        # Get connection string from env if not provided
+        if connection_string is None:
+            connection_string = os.getenv("DATABASE_URL") or os.getenv(
+                "POSTGRES_CONNECTION_STRING"
+            )
+
+        if not connection_string:
+            raise ValueError(
+                "DATABASE_URL or POSTGRES_CONNECTION_STRING not set in environment"
+            )
+
+        # Convert to asyncpg format
+        if connection_string.startswith("postgresql://"):
+            connection_string = connection_string.replace(
+                "postgresql://", "postgresql+asyncpg://", 1
+            )
+        elif connection_string.startswith("postgres://"):
+            connection_string = connection_string.replace(
+                "postgres://", "postgresql+asyncpg://", 1
+            )
+
         self.connection_string = connection_string
-        # TODO: Initialize connection pool
+        self.engine: Optional[AsyncEngine] = None
+        self.embedding_service = get_embedding_service()
+
+        logger.info("[RAGTool] Initialized")
+
+    def _get_engine(self) -> AsyncEngine:
+        """Get or create database engine."""
+        if self.engine is None:
+            self.engine = create_async_engine(
+                self.connection_string, echo=False, pool_size=5, max_overflow=10
+            )
+        return self.engine
+
+    async def close(self):
+        """Close database connections."""
+        if self.engine:
+            await self.engine.dispose()
+            self.engine = None
 
     async def query(self, query_request: RAGQuery) -> RAGResult:
         """
@@ -69,15 +115,149 @@ class RAGTool:
         Returns:
             List of fabric recommendations with similarity scores
         """
-        # TODO: Implement actual fabric search with pgvector
-        # This would:
-        # 1. Create embedding from search criteria
-        # 2. Query fabric_embeddings table with vector similarity
-        # 3. Filter by budget, season, stock_status
-        # 4. Return top K results with scores
+        logger.info(f"[RAGTool.search_fabrics] criteria={criteria}")
 
-        # Placeholder
-        return []
+        try:
+            # Build natural language query from criteria
+            query_parts = []
+
+            if criteria.colors:
+                query_parts.append(f"Farben: {', '.join(criteria.colors)}")
+
+            if criteria.patterns:
+                query_parts.append(f"Muster: {', '.join(criteria.patterns)}")
+
+            if criteria.season:
+                query_parts.append(f"Saison: {criteria.season}")
+
+            if criteria.occasion:
+                query_parts.append(f"Anlass: {criteria.occasion}")
+
+            if not query_parts:
+                query_parts.append("Hochwertige Stoffe")
+
+            query_text = " | ".join(query_parts)
+
+            # Generate embedding for query
+            query_embedding = await self.embedding_service.generate_embedding(
+                query_text
+            )
+
+            # Build SQL with filters
+            where_clauses = []
+            params = {"query_embedding": str(query_embedding), "limit": criteria.limit}
+
+            # Budget filter
+            if criteria.budget_min or criteria.budget_max:
+                # Note: We'd need a price field in fabrics table
+                # For now, skip this filter
+                pass
+
+            # Stock status filter
+            if criteria.in_stock_only:
+                where_clauses.append(
+                    "f.stock_status IN ('in_stock', 'low_stock', 'on_order')"
+                )
+
+            where_sql = ""
+            if where_clauses:
+                where_sql = "AND " + " AND ".join(where_clauses)
+
+            # Query fabric_embeddings with join to fabrics
+            query_str = f"""
+                SELECT
+                    f.id,
+                    f.fabric_code,
+                    f.name,
+                    f.composition,
+                    f.weight,
+                    f.color,
+                    f.pattern,
+                    f.category,
+                    f.stock_status,
+                    f.supplier,
+                    f.origin,
+                    f.care_instructions,
+                    f.description,
+                    f.additional_metadata,
+                    fe.content,
+                    1 - (fe.embedding <=> :query_embedding::vector) as similarity
+                FROM fabric_embeddings fe
+                JOIN fabrics f ON fe.fabric_id = f.id
+                WHERE 1=1
+                {where_sql}
+                ORDER BY fe.embedding <=> :query_embedding::vector
+                LIMIT :limit
+            """
+
+            engine = self._get_engine()
+            async with engine.connect() as conn:
+                # Get raw asyncpg connection for vector operations
+                raw_conn = await conn.get_raw_connection()
+                async_conn = raw_conn.driver_connection
+
+                results = await async_conn.fetch(query_str, **params)
+
+            # Format results as FabricRecommendation
+            recommendations = []
+            for result in results:
+                # Create FabricData
+                fabric_data = FabricData(
+                    fabric_code=result["fabric_code"],
+                    name=result["name"],
+                    composition=result["composition"],
+                    weight=result["weight"],
+                    color=result["color"],
+                    pattern=result["pattern"],
+                    category=result["category"],
+                    stock_status=result["stock_status"],
+                    supplier=result["supplier"] or "Formens",
+                    origin=result["origin"],
+                    care_instructions=result["care_instructions"],
+                    description=result["description"],
+                )
+
+                # Determine match reasons
+                match_reasons = []
+                similarity = float(result["similarity"])
+
+                if similarity > 0.85:
+                    match_reasons.append("Sehr hohe Übereinstimmung mit Ihren Kriterien")
+                elif similarity > 0.75:
+                    match_reasons.append("Hohe Übereinstimmung mit Ihren Kriterien")
+                else:
+                    match_reasons.append("Gute Übereinstimmung mit Ihren Kriterien")
+
+                if criteria.colors and result["color"]:
+                    if any(
+                        c.lower() in result["color"].lower() for c in criteria.colors
+                    ):
+                        match_reasons.append(f"Farbe passt: {result['color']}")
+
+                if criteria.patterns and result["pattern"]:
+                    if any(
+                        p.lower() in result["pattern"].lower()
+                        for p in criteria.patterns
+                    ):
+                        match_reasons.append(f"Muster passt: {result['pattern']}")
+
+                # Create recommendation
+                recommendation = FabricRecommendation(
+                    fabric=fabric_data,
+                    similarity_score=similarity,
+                    match_reasons=match_reasons,
+                )
+                recommendations.append(recommendation)
+
+            logger.info(
+                f"[RAGTool.search_fabrics] Found {len(recommendations)} recommendations"
+            )
+            return recommendations
+
+        except Exception as e:
+            logger.error(f"[RAGTool.search_fabrics] Error: {e}", exc_info=True)
+            # Return empty list on error
+            return []
 
     async def get_fabric_by_code(self, fabric_code: str) -> Optional[dict]:
         """
@@ -114,76 +294,93 @@ class RAGTool:
         query: str,
         fabric_type: Optional[str] = None,
         pattern: Optional[str] = None,
-        limit: int = 10
+        limit: int = 10,
+        category: Optional[str] = None,
     ) -> list[dict]:
         """
-        Generic search method for RAG queries.
+        Generic semantic search method for RAG queries.
 
-        This is a wrapper that routes to the appropriate specialized search method
-        based on the query parameters.
+        Uses pgvector cosine similarity to find relevant documents
+        in the rag_docs table based on the query embedding.
 
         Args:
             query: Natural language search query
             fabric_type: Optional fabric type filter (e.g., "wool", "linen")
             pattern: Optional pattern filter (e.g., "pinstripe", "solid")
             limit: Maximum number of results to return
+            category: Optional category filter (e.g., "fabrics", "shirts")
 
         Returns:
-            List of search results (fabrics, designs, etc.)
+            List of search results with similarity scores
         """
-        # TODO: Implement actual RAG search with semantic understanding
-        # For now: Return mock data to show integration works
-
-        import logging
-        logger = logging.getLogger(__name__)
-
         logger.info(
-            f"[RAGTool.search] query='{query}', fabric_type={fabric_type}, pattern={pattern}"
+            f"[RAGTool.search] query='{query}', fabric_type={fabric_type}, "
+            f"pattern={pattern}, category={category}"
         )
 
-        # Mock results to demonstrate RAG integration
-        mock_results = [
-            {
-                "name": "Italian Wool Pinstripe",
-                "material": "100% Super 120s Wool",
-                "pattern": "Nadelstreifen",
-                "weight": "280g/m²",
-                "price": 1800,
-                "fabric_code": "ITW001",
-                "similarity_score": 0.92,
-            },
-            {
-                "name": "British Flannel",
-                "material": "100% Pure Wool Flannel",
-                "pattern": "Solid",
-                "weight": "320g/m²",
-                "price": 1650,
-                "fabric_code": "BRF002",
-                "similarity_score": 0.87,
-            },
-            {
-                "name": "Summer Linen Blend",
-                "material": "60% Linen 40% Wool",
-                "pattern": "Herringbone",
-                "weight": "240g/m²",
-                "price": 1450,
-                "fabric_code": "SLB003",
-                "similarity_score": 0.81,
-            },
-        ]
+        try:
+            # Generate embedding for query
+            query_embedding = await self.embedding_service.generate_embedding(query)
 
-        # Filter by fabric_type if specified
-        if fabric_type:
-            mock_results = [
-                r for r in mock_results
-                if fabric_type.lower() in r["material"].lower()
-            ]
+            # Build query with optional filters
+            where_clauses = []
+            params = {"query_embedding": str(query_embedding), "limit": limit}
 
-        # Filter by pattern if specified
-        if pattern:
-            mock_results = [
-                r for r in mock_results
-                if pattern.lower() in r["pattern"].lower()
-            ]
+            if category:
+                where_clauses.append("meta_json->>'category' = :category")
+                params["category"] = category
 
-        return mock_results[:limit]
+            if fabric_type:
+                where_clauses.append("content ILIKE :fabric_type")
+                params["fabric_type"] = f"%{fabric_type}%"
+
+            if pattern:
+                where_clauses.append("content ILIKE :pattern")
+                params["pattern"] = f"%{pattern}%"
+
+            where_sql = ""
+            if where_clauses:
+                where_sql = "WHERE " + " AND ".join(where_clauses)
+
+            # Execute similarity search
+            query_str = f"""
+                SELECT
+                    doc_id,
+                    meta_json->>'chunk_id' as chunk_id,
+                    meta_json->>'category' as category,
+                    content,
+                    1 - (embedding <=> :query_embedding::vector) as similarity
+                FROM rag_docs
+                {where_sql}
+                ORDER BY embedding <=> :query_embedding::vector
+                LIMIT :limit
+            """
+
+            engine = self._get_engine()
+            async with engine.connect() as conn:
+                # Get raw asyncpg connection for vector operations
+                raw_conn = await conn.get_raw_connection()
+                async_conn = raw_conn.driver_connection
+
+                results = await async_conn.fetch(query_str, **params)
+
+            # Format results
+            formatted_results = []
+            for result in results:
+                formatted_results.append(
+                    {
+                        "doc_id": str(result["doc_id"]),
+                        "chunk_id": result["chunk_id"],
+                        "category": result["category"],
+                        "content": result["content"],
+                        "similarity_score": float(result["similarity"]),
+                    }
+                )
+
+            logger.info(f"[RAGTool.search] Found {len(formatted_results)} results")
+            return formatted_results
+
+        except Exception as e:
+            logger.error(f"[RAGTool.search] Error: {e}", exc_info=True)
+            # Return empty results on error rather than crashing
+            return []
