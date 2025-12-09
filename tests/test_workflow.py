@@ -11,7 +11,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
-from models.graph_state import create_initial_graph_state
+from workflow.graph_state import create_initial_state
 from workflow import create_workflow
 
 
@@ -25,7 +25,7 @@ async def test_workflow():
 
     # Create initial state
     session_id = str(uuid.uuid4())
-    initial_state = create_initial_graph_state(session_id)
+    initial_state = create_initial_state(session_id)
 
     print(f"Session ID: {session_id}")
     print("Initial state created")
@@ -61,10 +61,14 @@ async def test_workflow():
                 print(f"  current_agent: {node_state.get('current_agent')}")
                 print(f"  next_agent: {node_state.get('next_agent')}")
                 print(f"  pending_action: {node_state.get('pending_action')}")
-                print(f"  rag_context: {node_state['session_state'].rag_context}")
-                print(
-                    f"  customer_id: {node_state['session_state'].customer.customer_id}"
-                )
+
+                # Session state may not be present in all nodes
+                if 'session_state' in node_state:
+                    session_state = node_state['session_state']
+                    print(f"  rag_context: {session_state.rag_context}")
+                    print(f"  customer_id: {session_state.customer.customer_id}")
+                else:
+                    print("  session_state: Not present in this node output")
 
             if step_count >= max_steps:
                 print()

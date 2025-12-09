@@ -108,3 +108,82 @@ class RAGTool:
         # TODO: Implement occasion-based fabric query
         # This would query fabric_categories and join with fabrics
         return []
+
+    async def search(
+        self,
+        query: str,
+        fabric_type: Optional[str] = None,
+        pattern: Optional[str] = None,
+        limit: int = 10
+    ) -> list[dict]:
+        """
+        Generic search method for RAG queries.
+
+        This is a wrapper that routes to the appropriate specialized search method
+        based on the query parameters.
+
+        Args:
+            query: Natural language search query
+            fabric_type: Optional fabric type filter (e.g., "wool", "linen")
+            pattern: Optional pattern filter (e.g., "pinstripe", "solid")
+            limit: Maximum number of results to return
+
+        Returns:
+            List of search results (fabrics, designs, etc.)
+        """
+        # TODO: Implement actual RAG search with semantic understanding
+        # For now: Return mock data to show integration works
+
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info(
+            f"[RAGTool.search] query='{query}', fabric_type={fabric_type}, pattern={pattern}"
+        )
+
+        # Mock results to demonstrate RAG integration
+        mock_results = [
+            {
+                "name": "Italian Wool Pinstripe",
+                "material": "100% Super 120s Wool",
+                "pattern": "Nadelstreifen",
+                "weight": "280g/m²",
+                "price": 1800,
+                "fabric_code": "ITW001",
+                "similarity_score": 0.92,
+            },
+            {
+                "name": "British Flannel",
+                "material": "100% Pure Wool Flannel",
+                "pattern": "Solid",
+                "weight": "320g/m²",
+                "price": 1650,
+                "fabric_code": "BRF002",
+                "similarity_score": 0.87,
+            },
+            {
+                "name": "Summer Linen Blend",
+                "material": "60% Linen 40% Wool",
+                "pattern": "Herringbone",
+                "weight": "240g/m²",
+                "price": 1450,
+                "fabric_code": "SLB003",
+                "similarity_score": 0.81,
+            },
+        ]
+
+        # Filter by fabric_type if specified
+        if fabric_type:
+            mock_results = [
+                r for r in mock_results
+                if fabric_type.lower() in r["material"].lower()
+            ]
+
+        # Filter by pattern if specified
+        if pattern:
+            mock_results = [
+                r for r in mock_results
+                if pattern.lower() in r["pattern"].lower()
+            ]
+
+        return mock_results[:limit]

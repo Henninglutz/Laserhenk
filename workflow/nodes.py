@@ -249,15 +249,38 @@ async def conversation_node(state: HenkGraphState) -> HenkGraphState:
 
         updated_session_state = session_state.model_copy()
 
+        # Handle RAG query action - route to rag_tool
         if decision.action == "query_rag":
+            logger.info(f"[Conversation] Agent {current_agent_name} requested RAG query, routing to rag_tool")
+
+            # Mark that RAG will be queried for this agent
             if current_agent_name == "henk1":
                 updated_session_state.henk1_rag_queried = True
             if current_agent_name == "design_henk":
                 updated_session_state.design_rag_queried = True
 
-        if current_agent_name == "henk1" and not updated_session_state.henk1_rag_queried:
-            updated_session_state.henk1_rag_queried = True
+            messages = list(state.get("messages", []))
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": decision.message or "Querying database for information...",
+                    "sender": current_agent_name,
+                    "metadata": {"action": decision.action},
+                }
+            )
 
+            # Route to rag_tool with query parameters
+            return {
+                "session_state": updated_session_state,
+                "current_agent": current_agent_name,
+                "next_agent": "rag_tool",
+                "pending_action": decision.action_params or {},
+                "awaiting_user_input": False,
+                "phase_complete": False,
+                "messages": messages,
+            }
+
+        # Handle other special actions
         if current_agent_name == "henk1" and not updated_session_state.customer.customer_id:
             updated_session_state.customer.customer_id = (
                 f"TEMP_{updated_session_state.session_id[:8]}"
