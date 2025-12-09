@@ -198,11 +198,6 @@ class SupervisorAgent:
         customer_data = session_state.get("customer_data", {})
         completeness = self._assess_completeness(customer_data)
 
-        # Wir nutzen die PromptRegistry: Sie lädt den Kern-Prompt beim ersten
-        # Zugriff von der Festplatte, merkt sich das Ergebnis und liefert ihn
-        # danach aus dem Cache. Weitere Spezial-Prompts (henk1, henk2, henk3)
-        # könnten hier ebenso geladen werden, indem wir deren Schlüssel
-        # anfordern (z.B. ``get_prompt_or_default("henk2")``).
         core_prompt = prompt_registry.get_prompt("core")
 
         dynamic_context = f"""Du bist der SUPERVISOR eines hochmodernen Bespoke-Schneider-Systems namens HENK.

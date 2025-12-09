@@ -1,18 +1,4 @@
-"""Prompt loading utilities with usage tracking.
-
-Einfache Erklärung für Einsteiger
----------------------------------
-- Wir speichern die Prompts als Textdateien im Ordner ``Promt``.
-- Die ``PromptRegistry`` liest eine Datei **erst**, wenn jemand sie
-  anfragt ("lazy loading"). Damit starten wir schneller und laden nur,
-  was wirklich gebraucht wird.
-- Nach dem Laden merken wir uns, wann die Datei eingelesen wurde,
-  wie oft sie benutzt wurde und wann der letzte Zugriff war. Diese
-  Infos helfen beim Debuggen.
-- Wenn ein gewünschter Prompt fehlt, kann ``get_prompt_or_default``
-  automatisch einen Fallback (standardmäßig den Kern-Prompt ``core``)
-  liefern. So müssen Aufrufer kein eigenes ``try/except`` bauen.
-"""
+"""Prompt loading utilities with usage tracking."""
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
