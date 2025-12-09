@@ -199,11 +199,18 @@ class SupervisorAgent:
             )
 
             # Handle both pydantic-ai API versions
-            # Different versions use different attribute names for the result
-            result_attrs = [a for a in dir(result) if not a.startswith('_')]
-            logger.info(f"[SupervisorAgent] Result type: {type(result).__name__}, attrs: {result_attrs[:10]}")
+            # Log result structure for debugging
+            try:
+                result_type = type(result).__name__
+                result_attrs = [a for a in dir(result) if not a.startswith('_')][:15]
+                logger.info(f"[SupervisorAgent] Result type: {result_type}")
+                logger.info(f"[SupervisorAgent] Result attrs: {result_attrs}")
+            except Exception as log_err:
+                logger.warning(f"[SupervisorAgent] Failed to log result: {log_err}")
 
-            # Try different attribute patterns
+            # Extract decision from result
+            decision = None
+
             if hasattr(result, 'data'):
                 decision = result.data  # v0.0.x pattern
                 logger.info("[SupervisorAgent] Using result.data (v0.0.x)")
@@ -212,11 +219,24 @@ class SupervisorAgent:
                 logger.info("[SupervisorAgent] Using result.output (v1.0+)")
             elif isinstance(result, SupervisorDecision):
                 decision = result  # Result IS the decision
-                logger.info("[SupervisorAgent] Result is SupervisorDecision")
+                logger.info("[SupervisorAgent] Result is SupervisorDecision directly")
             else:
-                # Fallback: try other common names
-                decision = getattr(result, 'result', getattr(result, 'value', result))
-                logger.info(f"[SupervisorAgent] Using fallback, decision type: {type(decision).__name__}")
+                # Try other common attribute names
+                for attr_name in ['result', 'value', 'response', 'content']:
+                    if hasattr(result, attr_name):
+                        decision = getattr(result, attr_name)
+                        logger.info(f"[SupervisorAgent] Using result.{attr_name}")
+                        break
+
+                if decision is None:
+                    logger.error(f"[SupervisorAgent] Could not extract decision from result type {type(result)}")
+                    raise ValueError(f"Unknown result structure: {type(result)}")
+
+            # Validate we got a SupervisorDecision
+            if not isinstance(decision, SupervisorDecision):
+                logger.error(f"[SupervisorAgent] Decision is {type(decision).__name__}, not SupervisorDecision!")
+                logger.error(f"[SupervisorAgent] Decision value: {decision}")
+                raise TypeError(f"Expected SupervisorDecision, got {type(decision).__name__}")
 
             logger.info(
                 f"[SupervisorAgent] Decision: {decision.next_destination} "
