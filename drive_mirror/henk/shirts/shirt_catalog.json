@@ -1,0 +1,36 @@
+{
+  "meta": {
+    "agent": "HENK",
+    "module": "shirts (collars/cuffs/fronts)",
+    "notice": "Nicht zum Wettbewerb schicken, wir sind der Schneider."
+  },
+  "files": {
+    "henk_kragenformen.json": {
+      "exists": true,
+      "type": "object",
+      "keys": [
+        "collars"
+      ],
+      "size": 1
+    },
+    "henk_manschetten.json": {
+      "exists": true,
+      "type": "object",
+      "keys": [
+        "cuffs"
+      ],
+      "size": 1
+    },
+    "henk_fronten.json": {
+      "exists": true,
+      "type": "object",
+      "keys": [
+        "fronts"
+      ],
+      "size": 1
+    }
+  },
+  "counts": {
+    "chunks": 11
+  }
+}

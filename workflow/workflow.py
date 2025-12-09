@@ -13,7 +13,7 @@ from workflow.nodes import (
     validate_query_node,
     smart_operator_node,
     conversation_node,
-    tools_dispatcher_node
+    tools_dispatcher_node,
 )
 import logging
 
@@ -111,7 +111,9 @@ def create_smart_workflow() -> StateGraph:
     workflow.add_node("conversation", conversation_node)
     workflow.add_node("tools", tools_dispatcher_node)
 
-    logger.info("[Workflow] Nodes added: validate_query, smart_operator, conversation, tools")
+    logger.info(
+        "[Workflow] Nodes added: validate_query, smart_operator, conversation, tools"
+    )
 
     # ==================== Add Edges ====================
 
@@ -122,31 +124,21 @@ def create_smart_workflow() -> StateGraph:
     workflow.add_conditional_edges(
         "validate_query",
         lambda state: "smart_operator" if state.get("is_valid") else END,
-        {
-            "smart_operator": "smart_operator",
-            END: END
-        }
+        {"smart_operator": "smart_operator", END: END},
     )
 
     # smart_operator → conversation OR tools OR END
     workflow.add_conditional_edges(
         "smart_operator",
         should_continue_after_operator,
-        {
-            "conversation": "conversation",
-            "tools": "tools",
-            END: END
-        }
+        {"conversation": "conversation", "tools": "tools", END: END},
     )
 
     # conversation → smart_operator OR END (Feedback-Loop!)
     workflow.add_conditional_edges(
         "conversation",
         should_continue_after_conversation,
-        {
-            "smart_operator": "smart_operator",
-            END: END
-        }
+        {"smart_operator": "smart_operator", END: END},
     )
 
     # tools → smart_operator (immer zurück zum Supervisor)

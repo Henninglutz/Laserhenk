@@ -1,7 +1,14 @@
 """Test script to debug the RAG infinite loop issue."""
 
 import asyncio
+import sys
 import uuid
+from pathlib import Path
+
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 
 from models.graph_state import create_initial_graph_state
 from workflow import create_workflow
@@ -19,7 +26,7 @@ async def test_workflow():
     initial_state = create_initial_graph_state(session_id)
 
     print(f"Session ID: {session_id}")
-    print(f"Initial state created")
+    print("Initial state created")
     print(f"Initial rag_context: {initial_state['session_state'].rag_context}")
     print()
 
@@ -53,7 +60,9 @@ async def test_workflow():
                 print(f"  next_agent: {node_state.get('next_agent')}")
                 print(f"  pending_action: {node_state.get('pending_action')}")
                 print(f"  rag_context: {node_state['session_state'].rag_context}")
-                print(f"  customer_id: {node_state['session_state'].customer.customer_id}")
+                print(
+                    f"  customer_id: {node_state['session_state'].customer.customer_id}"
+                )
 
             if step_count >= max_steps:
                 print()
@@ -74,6 +83,7 @@ async def test_workflow():
         print(f"❌ ERROR: {e}")
         print("=" * 80)
         import traceback
+
         traceback.print_exc()
 
 

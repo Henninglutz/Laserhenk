@@ -80,12 +80,12 @@ def create_initial_state(session_id: str = "default") -> HenkGraphState:
             "measurement_data": {},
             "design_choices": {},
             "created_at": None,
-            "updated_at": None
+            "updated_at": None,
         },
         metadata={
             "supervisor_reasoning": None,
             "confidence": 1.0,
             "error_count": 0,
-            "total_llm_calls": 0
-        }
+            "total_llm_calls": 0,
+        },
     )

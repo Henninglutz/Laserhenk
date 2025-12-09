@@ -32,38 +32,38 @@ class SupervisorDecision(BaseModel):
     """
 
     next_destination: Literal[
-        "henk1",           # H1: Event-Klärung (Anlass, Budget, Timing)
-        "design_henk",     # H2: Design-Phase (Schnitt, Stil, Farben)
-        "laserhenk",       # H3: Messungen (Körpermaße erfassen)
-        "rag_tool",        # Stoff-/Bild-Suche via RAG
-        "comparison_tool", # Vergleiche zwischen Optionen
-        "pricing_tool",    # Preiskalkulation
-        "clarification",   # User-Intent unklar → Rückfrage
-        "end"              # Gespräch beenden
+        "henk1",  # H1: Event-Klärung (Anlass, Budget, Timing)
+        "design_henk",  # H2: Design-Phase (Schnitt, Stil, Farben)
+        "laserhenk",  # H3: Messungen (Körpermaße erfassen)
+        "rag_tool",  # Stoff-/Bild-Suche via RAG
+        "comparison_tool",  # Vergleiche zwischen Optionen
+        "pricing_tool",  # Preiskalkulation
+        "clarification",  # User-Intent unklar → Rückfrage
+        "end",  # Gespräch beenden
     ] = Field(description="Ziel-Agent oder -Tool für nächsten Schritt")
 
     reasoning: str = Field(
         description="Begründung für Routing-Entscheidung (1-2 Sätze)",
         min_length=10,
-        max_length=200
+        max_length=200,
     )
 
     action_params: Optional[Dict[str, Any]] = Field(
         default=None,
-        description="Parameter für Aktion (z.B. {'fabric_type': 'wool', 'pattern': 'pinstripe'})"
+        description="Parameter für Aktion (z.B. {'fabric_type': 'wool', 'pattern': 'pinstripe'})",
     )
 
     user_message: Optional[str] = Field(
         default=None,
         description="Rückfrage an User (nur bei clarification)",
-        max_length=500
+        max_length=500,
     )
 
     confidence: float = Field(
         default=1.0,
         ge=0.0,
         le=1.0,
-        description="Confidence Score: 0.0 (unsicher) bis 1.0 (sehr sicher)"
+        description="Confidence Score: 0.0 (unsicher) bis 1.0 (sehr sicher)",
     )
 
 
@@ -101,9 +101,7 @@ class SupervisorAgent:
         """
         self.model = model
         self.pydantic_agent = PydanticAgent(
-            model,
-            result_type=SupervisorDecision,
-            retries=2
+            model, result_type=SupervisorDecision, retries=2
         )
         logger.info(f"[SupervisorAgent] Initialized with model={model}")
 
@@ -111,7 +109,7 @@ class SupervisorAgent:
         self,
         user_message: str,
         session_state: Dict[str, Any],
-        conversation_history: List[Dict[str, Any]]
+        conversation_history: List[Dict[str, Any]],
     ) -> SupervisorDecision:
         """
         Trifft LLM-basierte Routing-Entscheidung.
@@ -153,8 +151,8 @@ class SupervisorAgent:
                     "system_prompt": system_prompt,
                     "current_phase": session_state.get("current_phase", "H0"),
                     "customer_data": session_state.get("customer_data", {}),
-                    "available_destinations": self._get_available_destinations()
-                }
+                    "available_destinations": self._get_available_destinations(),
+                },
             )
 
             decision = result.data
@@ -175,7 +173,7 @@ class SupervisorAgent:
                 next_destination="clarification",
                 reasoning="LLM error occurred, requesting clarification",
                 user_message="Entschuldigung, ich hatte ein kurzes Problem. Kannst du das wiederholen?",
-                confidence=0.0
+                confidence=0.0,
             )
 
     def _build_supervisor_prompt(self, session_state: Dict[str, Any]) -> str:
@@ -304,7 +302,7 @@ Antworte mit SupervisorDecision Objekt!"""
             "comparison_tool",
             "pricing_tool",
             "clarification",
-            "end"
+            "end",
         ]
 
     def _format_history(self, history: List[Dict[str, Any]]) -> List[Dict[str, str]]:
@@ -328,9 +326,6 @@ Antworte mit SupervisorDecision Objekt!"""
 
             # Nur user und assistant Messages (system Messages filtern)
             if role in ["user", "assistant"] and content:
-                formatted.append({
-                    "role": role,
-                    "content": content
-                })
+                formatted.append({"role": role, "content": content})
 
         return formatted

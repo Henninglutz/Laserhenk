@@ -23,7 +23,9 @@ class User(BaseModel):
     """
 
     user_id: str = Field(..., description="Unique user identifier (UUID)")
-    username: str = Field(..., description="Unique username", min_length=3, max_length=50)
+    username: str = Field(
+        ..., description="Unique username", min_length=3, max_length=50
+    )
     email: EmailStr = Field(..., description="User email (unique)")
 
     # Password hash stored separately in DB (argon2)
@@ -53,7 +55,9 @@ class UserCreate(BaseModel):
 
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
-    password: str = Field(..., min_length=8, description="Plain password (will be hashed with argon2)")
+    password: str = Field(
+        ..., min_length=8, description="Plain password (will be hashed with argon2)"
+    )
     full_name: Optional[str] = None
     phone: Optional[str] = None
     customer_id: str = Field(..., description="Link to existing Customer")

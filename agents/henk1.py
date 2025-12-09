@@ -1,7 +1,7 @@
 """HENK1 Agent - Bedarfsermittlung (AIDA Prinzip)."""
 
 from agents.base import AgentDecision, BaseAgent
-from models.customer import CustomerType, SessionState
+from models.customer import SessionState
 
 
 class Henk1Agent(BaseAgent):
@@ -47,8 +47,6 @@ class Henk1Agent(BaseAgent):
             next_agent="operator",
             message="Starting needs assessment - querying product catalog",
             action="query_rag",
-            action_params={
-                "query": "Initial product catalog for new customer"
-            },
+            action_params={"query": "Initial product catalog for new customer"},
             should_continue=True,
         )

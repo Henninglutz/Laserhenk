@@ -135,9 +135,7 @@ class DesignHenkToLaserHenkPayload(BaseModel):
     """
 
     # Mandatory Fields
-    garment_type: GarmentType = Field(
-        ..., description="Anzug oder Kombination"
-    )
+    garment_type: GarmentType = Field(..., description="Anzug oder Kombination")
     jacket_form: JacketForm = Field(..., description="Jacket Form")
     shoulder_processing: ShoulderProcessing = Field(
         ..., description="Schulter Verarbeitung"
@@ -149,9 +147,7 @@ class DesignHenkToLaserHenkPayload(BaseModel):
     revers_width_cm: Optional[float] = Field(
         None, description="Reversbreite in cm", gt=0
     )
-    lining_color: Optional[str] = Field(
-        None, description="Farbe des Innenfutters"
-    )
+    lining_color: Optional[str] = Field(None, description="Farbe des Innenfutters")
     button_style: Optional[str] = None
     pocket_style: Optional[str] = None
 
@@ -186,12 +182,8 @@ class LaserHenkToHITLPayload(BaseModel):
         ..., description="Commitment-Status vom User"
     )
     mood_image_url: str = Field(..., description="Finales Moodbild")
-    process_description: str = Field(
-        ..., description="Ablaufbeschreibung für Kunden"
-    )
-    invoice_sent: bool = Field(
-        default=False, description="Rechnung versendet"
-    )
+    process_description: str = Field(..., description="Ablaufbeschreibung für Kunden")
+    invoice_sent: bool = Field(default=False, description="Rechnung versendet")
     crm_lead_id: str = Field(..., description="CRM Lead ID (Leadsicherung)")
 
     # Appointment details

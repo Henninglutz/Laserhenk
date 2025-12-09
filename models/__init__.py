@@ -147,6 +147,7 @@ def __getattr__(name: str) -> Any:
         module_name, attr_name = _LAZY_IMPORTS[name]
         try:
             import importlib
+
             module = importlib.import_module(module_name)
             return getattr(module, attr_name)
         except ImportError as e:

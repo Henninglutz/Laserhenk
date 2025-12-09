@@ -21,7 +21,9 @@ try:
     import io
 except ImportError:
     print("❌ Google API Bibliotheken fehlen!")
-    print("   Installiere mit: pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client")
+    print(
+        "   Installiere mit: pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client"
+    )
     sys.exit(1)
 
 # Load environment
@@ -34,7 +36,7 @@ TARGET_FILE = "price_book_by_tier.json"
 OUTPUT_PATH = "drive_mirror/henk/fabrics/price_book_by_tier.json"
 
 # Scopes
-SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
+SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 
 
 def authenticate():
@@ -50,11 +52,10 @@ def authenticate():
     print(f"✅ Lade Credentials von: {CREDENTIALS_FILE}")
 
     credentials = service_account.Credentials.from_service_account_file(
-        CREDENTIALS_FILE,
-        scopes=SCOPES
+        CREDENTIALS_FILE, scopes=SCOPES
     )
 
-    service = build('drive', 'v3', credentials=credentials)
+    service = build("drive", "v3", credentials=credentials)
     return service
 
 
@@ -64,13 +65,17 @@ def find_file_in_folder(service, folder_id, filename):
 
     print(f"🔍 Suche nach '{filename}' in Folder {folder_id}...")
 
-    results = service.files().list(
-        q=query,
-        spaces='drive',
-        fields='files(id, name, mimeType, modifiedTime, size)'
-    ).execute()
+    results = (
+        service.files()
+        .list(
+            q=query,
+            spaces="drive",
+            fields="files(id, name, mimeType, modifiedTime, size)",
+        )
+        .execute()
+    )
 
-    files = results.get('files', [])
+    files = results.get("files", [])
 
     if not files:
         print(f"❌ Datei '{filename}' nicht gefunden in Folder {folder_id}")
@@ -93,7 +98,7 @@ def download_file(service, file_id, output_path):
     # Create output directory if needed
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    fh = io.FileIO(output_path, 'wb')
+    fh = io.FileIO(output_path, "wb")
     downloader = MediaIoBaseDownload(fh, request)
 
     print(f"📥 Downloading to {output_path}...")
@@ -105,7 +110,7 @@ def download_file(service, file_id, output_path):
             print(f"   Progress: {int(status.progress() * 100)}%")
 
     fh.close()
-    print(f"✅ Download complete!")
+    print("✅ Download complete!")
 
 
 def analyze_pricing_file(file_path):
@@ -125,11 +130,11 @@ def analyze_pricing_file(file_path):
         return
 
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        print(f"✅ JSON geladen")
-        print(f"\nStruktur:")
+        print("✅ JSON geladen")
+        print("\nStruktur:")
         print(f"  Type: {type(data)}")
 
         if isinstance(data, dict):
@@ -146,7 +151,7 @@ def analyze_pricing_file(file_path):
             print(f"  Anzahl Einträge: {len(data)}")
 
             if data:
-                print(f"\n📄 Erstes Element:")
+                print("\n📄 Erstes Element:")
                 print(json.dumps(data[0], indent=2)[:500])
 
         print("\n" + "=" * 70)
@@ -155,7 +160,7 @@ def analyze_pricing_file(file_path):
     except json.JSONDecodeError as e:
         print(f"❌ JSON Parse Error: {e}")
         print("\nErste 200 Zeichen:")
-        with open(file_path, 'r') as f:
+        with open(file_path, "r") as f:
             print(f.read(200))
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -176,19 +181,23 @@ def main():
     if not file:
         # Try to list all files in folder
         print(f"\n📋 Dateien im Folder {FOLDER_ID}:")
-        results = service.files().list(
-            q=f"'{FOLDER_ID}' in parents and trashed=false",
-            spaces='drive',
-            fields='files(id, name, mimeType)'
-        ).execute()
+        results = (
+            service.files()
+            .list(
+                q=f"'{FOLDER_ID}' in parents and trashed=false",
+                spaces="drive",
+                fields="files(id, name, mimeType)",
+            )
+            .execute()
+        )
 
-        for f in results.get('files', []):
+        for f in results.get("files", []):
             print(f"  - {f['name']} ({f['mimeType']})")
 
         sys.exit(1)
 
     # Download
-    download_file(service, file['id'], OUTPUT_PATH)
+    download_file(service, file["id"], OUTPUT_PATH)
 
     # Analyze
     analyze_pricing_file(OUTPUT_PATH)

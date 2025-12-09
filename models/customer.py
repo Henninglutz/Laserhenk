@@ -7,11 +7,7 @@ from typing import TYPE_CHECKING, Optional
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
-    from models.handoff import (
-        DesignHenkToLaserHenkPayload,
-        Henk1ToDesignHenkPayload,
-        LaserHenkToHITLPayload,
-    )
+    pass
 
 
 class CustomerType(str, Enum):
@@ -30,9 +26,7 @@ class Customer(BaseModel):
     phone: Optional[str] = None
     customer_type: CustomerType = CustomerType.NEW
     has_measurements: bool = False
-    crm_lead_id: Optional[str] = Field(
-        None, description="PIPEDRIVE CRM Lead ID"
-    )
+    crm_lead_id: Optional[str] = Field(None, description="PIPEDRIVE CRM Lead ID")
 
 
 class Measurements(BaseModel):
@@ -59,12 +53,8 @@ class DesignPreferences(BaseModel):
     shoulder_padding: Optional[str] = Field(
         None, description="'leicht', 'mittel', 'stark'"
     )
-    waistband_type: Optional[str] = Field(
-        None, description="z.B. 'bundfalte', 'ohne'"
-    )
-    inner_lining: Optional[str] = Field(
-        None, description="Futterstoff-Art"
-    )
+    waistband_type: Optional[str] = Field(None, description="z.B. 'bundfalte', 'ohne'")
+    inner_lining: Optional[str] = Field(None, description="Futterstoff-Art")
     lining_color: Optional[str] = None
     button_style: Optional[str] = None
     pocket_style: Optional[str] = None
@@ -77,25 +67,17 @@ class SessionState(BaseModel):
     session_id: str
     customer: Customer
     measurements: Optional[Measurements] = None
-    design_preferences: DesignPreferences = Field(
-        default_factory=DesignPreferences
-    )
+    design_preferences: DesignPreferences = Field(default_factory=DesignPreferences)
     conversation_history: list[str] = Field(default_factory=list)
-    current_agent: Optional[str] = Field(
-        None, description="Current active agent"
-    )
+    current_agent: Optional[str] = Field(None, description="Current active agent")
     mood_image_url: Optional[str] = Field(
         None, description="Generated DALLE mood image"
     )
-    rag_context: Optional[dict] = Field(
-        None, description="Context from RAG database"
-    )
+    rag_context: Optional[dict] = Field(None, description="Context from RAG database")
     next_action: Optional[str] = None
 
     # RAG query tracking per agent
-    henk1_rag_queried: bool = Field(
-        default=False, description="HENK1 has queried RAG"
-    )
+    henk1_rag_queried: bool = Field(default=False, description="HENK1 has queried RAG")
     design_rag_queried: bool = Field(
         default=False, description="Design HENK has queried RAG"
     )
