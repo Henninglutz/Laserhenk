@@ -12,6 +12,7 @@ import asyncio
 import os
 import sys
 import pytest
+import pytest_asyncio
 from pathlib import Path
 
 # Add project root to path
@@ -22,7 +23,7 @@ from tools.rag_tool import RAGTool
 from models.fabric import FabricSearchCriteria, Season
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def rag_tool():
     """Create RAGTool instance."""
     # Skip if no database connection available
@@ -124,12 +125,28 @@ async def test_search_fabrics_minimal_criteria(rag_tool):
     assert isinstance(recommendations, list)
 
 
-@pytest.mark.asyncio
-async def test_rag_tool_handles_errors_gracefully():
+def test_rag_tool_handles_errors_gracefully():
     """Test that RAGTool handles errors gracefully."""
     # Try with invalid connection string
-    with pytest.raises(ValueError):
-        tool = RAGTool(connection_string=None)
+    # Set both env vars to None temporarily
+    original_db_url = os.environ.get("DATABASE_URL")
+    original_postgres = os.environ.get("POSTGRES_CONNECTION_STRING")
+
+    try:
+        # Remove env vars
+        if "DATABASE_URL" in os.environ:
+            del os.environ["DATABASE_URL"]
+        if "POSTGRES_CONNECTION_STRING" in os.environ:
+            del os.environ["POSTGRES_CONNECTION_STRING"]
+
+        with pytest.raises(ValueError):
+            tool = RAGTool(connection_string=None)
+    finally:
+        # Restore env vars
+        if original_db_url:
+            os.environ["DATABASE_URL"] = original_db_url
+        if original_postgres:
+            os.environ["POSTGRES_CONNECTION_STRING"] = original_postgres
 
 
 def test_embedding_service_singleton():
