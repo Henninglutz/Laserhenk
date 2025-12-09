@@ -16,6 +16,8 @@ from pydantic_ai import Agent as PydanticAgent
 from typing import Literal, Optional, Dict, Any, List
 import logging
 
+from agents.prompt_loader import prompt_registry
+
 logger = logging.getLogger(__name__)
 
 
@@ -196,7 +198,9 @@ class SupervisorAgent:
         customer_data = session_state.get("customer_data", {})
         completeness = self._assess_completeness(customer_data)
 
-        return f"""Du bist der SUPERVISOR eines hochmodernen Bespoke-Schneider-Systems namens HENK.
+        core_prompt = prompt_registry.get_prompt("core")
+
+        dynamic_context = f"""Du bist der SUPERVISOR eines hochmodernen Bespoke-Schneider-Systems namens HENK.
 
 **KONTEXT:**
 Phase: {current_phase}
@@ -258,6 +262,12 @@ Verstehe den User-Intent präzise und route zur optimalen Destination.
 - Ist confidence realistisch? (0.8-1.0=sicher, 0.5-0.8=unsicher, <0.5=sehr unsicher)
 
 Antworte mit SupervisorDecision Objekt!"""
+
+        return f"{core_prompt}\n\n---\n\n{dynamic_context}"
+
+    def get_prompt_usage(self) -> Dict[str, Dict[str, Optional[str]]]:
+        """Expose prompt usage for debugging/tests."""
+        return prompt_registry.get_usage_report()
 
     def _assess_completeness(self, customer_data: Dict[str, Any]) -> str:
         """
