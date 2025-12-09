@@ -114,14 +114,23 @@ class SupervisorAgent:
             )
         else:
             # Try both pydantic-ai API versions
-            # v1.0+ doesn't accept result_type in constructor
-            # v0.0.x requires result_type
+            # v1.0+ uses Generic typing: Agent[ResultType]
+            # v0.0.x uses result_type parameter
             try:
-                # Try new API first (v1.0+): No result_type parameter
-                self.pydantic_agent = PydanticAgent(model, retries=2)
-                logger.info(f"[SupervisorAgent] Initialized with model={model} (pydantic-ai v1.0+)")
+                # Try v1.0+ Generic API first
+                # PydanticAgent[SupervisorDecision] specifies the structured output type
+                try:
+                    from typing import get_type_hints
+                    # Use Generic type annotation for v1.0+
+                    self.pydantic_agent = PydanticAgent[SupervisorDecision](model, retries=2)
+                    logger.info(f"[SupervisorAgent] Initialized with model={model} (pydantic-ai v1.0+ Generic)")
+                except (TypeError, AttributeError) as e_generic:
+                    # Generic syntax not supported, try plain constructor
+                    logger.debug(f"[SupervisorAgent] Generic syntax failed: {e_generic}")
+                    self.pydantic_agent = PydanticAgent(model, retries=2)
+                    logger.info(f"[SupervisorAgent] Initialized with model={model} (pydantic-ai v1.0+ plain)")
             except Exception as e1:
-                # New API failed, try old API (v0.0.x)
+                # v1.0+ failed, try old API (v0.0.x)
                 try:
                     logger.debug(f"[SupervisorAgent] New API failed: {e1}, trying old API")
                     self.pydantic_agent = PydanticAgent(
@@ -187,16 +196,31 @@ class SupervisorAgent:
         system_prompt = self._build_supervisor_prompt(session_state)
 
         try:
-            result = await self.pydantic_agent.run(
-                user_message,
-                message_history=self._format_history(conversation_history),
-                deps={
-                    "system_prompt": system_prompt,
-                    "current_phase": session_state.get("current_phase", "H0"),
-                    "customer_data": session_state.get("customer_data", {}),
-                    "available_destinations": self._get_available_destinations(),
-                },
-            )
+            # Try calling run() with result_type parameter (v1.0+ alternative syntax)
+            try:
+                result = await self.pydantic_agent.run(
+                    user_message,
+                    result_type=SupervisorDecision,  # v1.0+ may accept this at run() time
+                    message_history=self._format_history(conversation_history),
+                    deps={
+                        "system_prompt": system_prompt,
+                        "current_phase": session_state.get("current_phase", "H0"),
+                        "customer_data": session_state.get("customer_data", {}),
+                        "available_destinations": self._get_available_destinations(),
+                    },
+                )
+            except TypeError:
+                # result_type not accepted at run() time, try without
+                result = await self.pydantic_agent.run(
+                    user_message,
+                    message_history=self._format_history(conversation_history),
+                    deps={
+                        "system_prompt": system_prompt,
+                        "current_phase": session_state.get("current_phase", "H0"),
+                        "customer_data": session_state.get("customer_data", {}),
+                        "available_destinations": self._get_available_destinations(),
+                    },
+                )
 
             # Handle both pydantic-ai API versions
             # Log result structure for debugging
