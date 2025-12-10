@@ -143,6 +143,36 @@ async def smart_operator_node(state: HenkGraphState) -> HenkGraphState:
     session_state = state["session_state"]
     conversation_history = state["messages"]
 
+    # CRITICAL: If no user_input (after tool/agent execution), wait for new input
+    # Don't route with empty message - this prevents infinite loops
+    if not user_input or not user_input.strip():
+        logger.info("[SmartOperator] No user_input, waiting for user response")
+        messages = list(state.get("messages", []))
+
+        # Check if there's a recent assistant response to show user
+        recent_assistant = [msg for msg in messages[-3:] if msg.get("role") == "assistant"]
+
+        if recent_assistant:
+            # We have responses to show, just wait for user
+            logger.info("[SmartOperator] Recent responses available, ending turn for user input")
+            return {
+                "next_agent": "end",
+                "awaiting_user_input": True,
+            }
+        else:
+            # No responses, something went wrong - ask clarification
+            logger.warning("[SmartOperator] No user_input and no recent responses")
+            messages.append({
+                "role": "assistant",
+                "content": "Wie kann ich dir weiterhelfen?",
+                "sender": "supervisor",
+            })
+            return {
+                "next_agent": "end",
+                "messages": messages,
+                "awaiting_user_input": True,
+            }
+
     logger.info(f"[SmartOperator] Analyzing: '{user_input[:60]}...'")
 
     # Supervisor trifft Entscheidung (mit Offline-Fallback, damit Tests ohne API-Key laufen)
@@ -356,6 +386,7 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
     """
     next_agent = state["next_agent"]
     action_params = state.get("pending_action") or {}
+    current_agent = state.get("current_agent")
 
     logger.info(
         f"[ToolsDispatcher] Executing tool='{next_agent}' with params={action_params}"
@@ -392,7 +423,27 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
             }
         )
 
-    return {"messages": messages, "awaiting_user_input": True}
+    # CRITICAL FIX: After tool execution, return to the agent that requested the tool
+    # NOT to supervisor with the old user_input (which would cause loops)
+    return_to_agent = current_agent if current_agent in ["henk1", "design_henk", "laserhenk"] else None
+
+    if return_to_agent:
+        logger.info(f"[ToolsDispatcher] Returning to agent '{return_to_agent}' after tool execution")
+        return {
+            "messages": messages,
+            "next_agent": return_to_agent,
+            "current_agent": return_to_agent,
+            "awaiting_user_input": False,  # Continue workflow, don't wait
+            "user_input": None,  # Clear user_input to prevent re-processing
+        }
+    else:
+        # No specific agent to return to, wait for user input
+        logger.info("[ToolsDispatcher] No agent to return to, awaiting user input")
+        return {
+            "messages": messages,
+            "awaiting_user_input": True,
+            "user_input": None,  # Clear user_input
+        }
 
 
 # ==================== Tool Implementations ====================
