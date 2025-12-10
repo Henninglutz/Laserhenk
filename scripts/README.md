@@ -4,6 +4,57 @@ Utility scripts für Datenbank-Setup und Maintenance.
 
 ---
 
+## 🚦 Schnellstart: Formens-Daten aktualisieren
+
+1) **.env vorbereiten** (falls noch nicht vorhanden):
+
+```bash
+cat >> .env <<'EOF'
+POSTGRES_CONNECTION_STRING=postgresql://user:pass@localhost:5432/henk_rag
+FORMENS_EMAIL=dein@login
+FORMENS_PASSWORD=dein_passwort
+OPENAI_API_KEY=sk-...
+EOF
+```
+
+2) **Abhängigkeiten installieren** (einmalig pro Umgebung):
+
+```bash
+pip install -r requirements.txt
+```
+
+3) **Formens-Stoffe scrapen** (mit Login oder Cookie):
+
+```bash
+python scripts/scrape_formens_b2b.py \
+  --email "$FORMENS_EMAIL" \
+  --password "$FORMENS_PASSWORD" \
+  --output-dir storage/fabrics
+# Alternativ: --cookie "sessionid=..." und ggf. --allow-anonymous nur in offenen Umgebungen
+```
+
+4) **Nach Postgres importieren** (optional mit RAG):
+
+```bash
+# Nur Datenbank
+python scripts/import_formens_scrape_to_rag.py --input storage/fabrics/formens_fabrics.json --no-rag
+
+# DB + RAG-Embeddings
+python scripts/import_formens_scrape_to_rag.py \
+  --input storage/fabrics/formens_fabrics.json \
+  --rag-category fabrics_formens \
+  --batch-size 25
+```
+
+5) **Kurz prüfen** (Beispiele):
+
+```sql
+SELECT COUNT(*) FROM fabrics;
+SELECT COUNT(*) FROM rag_docs WHERE category = 'fabrics_formens';
+```
+
+---
+
 ## 📋 Verfügbare Scripts
 
 ### 1. `create_pricing_schema.sql`
