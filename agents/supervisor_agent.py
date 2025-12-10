@@ -434,6 +434,11 @@ Antworte mit SupervisorDecision Objekt!"""
 
         Used when LLM-based routing fails (e.g., structured output issues).
 
+        CRITICAL FIX: Checks completion status to prevent infinite loops!
+        - If HENK1 already queried RAG and has response, don't route back to henk1
+        - If Design HENK already complete, move to next phase
+        - Generate appropriate response message instead of looping
+
         Args:
             user_message: User's message
             session_state: Current session state
@@ -445,9 +450,16 @@ Antworte mit SupervisorDecision Objekt!"""
         message_lower = user_message.lower()
         current_phase = session_state.get("current_phase", "H0")
 
-        # Check for fabric/material queries
+        # Extract completion flags from session_state
+        henk1_complete = session_state.get("henk1_rag_queried", False)
+        design_complete = session_state.get("design_rag_queried", False)
+        has_henk1_payload = session_state.get("henk1_to_design_payload") is not None
+
+        logger.info(f"[RuleBasedRouting] henk1_complete={henk1_complete}, design_complete={design_complete}, has_payload={has_henk1_payload}")
+
+        # Check for fabric/material queries - ALWAYS prioritize these
         fabric_keywords = ["stoff", "stoffe", "material", "wolle", "leinen", "baumwolle",
-                          "seide", "fabric", "nadelstreifen", "muster"]
+                          "seide", "fabric", "nadelstreifen", "muster", "zeig"]
         if any(keyword in message_lower for keyword in fabric_keywords):
             return SupervisorDecision(
                 next_destination="rag_tool",
@@ -457,7 +469,7 @@ Antworte mit SupervisorDecision Objekt!"""
 
         # Check for design queries
         design_keywords = ["design", "stil", "farbe", "schnitt", "aussehen",
-                          "modern", "klassisch", "style"]
+                          "modern", "klassisch", "style", "revers", "schulter"]
         if any(keyword in message_lower for keyword in design_keywords):
             return SupervisorDecision(
                 next_destination="design_henk",
@@ -467,7 +479,7 @@ Antworte mit SupervisorDecision Objekt!"""
 
         # Check for measurement queries
         measure_keywords = ["maß", "masse", "größe", "messen", "körpermaße",
-                           "measurement", "size"]
+                           "measurement", "size", "schulterbreite", "brustumfang"]
         if any(keyword in message_lower for keyword in measure_keywords):
             return SupervisorDecision(
                 next_destination="laserhenk",
@@ -484,10 +496,54 @@ Antworte mit SupervisorDecision Objekt!"""
                 confidence=0.7,
             )
 
-        # Default: Route to HENK1 for intake
+        # Check for end/goodbye
+        end_keywords = ["danke", "tschüss", "bye", "ende", "das war", "fertig"]
+        if any(keyword in message_lower for keyword in end_keywords):
+            return SupervisorDecision(
+                next_destination="end",
+                reasoning="User signaled conversation end",
+                confidence=0.8,
+            )
+
+        # CRITICAL FIX: Check completion status to prevent infinite loop!
+        # If HENK1 already completed (queried RAG), don't route back to henk1
+        if henk1_complete:
+            logger.info("[RuleBasedRouting] HENK1 already complete, routing to design_henk or end")
+
+            # Check if there's a recent assistant response we can use
+            recent_responses = [msg for msg in conversation_history[-5:]
+                              if msg.get("role") == "assistant" and msg.get("sender") in ["henk1", "rag_tool"]]
+
+            if recent_responses:
+                # HENK1 already responded, move to next phase or end
+                if design_complete or has_henk1_payload:
+                    # Both complete, suggest end
+                    return SupervisorDecision(
+                        next_destination="end",
+                        reasoning="HENK1 and Design phases complete, suggesting end of conversation",
+                        user_message="Gibt es noch etwas, das ich für dich klären kann?",
+                        confidence=0.7,
+                    )
+                else:
+                    # Move to design phase
+                    return SupervisorDecision(
+                        next_destination="design_henk",
+                        reasoning="HENK1 complete, moving to design phase",
+                        confidence=0.7,
+                    )
+            else:
+                # No recent response, request clarification instead of looping
+                return SupervisorDecision(
+                    next_destination="clarification",
+                    reasoning="HENK1 complete but no response available, requesting clarification",
+                    user_message="Wie kann ich dir weiterhelfen? Möchtest du mehr über Stoffe, Design oder Maßanfertigung erfahren?",
+                    confidence=0.6,
+                )
+
+        # Default: Route to HENK1 only if NOT already complete
         return SupervisorDecision(
             next_destination="henk1",
-            reasoning="Default routing to HENK1 for customer intake/clarification",
+            reasoning="Default routing to HENK1 for customer intake (first visit)",
             confidence=0.6,
         )
 

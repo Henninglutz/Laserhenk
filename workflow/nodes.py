@@ -176,8 +176,8 @@ async def smart_operator_node(state: HenkGraphState) -> HenkGraphState:
         "metadata": metadata,
     }
 
-    # Bei clarification: Sofort Rückfrage an User
-    if decision.next_destination == "clarification" and decision.user_message:
+    # Bei clarification oder end: Sofort Rückfrage/Abschlussnachricht an User
+    if decision.next_destination in ["clarification", "end"] and decision.user_message:
         messages = list(state.get("messages", []))
         messages.append(
             {
