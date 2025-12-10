@@ -23,11 +23,17 @@ class Henk1Agent(BaseAgent):
     async def process(self, state: SessionState) -> AgentDecision:
         """
         Process needs assessment phase.
+
+        HENK1's job:
+        - Welcome customer warmly (AIDA: Attention)
+        - Ask about occasion, preferences, budget (Interest)
+        - Build desire through conversation
+        - Only query RAG when customer is ready to see fabrics
         """
         print(f"=== HENK1 PROCESS: henk1_rag_queried = {state.henk1_rag_queried}")
         print(f"=== HENK1 PROCESS: customer_id = {state.customer.customer_id}")
 
-        # If RAG has been queried (even if empty), needs assessment is complete
+        # If RAG has been queried and customer saw fabrics, mark complete
         if state.henk1_rag_queried:
             print("=== HENK1: RAG has been queried, marking complete")
             # Mark customer as identified (for Operator routing)
@@ -41,12 +47,29 @@ class Henk1Agent(BaseAgent):
                 should_continue=True,
             )
 
-        # First time in HENK1: Query RAG for product catalog
-        print("=== HENK1: No RAG context, querying RAG")
+        # First contact with customer: Welcome and start needs assessment
+        print("=== HENK1: First contact - starting needs assessment conversation")
+
+        # Create a warm, personal welcome message following AIDA principle
+        welcome_message = """Moin! Schön, dass du hier bist! 👋
+
+Ein maßgeschneiderter Anzug – da bist du bei mir genau richtig. Ich bin HENK und helfe dir, den perfekten Anzug für dich zu finden.
+
+Lass uns kurz über deine Wünsche sprechen:
+
+**Für welchen Anlass brauchst du den Anzug?**
+- Hochzeit (als Gast oder Bräutigam?)
+- Business/Büro
+- Besonderes Event
+- Oder einfach für den Alltag?
+
+**Und hast du schon eine Vorstellung vom Budget?**
+
+Je mehr ich über deine Vorstellungen weiß, desto besser kann ich dir passende Stoffe und Designs zeigen! 🎩"""
+
         return AgentDecision(
             next_agent="operator",
-            message=None,  # No message - let RAG tool show results directly
-            action="query_rag",
-            action_params={"query": "Initial product catalog for new customer"},
-            should_continue=True,
+            message=welcome_message,
+            action=None,
+            should_continue=False,  # Wait for user response
         )

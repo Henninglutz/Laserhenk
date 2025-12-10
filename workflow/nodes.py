@@ -459,40 +459,78 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> st
     RAG Tool: Sucht Stoffe/Bilder via Vector Search.
 
     Args:
-        params: Suchparameter (query, fabric_type, pattern)
+        params: Suchparameter (query, colors, patterns, season, etc.)
         state: Graph State für Context
 
     Returns:
-        Formatierte Suchergebnisse
+        Formatierte Suchergebnisse mit Stoff-Empfehlungen
     """
     from tools.rag_tool import RAGTool
+    from models.fabric import FabricSearchCriteria
 
     query = params.get("query", "")
-    fabric_type = params.get("fabric_type")
-    pattern = params.get("pattern")
+    logger.info(f"[RAGTool] Executing fabric search with params={params}")
 
-    logger.info(
-        f"[RAGTool] Searching: query='{query}', fabric_type={fabric_type}, pattern={pattern}"
+    # Build search criteria from parameters
+    # Extract colors, patterns from query if provided, or use defaults
+    colors = params.get("colors", [])
+    patterns = params.get("patterns", [])
+
+    # If no specific criteria, create basic search
+    criteria = FabricSearchCriteria(
+        colors=colors if colors else [],
+        patterns=patterns if patterns else [],
+        limit=10,
     )
 
     rag = RAGTool()
-    results = await rag.search(query, fabric_type=fabric_type, pattern=pattern)
+    try:
+        recommendations = await rag.search_fabrics(criteria)
 
-    # Format Results
-    if not results:
-        return "Keine passenden Stoffe gefunden. Versuche andere Suchbegriffe."
+        # Format Results
+        if not recommendations:
+            return """Hmm, ich habe gerade keine passenden Stoffe in der Datenbank gefunden.
 
-    formatted = "**Passende Stoffe:**\n\n"
-    for i, item in enumerate(results[:5], 1):
-        formatted += f"**{i}. {item.get('name', 'Unbenannt')}**\n"
-        formatted += f"   Material: {item.get('material', 'N/A')}\n"
-        formatted += f"   Muster: {item.get('pattern', 'N/A')}\n"
-        formatted += f"   Gewicht: {item.get('weight', 'N/A')}\n\n"
+Das kann daran liegen, dass die Datenbank noch nicht vollständig gefüllt ist.
 
-    if len(results) > 5:
-        formatted += f"_...und {len(results) - 5} weitere Ergebnisse_"
+**Was ich für dich tun kann:**
+- Gib mir mehr Details zu deinen Wünschen (Farbe, Muster, Anlass)
+- Oder lass uns direkt über Design und Schnitt sprechen
 
-    return formatted
+Wie möchtest du weitermachen? 🎩"""
+
+        formatted = "**Passende Stoffe für deinen Anzug:**\n\n"
+        for i, rec in enumerate(recommendations[:5], 1):
+            fabric = rec.fabric
+            formatted += f"**{i}. {fabric.name or 'Hochwertiger Stoff'}**\n"
+            formatted += f"   📦 Material: {fabric.composition or 'Edle Wollmischung'}\n"
+            formatted += f"   🎨 Farbe: {fabric.color or 'Klassisch'}\n"
+            formatted += f"   ✨ Muster: {fabric.pattern or 'Uni'}\n"
+            formatted += f"   ⚖️ Gewicht: {fabric.weight or '260-280g/m²'}\n"
+
+            # Add similarity score if high
+            if rec.similarity_score > 0.8:
+                formatted += f"   💯 Sehr gute Übereinstimmung ({rec.similarity_score:.0%})\n"
+
+            formatted += "\n"
+
+        if len(recommendations) > 5:
+            formatted += f"_...und {len(recommendations) - 5} weitere Stoffe verfügbar_\n\n"
+
+        formatted += "**Was denkst du?** Soll ich dir mehr über einen dieser Stoffe erzählen? 🎩"
+
+        return formatted
+
+    except Exception as e:
+        logger.error(f"[RAGTool] Error during fabric search: {e}", exc_info=True)
+        return """Entschuldigung, beim Abrufen der Stoffe gab es ein technisches Problem.
+
+Lass uns trotzdem weitermachen – ich kann dir auch ohne Datenbank bei der Auswahl helfen!
+
+Was ist dir wichtig bei deinem Anzug? 🎩"""
+
+    finally:
+        await rag.close()
 
 
 async def _execute_comparison_tool(
