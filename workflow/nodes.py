@@ -143,6 +143,36 @@ async def smart_operator_node(state: HenkGraphState) -> HenkGraphState:
     session_state = state["session_state"]
     conversation_history = state["messages"]
 
+    # CRITICAL: If no user_input (after tool/agent execution), wait for new input
+    # Don't route with empty message - this prevents infinite loops
+    if not user_input or not user_input.strip():
+        logger.info("[SmartOperator] No user_input, waiting for user response")
+        messages = list(state.get("messages", []))
+
+        # Check if there's a recent assistant response to show user
+        recent_assistant = [msg for msg in messages[-3:] if msg.get("role") == "assistant"]
+
+        if recent_assistant:
+            # We have responses to show, just wait for user
+            logger.info("[SmartOperator] Recent responses available, ending turn for user input")
+            return {
+                "next_agent": "end",
+                "awaiting_user_input": True,
+            }
+        else:
+            # No responses, something went wrong - ask clarification
+            logger.warning("[SmartOperator] No user_input and no recent responses")
+            messages.append({
+                "role": "assistant",
+                "content": "Wie kann ich dir weiterhelfen?",
+                "sender": "supervisor",
+            })
+            return {
+                "next_agent": "end",
+                "messages": messages,
+                "awaiting_user_input": True,
+            }
+
     logger.info(f"[SmartOperator] Analyzing: '{user_input[:60]}...'")
 
     # Supervisor trifft Entscheidung (mit Offline-Fallback, damit Tests ohne API-Key laufen)
@@ -176,8 +206,8 @@ async def smart_operator_node(state: HenkGraphState) -> HenkGraphState:
         "metadata": metadata,
     }
 
-    # Bei clarification: Sofort Rückfrage an User
-    if decision.next_destination == "clarification" and decision.user_message:
+    # Bei clarification oder end: Sofort Rückfrage/Abschlussnachricht an User
+    if decision.next_destination in ["clarification", "end"] and decision.user_message:
         messages = list(state.get("messages", []))
         messages.append(
             {
@@ -260,14 +290,16 @@ async def conversation_node(state: HenkGraphState) -> HenkGraphState:
                 updated_session_state.design_rag_queried = True
 
             messages = list(state.get("messages", []))
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": decision.message or "Querying database for information...",
-                    "sender": current_agent_name,
-                    "metadata": {"action": decision.action},
-                }
-            )
+            # Only add message if agent provided one (don't show internal routing messages)
+            if decision.message and decision.message.strip():
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": decision.message,
+                        "sender": current_agent_name,
+                        "metadata": {"action": decision.action},
+                    }
+                )
 
             # Route to rag_tool with query parameters
             return {
@@ -294,15 +326,18 @@ async def conversation_node(state: HenkGraphState) -> HenkGraphState:
             updated_session_state.customer.has_measurements = True
 
         messages = list(state.get("messages", []))
-        messages.append(
-            {
-                "role": "assistant",
-                "content": decision.message
-                or "Konversation abgeschlossen. Nächster Schritt wird vorbereitet.",
-                "sender": current_agent_name,
-                "metadata": {"action": decision.action},
-            }
-        )
+
+        # Only add agent message if there is actual content to show user
+        # Don't add generic fallback messages for internal state transitions
+        if decision.message and decision.message.strip():
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": decision.message,
+                    "sender": current_agent_name,
+                    "metadata": {"action": decision.action},
+                }
+            )
 
         updates = {
             "session_state": updated_session_state,
@@ -356,6 +391,7 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
     """
     next_agent = state["next_agent"]
     action_params = state.get("pending_action") or {}
+    current_agent = state.get("current_agent")
 
     logger.info(
         f"[ToolsDispatcher] Executing tool='{next_agent}' with params={action_params}"
@@ -392,7 +428,27 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
             }
         )
 
-    return {"messages": messages, "awaiting_user_input": True}
+    # CRITICAL FIX: After tool execution, return to the agent that requested the tool
+    # NOT to supervisor with the old user_input (which would cause loops)
+    return_to_agent = current_agent if current_agent in ["henk1", "design_henk", "laserhenk"] else None
+
+    if return_to_agent:
+        logger.info(f"[ToolsDispatcher] Returning to agent '{return_to_agent}' after tool execution")
+        return {
+            "messages": messages,
+            "next_agent": return_to_agent,
+            "current_agent": return_to_agent,
+            "awaiting_user_input": False,  # Continue workflow, don't wait
+            "user_input": None,  # Clear user_input to prevent re-processing
+        }
+    else:
+        # No specific agent to return to, wait for user input
+        logger.info("[ToolsDispatcher] No agent to return to, awaiting user input")
+        return {
+            "messages": messages,
+            "awaiting_user_input": True,
+            "user_input": None,  # Clear user_input
+        }
 
 
 # ==================== Tool Implementations ====================
@@ -403,40 +459,78 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> st
     RAG Tool: Sucht Stoffe/Bilder via Vector Search.
 
     Args:
-        params: Suchparameter (query, fabric_type, pattern)
+        params: Suchparameter (query, colors, patterns, season, etc.)
         state: Graph State für Context
 
     Returns:
-        Formatierte Suchergebnisse
+        Formatierte Suchergebnisse mit Stoff-Empfehlungen
     """
     from tools.rag_tool import RAGTool
+    from models.fabric import FabricSearchCriteria
 
     query = params.get("query", "")
-    fabric_type = params.get("fabric_type")
-    pattern = params.get("pattern")
+    logger.info(f"[RAGTool] Executing fabric search with params={params}")
 
-    logger.info(
-        f"[RAGTool] Searching: query='{query}', fabric_type={fabric_type}, pattern={pattern}"
+    # Build search criteria from parameters
+    # Extract colors, patterns from query if provided, or use defaults
+    colors = params.get("colors", [])
+    patterns = params.get("patterns", [])
+
+    # If no specific criteria, create basic search
+    criteria = FabricSearchCriteria(
+        colors=colors if colors else [],
+        patterns=patterns if patterns else [],
+        limit=10,
     )
 
     rag = RAGTool()
-    results = await rag.search(query, fabric_type=fabric_type, pattern=pattern)
+    try:
+        recommendations = await rag.search_fabrics(criteria)
 
-    # Format Results
-    if not results:
-        return "Keine passenden Stoffe gefunden. Versuche andere Suchbegriffe."
+        # Format Results
+        if not recommendations:
+            return """Hmm, ich habe gerade keine passenden Stoffe in der Datenbank gefunden.
 
-    formatted = "**Passende Stoffe:**\n\n"
-    for i, item in enumerate(results[:5], 1):
-        formatted += f"**{i}. {item.get('name', 'Unbenannt')}**\n"
-        formatted += f"   Material: {item.get('material', 'N/A')}\n"
-        formatted += f"   Muster: {item.get('pattern', 'N/A')}\n"
-        formatted += f"   Gewicht: {item.get('weight', 'N/A')}\n\n"
+Das kann daran liegen, dass die Datenbank noch nicht vollständig gefüllt ist.
 
-    if len(results) > 5:
-        formatted += f"_...und {len(results) - 5} weitere Ergebnisse_"
+**Was ich für dich tun kann:**
+- Gib mir mehr Details zu deinen Wünschen (Farbe, Muster, Anlass)
+- Oder lass uns direkt über Design und Schnitt sprechen
 
-    return formatted
+Wie möchtest du weitermachen? 🎩"""
+
+        formatted = "**Passende Stoffe für deinen Anzug:**\n\n"
+        for i, rec in enumerate(recommendations[:5], 1):
+            fabric = rec.fabric
+            formatted += f"**{i}. {fabric.name or 'Hochwertiger Stoff'}**\n"
+            formatted += f"   📦 Material: {fabric.composition or 'Edle Wollmischung'}\n"
+            formatted += f"   🎨 Farbe: {fabric.color or 'Klassisch'}\n"
+            formatted += f"   ✨ Muster: {fabric.pattern or 'Uni'}\n"
+            formatted += f"   ⚖️ Gewicht: {fabric.weight or '260-280g/m²'}\n"
+
+            # Add similarity score if high
+            if rec.similarity_score > 0.8:
+                formatted += f"   💯 Sehr gute Übereinstimmung ({rec.similarity_score:.0%})\n"
+
+            formatted += "\n"
+
+        if len(recommendations) > 5:
+            formatted += f"_...und {len(recommendations) - 5} weitere Stoffe verfügbar_\n\n"
+
+        formatted += "**Was denkst du?** Soll ich dir mehr über einen dieser Stoffe erzählen? 🎩"
+
+        return formatted
+
+    except Exception as e:
+        logger.error(f"[RAGTool] Error during fabric search: {e}", exc_info=True)
+        return """Entschuldigung, beim Abrufen der Stoffe gab es ein technisches Problem.
+
+Lass uns trotzdem weitermachen – ich kann dir auch ohne Datenbank bei der Auswahl helfen!
+
+Was ist dir wichtig bei deinem Anzug? 🎩"""
+
+    finally:
+        await rag.close()
 
 
 async def _execute_comparison_tool(

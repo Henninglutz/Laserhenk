@@ -113,17 +113,40 @@ class SupervisorAgent:
                 "[SupervisorAgent] pydantic_ai not installed. Falling back to rule-based routing"
             )
         else:
+            # Try both pydantic-ai API versions
+            # v1.0+ uses Generic typing: Agent[ResultType]
+            # v0.0.x uses result_type parameter
             try:
-                self.pydantic_agent = PydanticAgent(
-                    model, result_type=SupervisorDecision, retries=2
-                )
-                logger.info(f"[SupervisorAgent] Initialized with model={model}")
-            except Exception as e:
-                self.pydantic_agent = None
-                logger.warning(
-                    f"[SupervisorAgent] Failed to initialize PydanticAgent: {e}. "
-                    "Falling back to rule-based routing"
-                )
+                # Try v1.0+ Generic API first
+                # PydanticAgent[SupervisorDecision] specifies the structured output type
+                try:
+                    from typing import get_type_hints
+                    # Use Generic type annotation for v1.0+
+                    self.pydantic_agent = PydanticAgent[SupervisorDecision](model, retries=2)
+                    logger.info(f"[SupervisorAgent] Initialized with model={model} (pydantic-ai v1.0+ Generic)")
+                except (TypeError, AttributeError) as e_generic:
+                    # Generic syntax not supported, try plain constructor
+                    logger.debug(f"[SupervisorAgent] Generic syntax failed: {e_generic}")
+                    self.pydantic_agent = PydanticAgent(model, retries=2)
+                    logger.info(f"[SupervisorAgent] Initialized with model={model} (pydantic-ai v1.0+ plain)")
+            except Exception as e1:
+                # v1.0+ failed, try old API (v0.0.x)
+                try:
+                    logger.debug(f"[SupervisorAgent] New API failed: {e1}, trying old API")
+                    self.pydantic_agent = PydanticAgent(
+                        model,
+                        result_type=SupervisorDecision,
+                        retries=2
+                    )
+                    logger.info(f"[SupervisorAgent] Initialized with model={model} (pydantic-ai v0.0.x)")
+                except Exception as e2:
+                    # Both APIs failed
+                    self.pydantic_agent = None
+                    logger.warning(
+                        f"[SupervisorAgent] Failed to initialize PydanticAgent with both APIs. "
+                        f"New API error: {e1}, Old API error: {e2}. "
+                        "Falling back to rule-based routing"
+                    )
 
     async def decide_next_step(
         self,
@@ -173,18 +196,71 @@ class SupervisorAgent:
         system_prompt = self._build_supervisor_prompt(session_state)
 
         try:
-            result = await self.pydantic_agent.run(
-                user_message,
-                message_history=self._format_history(conversation_history),
-                deps={
-                    "system_prompt": system_prompt,
-                    "current_phase": session_state.get("current_phase", "H0"),
-                    "customer_data": session_state.get("customer_data", {}),
-                    "available_destinations": self._get_available_destinations(),
-                },
-            )
+            # Try calling run() with result_type parameter (v1.0+ alternative syntax)
+            try:
+                result = await self.pydantic_agent.run(
+                    user_message,
+                    result_type=SupervisorDecision,  # v1.0+ may accept this at run() time
+                    message_history=self._format_history(conversation_history),
+                    deps={
+                        "system_prompt": system_prompt,
+                        "current_phase": session_state.get("current_phase", "H0"),
+                        "customer_data": session_state.get("customer_data", {}),
+                        "available_destinations": self._get_available_destinations(),
+                    },
+                )
+            except TypeError:
+                # result_type not accepted at run() time, try without
+                result = await self.pydantic_agent.run(
+                    user_message,
+                    message_history=self._format_history(conversation_history),
+                    deps={
+                        "system_prompt": system_prompt,
+                        "current_phase": session_state.get("current_phase", "H0"),
+                        "customer_data": session_state.get("customer_data", {}),
+                        "available_destinations": self._get_available_destinations(),
+                    },
+                )
 
-            decision = result.data
+            # Handle both pydantic-ai API versions
+            # Log result structure for debugging
+            try:
+                result_type = type(result).__name__
+                result_attrs = [a for a in dir(result) if not a.startswith('_')][:15]
+                logger.info(f"[SupervisorAgent] Result type: {result_type}")
+                logger.info(f"[SupervisorAgent] Result attrs: {result_attrs}")
+            except Exception as log_err:
+                logger.warning(f"[SupervisorAgent] Failed to log result: {log_err}")
+
+            # Extract decision from result
+            decision = None
+
+            if hasattr(result, 'data'):
+                decision = result.data  # v0.0.x pattern
+                logger.info("[SupervisorAgent] Using result.data (v0.0.x)")
+            elif hasattr(result, 'output'):
+                decision = result.output  # Common v1.0+ pattern
+                logger.info("[SupervisorAgent] Using result.output (v1.0+)")
+            elif isinstance(result, SupervisorDecision):
+                decision = result  # Result IS the decision
+                logger.info("[SupervisorAgent] Result is SupervisorDecision directly")
+            else:
+                # Try other common attribute names
+                for attr_name in ['result', 'value', 'response', 'content']:
+                    if hasattr(result, attr_name):
+                        decision = getattr(result, attr_name)
+                        logger.info(f"[SupervisorAgent] Using result.{attr_name}")
+                        break
+
+                if decision is None:
+                    logger.error(f"[SupervisorAgent] Could not extract decision from result type {type(result)}")
+                    raise ValueError(f"Unknown result structure: {type(result)}")
+
+            # Validate we got a SupervisorDecision
+            if not isinstance(decision, SupervisorDecision):
+                logger.error(f"[SupervisorAgent] Decision is {type(decision).__name__}, not SupervisorDecision!")
+                logger.error(f"[SupervisorAgent] Decision value: {decision}")
+                raise TypeError(f"Expected SupervisorDecision, got {type(decision).__name__}")
 
             logger.info(
                 f"[SupervisorAgent] Decision: {decision.next_destination} "
@@ -197,7 +273,12 @@ class SupervisorAgent:
         except Exception as e:
             logger.error(f"[SupervisorAgent] LLM call failed: {e}", exc_info=True)
 
-            # Fallback: Clarification bei Fehler
+            # If structured output failed (TypeError), use rule-based routing instead
+            if isinstance(e, TypeError) and "Expected SupervisorDecision" in str(e):
+                logger.warning("[SupervisorAgent] Structured output not working, using rule-based routing")
+                return self._rule_based_routing(user_message, session_state, conversation_history)
+
+            # Fallback: Clarification bei anderen Fehler
             return SupervisorDecision(
                 next_destination="clarification",
                 reasoning="LLM error occurred, requesting clarification",
@@ -341,6 +422,130 @@ Antworte mit SupervisorDecision Objekt!"""
             "clarification",
             "end",
         ]
+
+    def _rule_based_routing(
+        self,
+        user_message: str,
+        session_state: Dict[str, Any],
+        conversation_history: List[Dict[str, Any]],
+    ) -> SupervisorDecision:
+        """
+        Simple rule-based routing fallback.
+
+        Used when LLM-based routing fails (e.g., structured output issues).
+
+        CRITICAL FIX: Checks completion status to prevent infinite loops!
+        - If HENK1 already queried RAG and has response, don't route back to henk1
+        - If Design HENK already complete, move to next phase
+        - Generate appropriate response message instead of looping
+
+        Args:
+            user_message: User's message
+            session_state: Current session state
+            conversation_history: Message history
+
+        Returns:
+            SupervisorDecision based on simple rules
+        """
+        message_lower = user_message.lower()
+        current_phase = session_state.get("current_phase", "H0")
+
+        # Extract completion flags from session_state
+        henk1_complete = session_state.get("henk1_rag_queried", False)
+        design_complete = session_state.get("design_rag_queried", False)
+        has_henk1_payload = session_state.get("henk1_to_design_payload") is not None
+
+        logger.info(f"[RuleBasedRouting] henk1_complete={henk1_complete}, design_complete={design_complete}, has_payload={has_henk1_payload}")
+
+        # Check for fabric/material queries - ALWAYS prioritize these
+        fabric_keywords = ["stoff", "stoffe", "material", "wolle", "leinen", "baumwolle",
+                          "seide", "fabric", "nadelstreifen", "muster", "zeig"]
+        if any(keyword in message_lower for keyword in fabric_keywords):
+            return SupervisorDecision(
+                next_destination="rag_tool",
+                reasoning="User query contains fabric-related keywords",
+                confidence=0.7,
+            )
+
+        # Check for design queries
+        design_keywords = ["design", "stil", "farbe", "schnitt", "aussehen",
+                          "modern", "klassisch", "style", "revers", "schulter"]
+        if any(keyword in message_lower for keyword in design_keywords):
+            return SupervisorDecision(
+                next_destination="design_henk",
+                reasoning="User query contains design-related keywords",
+                confidence=0.7,
+            )
+
+        # Check for measurement queries
+        measure_keywords = ["maß", "masse", "größe", "messen", "körpermaße",
+                           "measurement", "size", "schulterbreite", "brustumfang"]
+        if any(keyword in message_lower for keyword in measure_keywords):
+            return SupervisorDecision(
+                next_destination="laserhenk",
+                reasoning="User query contains measurement-related keywords",
+                confidence=0.7,
+            )
+
+        # Check for pricing queries
+        price_keywords = ["preis", "kosten", "price", "cost", "budget"]
+        if any(keyword in message_lower for keyword in price_keywords):
+            return SupervisorDecision(
+                next_destination="pricing_tool",
+                reasoning="User query contains pricing-related keywords",
+                confidence=0.7,
+            )
+
+        # Check for end/goodbye
+        end_keywords = ["danke", "tschüss", "bye", "ende", "das war", "fertig"]
+        if any(keyword in message_lower for keyword in end_keywords):
+            return SupervisorDecision(
+                next_destination="end",
+                reasoning="User signaled conversation end",
+                confidence=0.8,
+            )
+
+        # CRITICAL FIX: Check completion status to prevent infinite loop!
+        # If HENK1 already completed (queried RAG), don't route back to henk1
+        if henk1_complete:
+            logger.info("[RuleBasedRouting] HENK1 already complete, routing to design_henk or end")
+
+            # Check if there's a recent assistant response we can use
+            recent_responses = [msg for msg in conversation_history[-5:]
+                              if msg.get("role") == "assistant" and msg.get("sender") in ["henk1", "rag_tool"]]
+
+            if recent_responses:
+                # HENK1 already responded, move to next phase or end
+                if design_complete or has_henk1_payload:
+                    # Both complete, suggest end
+                    return SupervisorDecision(
+                        next_destination="end",
+                        reasoning="HENK1 and Design phases complete, suggesting end of conversation",
+                        user_message="Gibt es noch etwas, das ich für dich klären kann?",
+                        confidence=0.7,
+                    )
+                else:
+                    # Move to design phase
+                    return SupervisorDecision(
+                        next_destination="design_henk",
+                        reasoning="HENK1 complete, moving to design phase",
+                        confidence=0.7,
+                    )
+            else:
+                # No recent response, request clarification instead of looping
+                return SupervisorDecision(
+                    next_destination="clarification",
+                    reasoning="HENK1 complete but no response available, requesting clarification",
+                    user_message="Wie kann ich dir weiterhelfen? Möchtest du mehr über Stoffe, Design oder Maßanfertigung erfahren?",
+                    confidence=0.6,
+                )
+
+        # Default: Route to HENK1 only if NOT already complete
+        return SupervisorDecision(
+            next_destination="henk1",
+            reasoning="Default routing to HENK1 for customer intake (first visit)",
+            confidence=0.6,
+        )
 
     def _format_history(self, history: List[Dict[str, Any]]) -> List[Dict[str, str]]:
         """

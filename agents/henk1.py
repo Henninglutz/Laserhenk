@@ -23,11 +23,18 @@ class Henk1Agent(BaseAgent):
     async def process(self, state: SessionState) -> AgentDecision:
         """
         Process needs assessment phase.
+
+        HENK1's job:
+        - Welcome customer warmly (AIDA: Attention)
+        - Ask about occasion, preferences, budget (Interest)
+        - Build desire through conversation
+        - Only query RAG when customer is ready to see fabrics
         """
         print(f"=== HENK1 PROCESS: henk1_rag_queried = {state.henk1_rag_queried}")
         print(f"=== HENK1 PROCESS: customer_id = {state.customer.customer_id}")
+        print(f"=== HENK1 PROCESS: conversation_history length = {len(state.conversation_history)}")
 
-        # If RAG has been queried (even if empty), needs assessment is complete
+        # If RAG has been queried and customer saw fabrics, mark complete
         if state.henk1_rag_queried:
             print("=== HENK1: RAG has been queried, marking complete")
             # Mark customer as identified (for Operator routing)
@@ -36,17 +43,61 @@ class Henk1Agent(BaseAgent):
 
             return AgentDecision(
                 next_agent="operator",
-                message="Needs assessment complete - customer informed about products",
+                message=None,  # No message - RAG tool already provided results to user
                 action=None,
                 should_continue=True,
             )
 
-        # First time in HENK1: Query RAG for product catalog
-        print("=== HENK1: No RAG context, querying RAG")
-        return AgentDecision(
-            next_agent="operator",
-            message="Starting needs assessment - querying product catalog",
-            action="query_rag",
-            action_params={"query": "Initial product catalog for new customer"},
-            should_continue=True,
-        )
+        # Check if this is first contact or ongoing conversation
+        has_conversation = len(state.conversation_history) > 0
+
+        if not has_conversation:
+            # First contact with customer: Welcome and start needs assessment
+            print("=== HENK1: First contact - starting needs assessment conversation")
+
+            welcome_message = """Moin! Schön, dass du hier bist! 👋
+
+Ein maßgeschneiderter Anzug – da bist du bei mir genau richtig. Ich bin HENK und helfe dir, den perfekten Anzug für dich zu finden.
+
+Lass uns kurz über deine Wünsche sprechen:
+
+**Für welchen Anlass brauchst du den Anzug?**
+- Hochzeit (als Gast oder Bräutigam?)
+- Business/Büro
+- Besonderes Event
+- Oder einfach für den Alltag?
+
+**Und hast du schon eine Vorstellung vom Budget?**
+
+Je mehr ich über deine Vorstellungen weiß, desto besser kann ich dir passende Stoffe und Designs zeigen! 🎩"""
+
+            return AgentDecision(
+                next_agent="operator",
+                message=welcome_message,
+                action=None,
+                should_continue=False,  # Wait for user response
+            )
+
+        else:
+            # Ongoing conversation - acknowledge customer input and continue assessment
+            print("=== HENK1: Ongoing conversation - processing customer response")
+
+            # Simple acknowledgment message
+            # In real implementation, this would use LLM to understand context
+            response_message = """Perfekt! Eine Hochzeit im Sommer – da haben wir viele stilvolle Möglichkeiten! 🌞
+
+Für Sommerhochzeiten empfehle ich leichtere Stoffe, die atmungsaktiv sind und trotzdem elegant aussehen.
+
+**Noch ein paar Fragen:**
+- Bist du Gast oder Bräutigam?
+- Gibt es eine bestimmte Farbrichtung? (Navy, Grau, Beige, oder etwas Ausgefallenes?)
+- Budget-Rahmen ungefähr?
+
+Dann kann ich dir gleich passende Stoffe zeigen! 🎩"""
+
+            return AgentDecision(
+                next_agent="operator",
+                message=response_message,
+                action=None,
+                should_continue=False,  # Wait for next user response
+            )
