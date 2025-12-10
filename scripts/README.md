@@ -11,7 +11,9 @@ Utility scripts für Datenbank-Setup und Maintenance.
 ```bash
 cat >> .env <<'EOF'
 POSTGRES_CONNECTION_STRING=postgresql://user:pass@localhost:5432/henk_rag
+# Entweder E-Mail oder Benutzername hinterlegen (je nach B2B-Loginmaske)
 FORMENS_EMAIL=dein@login
+FORMENS_USERNAME=
 FORMENS_PASSWORD=dein_passwort
 OPENAI_API_KEY=sk-...
 EOF
@@ -26,11 +28,14 @@ pip install -r requirements.txt
 3) **Formens-Stoffe scrapen** (mit Login oder Cookie):
 
 ```bash
+# Mit Benutzername (empfohlen, falls die Login-Maske "Benutzer" statt "E-Mail" erwartet)
 python scripts/scrape_formens_b2b.py \
-  --email "$FORMENS_EMAIL" \
+  --username "${FORMENS_USERNAME:-$FORMENS_EMAIL}" \
   --password "$FORMENS_PASSWORD" \
   --output-dir storage/fabrics
-# Alternativ: --cookie "sessionid=..." und ggf. --allow-anonymous nur in offenen Umgebungen
+
+# Alternativ: Browser-Cookie oder explizit E-Mail nutzen
+python scripts/scrape_formens_b2b.py --cookie "sessionid=..." --max-pages 120
 ```
 
 4) **Nach Postgres importieren** (optional mit RAG):
@@ -156,7 +161,7 @@ python scripts/scrape_formens_b2b.py --cookie "sessionid=..." --max-pages 120
 **Dauer:** Hängt von der Portal-Latenz ab; Skript pausiert standardmäßig ~0.7s zwischen Requests, um Throttling zu vermeiden
 
 **Hinweise:**
-- Login ist Pflicht: Ohne `--email/--password` **oder** `--cookie` liefert das Portal meist eine 404/Redirect-Seite. Das Skript bricht deshalb frühzeitig ab, außer du setzt explizit `--allow-anonymous`.
+- Login ist Pflicht: Ohne `--username`/`--password` (oder `--email`/`--password`) **oder** `--cookie` liefert das Portal meist eine 404/Redirect-Seite. Das Skript bricht deshalb frühzeitig ab, außer du setzt explizit `--allow-anonymous`.
 - `--listing-path` und `--page-param` sind konfigurierbar, falls die Pagination angepasst werden muss
 - `--no-images` kann genutzt werden, wenn nur Metadaten benötigt werden
 
@@ -169,7 +174,7 @@ python scripts/scrape_formens_b2b.py --cookie "sessionid=..." --max-pages 120
 **Anmeldung / Zugangsdaten:**
 - Datenbank: `POSTGRES_CONNECTION_STRING` **oder** `DATABASE_URL` in `.env`
 - OpenAI (nur für RAG-Embeddings): `OPENAI_API_KEY` in `.env`
-- Scraper-Login (Formens): `FORMENS_EMAIL`, `FORMENS_PASSWORD` oder `--cookie` beim Scraper-Aufruf
+ - Scraper-Login (Formens): `FORMENS_USERNAME` **oder** `FORMENS_EMAIL` plus `FORMENS_PASSWORD`, alternativ `--cookie` beim Scraper-Aufruf
 
 **Usage:**
 ```bash

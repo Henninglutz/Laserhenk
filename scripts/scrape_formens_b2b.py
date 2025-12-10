@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import time
 from dataclasses import asdict, dataclass, field
@@ -71,6 +72,7 @@ class FormensScraper:
         listing_path: str = DEFAULT_LISTING_PATH,
         login_path: str = DEFAULT_LOGIN_PATH,
         email: Optional[str] = None,
+        username: Optional[str] = None,
         password: Optional[str] = None,
         session_cookie: Optional[str] = None,
         allow_anonymous: bool = False,
@@ -85,6 +87,7 @@ class FormensScraper:
         self.listing_path = listing_path
         self.login_path = login_path
         self.email = email
+        self.username = username
         self.password = password
         self.session_cookie = session_cookie
         self.output_dir = output_dir
@@ -116,17 +119,28 @@ class FormensScraper:
             print("ℹ️  Using provided session cookie (skipping form login).")
             return
 
-        if not self.email or not self.password:
+        if (not self.email and not self.username) or not self.password:
             if self.allow_anonymous:
                 print("⚠️  No credentials provided — continuing without login.")
                 return
             raise RuntimeError(
-                "Login is required — pass --email/--password or --cookie (browser session)."
+                "Login ist erforderlich — nutze --username/--password oder --email/--password "
+                "bzw. --cookie (Browser-Session)."
             )
 
         login_url = f"{self.base_url}{self.login_path}"
-        payload = {"email": self.email, "password": self.password}
-        print(f"🔐 Logging in at {login_url} ...")
+        login_identifier = self.username or self.email
+        payload = {
+            # Viele Formulare akzeptieren entweder "username" oder "email" als Feldnamen;
+            # wir schicken beides mit dem gleichen Wert.
+            "username": login_identifier,
+            "email": login_identifier,
+            "password": self.password,
+        }
+        print(
+            f"🔐 Logging in at {login_url} with "
+            f"{'username' if self.username else 'email'} ..."
+        )
         resp = self.session.post(login_url, data=payload)
         if resp.status_code >= 400:
             raise RuntimeError(
@@ -425,8 +439,21 @@ class FormensScraper:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Scrape Formens B2B fabric data")
-    parser.add_argument("--email", help="Login email", default=None)
-    parser.add_argument("--password", help="Login password", default=None)
+    parser.add_argument(
+        "--email",
+        help="Login email (optional, wenn Benutzername genutzt wird)",
+        default=os.getenv("FORMENS_EMAIL"),
+    )
+    parser.add_argument(
+        "--username",
+        help="Login-Benutzername (Alternative zum Email-Feld)",
+        default=os.getenv("FORMENS_USERNAME"),
+    )
+    parser.add_argument(
+        "--password",
+        help="Login password",
+        default=os.getenv("FORMENS_PASSWORD"),
+    )
     parser.add_argument("--cookie", help="Pre-authenticated session cookie", default=None)
     parser.add_argument("--base-url", help="Portal base URL", default=DEFAULT_BASE_URL)
     parser.add_argument(
@@ -483,6 +510,7 @@ def main() -> None:
         listing_path=args.listing_path,
         login_path=args.login_path,
         email=args.email,
+        username=args.username,
         password=args.password,
         session_cookie=args.cookie,
         output_dir=args.output_dir,
