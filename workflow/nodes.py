@@ -290,14 +290,16 @@ async def conversation_node(state: HenkGraphState) -> HenkGraphState:
                 updated_session_state.design_rag_queried = True
 
             messages = list(state.get("messages", []))
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": decision.message or "Querying database for information...",
-                    "sender": current_agent_name,
-                    "metadata": {"action": decision.action},
-                }
-            )
+            # Only add message if agent provided one (don't show internal routing messages)
+            if decision.message and decision.message.strip():
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": decision.message,
+                        "sender": current_agent_name,
+                        "metadata": {"action": decision.action},
+                    }
+                )
 
             # Route to rag_tool with query parameters
             return {
@@ -324,15 +326,18 @@ async def conversation_node(state: HenkGraphState) -> HenkGraphState:
             updated_session_state.customer.has_measurements = True
 
         messages = list(state.get("messages", []))
-        messages.append(
-            {
-                "role": "assistant",
-                "content": decision.message
-                or "Konversation abgeschlossen. Nächster Schritt wird vorbereitet.",
-                "sender": current_agent_name,
-                "metadata": {"action": decision.action},
-            }
-        )
+
+        # Only add agent message if there is actual content to show user
+        # Don't add generic fallback messages for internal state transitions
+        if decision.message and decision.message.strip():
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": decision.message,
+                    "sender": current_agent_name,
+                    "metadata": {"action": decision.action},
+                }
+            )
 
         updates = {
             "session_state": updated_session_state,

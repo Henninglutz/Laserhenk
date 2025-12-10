@@ -36,7 +36,7 @@ class Henk1Agent(BaseAgent):
 
             return AgentDecision(
                 next_agent="operator",
-                message="Needs assessment complete - customer informed about products",
+                message=None,  # No message - RAG tool already provided results to user
                 action=None,
                 should_continue=True,
             )
@@ -45,7 +45,7 @@ class Henk1Agent(BaseAgent):
         print("=== HENK1: No RAG context, querying RAG")
         return AgentDecision(
             next_agent="operator",
-            message="Starting needs assessment - querying product catalog",
+            message=None,  # No message - let RAG tool show results directly
             action="query_rag",
             action_params={"query": "Initial product catalog for new customer"},
             should_continue=True,
