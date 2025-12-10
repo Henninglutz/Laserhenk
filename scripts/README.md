@@ -146,6 +146,43 @@ python scripts/import_formens_scrape_to_rag.py \
 
 ---
 
+## 🔄 Wie geht es nach dem Scrape weiter?
+
+1. **Scraper laufen lassen** (Session-Cookie oder Login nutzen), damit `storage/fabrics/formens_fabrics.json` und Bilder befüllt sind.
+2. **Importer starten**, um Postgres und optional RAG zu aktualisieren:
+
+   ```bash
+   # Nur DB aktualisieren
+   python scripts/import_formens_scrape_to_rag.py --input storage/fabrics/formens_fabrics.json --no-rag
+
+   # DB + RAG (Embeddings anlegen)
+   python scripts/import_formens_scrape_to_rag.py \
+     --input storage/fabrics/formens_fabrics.json \
+     --rag-category fabrics_formens \
+     --batch-size 25
+   ```
+
+3. **Kontroll-Queries in Postgres**, um den Erfolg zu prüfen:
+
+   ```sql
+   -- Anzahl Stoffe
+   SELECT COUNT(*) FROM fabrics;
+
+   -- Price Category & Composition sollten im JSON-Feld liegen
+   SELECT fabric_code, additional_metadata
+   FROM fabrics
+   WHERE additional_metadata ? 'price_category'
+   ORDER BY fabric_code
+   LIMIT 5;
+
+   -- Falls RAG aktiv: Anzahl Embeddings prüfen
+   SELECT COUNT(*) FROM rag_docs WHERE category = 'fabrics_formens';
+   ```
+
+4. **Erneute Läufe** sind idempotent (Upsert). Bei neuen Stoffen einfach Scraper + Importer erneut starten.
+
+---
+
 ## 🚀 Setup-Reihenfolge
 
 Nach frischem Database Setup:
@@ -155,12 +192,15 @@ Nach frischem Database Setup:
 psql -U henk_user -d henk_rag -f scripts/create_pricing_schema.sql
 
 # 2. Dependencies installieren
-pip install sqlalchemy asyncpg openai python-dotenv
+pip install -r requirements.txt
 
-# 3. Fabric Embeddings generieren
-python scripts/generate_fabric_embeddings.py
+# 3. Formens-Stoffe neu ziehen
+python scripts/scrape_formens_b2b.py --email "$FORMENS_EMAIL" --password "$FORMENS_PASSWORD"
 
-# 4. Verify (optional)
+# 4. Postgres (und optional RAG) updaten
+python scripts/import_formens_scrape_to_rag.py --input storage/fabrics/formens_fabrics.json --rag-category fabrics_formens
+
+# 5. Verify (optional)
 python verify_embeddings.py
 ```
 
@@ -170,11 +210,11 @@ python verify_embeddings.py
 
 | Tabelle | Vor Scripts | Nach Scripts |
 |---------|-------------|--------------|
-| `fabrics` | 1988 Zeilen | 1988 Zeilen |
-| `fabric_embeddings` | 0 Zeilen | ~7952 Zeilen |
+| `fabrics` | 0 Zeilen | 1988 Zeilen (nach Scrape + Import) |
+| `fabric_embeddings` | 0 Zeilen | ~7952 Zeilen (optional, falls Script `generate_fabric_embeddings.py` genutzt wird) |
 | `pricing_rules` | Nicht vorhanden | 63 Zeilen |
 | `pricing_extras` | Nicht vorhanden | 9 Zeilen |
-| `rag_docs` | 483 Zeilen | 483 Zeilen |
+| `rag_docs` | 0 Zeilen | 1994 Zeilen (optional, falls `import_formens_scrape_to_rag.py` mit RAG läuft) |
 
 ---
 
