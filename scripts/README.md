@@ -105,6 +105,7 @@ python scripts/scrape_formens_b2b.py --cookie "sessionid=..." --max-pages 120
 **Dauer:** Hängt von der Portal-Latenz ab; Skript pausiert standardmäßig ~0.7s zwischen Requests, um Throttling zu vermeiden
 
 **Hinweise:**
+- Login ist Pflicht: Ohne `--email/--password` **oder** `--cookie` liefert das Portal meist eine 404/Redirect-Seite. Das Skript bricht deshalb frühzeitig ab, außer du setzt explizit `--allow-anonymous`.
 - `--listing-path` und `--page-param` sind konfigurierbar, falls die Pagination angepasst werden muss
 - `--no-images` kann genutzt werden, wenn nur Metadaten benötigt werden
 
@@ -196,6 +197,8 @@ pip install -r requirements.txt
 
 # 3. Formens-Stoffe neu ziehen
 python scripts/scrape_formens_b2b.py --email "$FORMENS_EMAIL" --password "$FORMENS_PASSWORD"
+#    - Alternativ: mit Browser-Cookie statt Login → --cookie "sessionid=..."
+#    - Ohne gültige Authentifizierung schlägt das Listing mit 404/Redirect fehl
 
 # 4. Postgres (und optional RAG) updaten
 python scripts/import_formens_scrape_to_rag.py --input storage/fabrics/formens_fabrics.json --rag-category fabrics_formens

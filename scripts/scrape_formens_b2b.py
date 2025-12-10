@@ -29,7 +29,7 @@ import json
 import re
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -58,7 +58,7 @@ class FabricRecord:
     description: Optional[str] = None
     extra: dict = field(default_factory=dict)
     scraped_at: str = field(
-        default_factory=lambda: datetime.utcnow().isoformat(timespec="seconds")
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(timespec="seconds")
     )
 
 
@@ -73,6 +73,7 @@ class FormensScraper:
         email: Optional[str] = None,
         password: Optional[str] = None,
         session_cookie: Optional[str] = None,
+        allow_anonymous: bool = False,
         output_dir: Path = Path("storage/fabrics"),
         sleep_seconds: float = 0.7,
         max_pages: int = 120,
@@ -93,6 +94,7 @@ class FormensScraper:
         self.page_param = page_param
         self.download_images = download_images
         self.verify_tls = verify_tls
+        self.allow_anonymous = allow_anonymous
 
         self.session = requests.Session()
         self.session.verify = verify_tls
@@ -110,9 +112,17 @@ class FormensScraper:
         ``--cookie`` or adapt the payload inside this method.
         """
 
-        if not self.email or not self.password:
-            print("⚠️  No credentials provided — continuing without login.")
+        if self.session_cookie:
+            print("ℹ️  Using provided session cookie (skipping form login).")
             return
+
+        if not self.email or not self.password:
+            if self.allow_anonymous:
+                print("⚠️  No credentials provided — continuing without login.")
+                return
+            raise RuntimeError(
+                "Login is required — pass --email/--password or --cookie (browser session)."
+            )
 
         login_url = f"{self.base_url}{self.login_path}"
         payload = {"email": self.email, "password": self.password}
@@ -138,10 +148,22 @@ class FormensScraper:
             print(f"🌐 Listing page {page}: {listing_url}")
             resp = self.session.get(listing_url)
             if resp.status_code >= 400:
+                if self._should_require_auth(resp):
+                    raise RuntimeError(
+                        "Listing fetch failed (likely not authenticated). "
+                        "Provide --email/--password or --cookie; "
+                        f"status={resp.status_code}, url={resp.url}"
+                    )
                 print(
                     f"⚠️  Stopping pagination — got {resp.status_code} on page {page}."
                 )
                 break
+
+            if self._looks_like_login_page(resp):
+                raise RuntimeError(
+                    "Received a login page instead of listings. Pass --email/--password "
+                    "or --cookie (browser session)."
+                )
 
             new_links = self._parse_listing(resp.text)
             new_links = [link for link in new_links if link not in seen]
@@ -188,6 +210,20 @@ class FormensScraper:
                 detail_links.add(full_url)
 
         return sorted(detail_links)
+
+    def _should_require_auth(self, resp: requests.Response) -> bool:
+        if self.allow_anonymous:
+            return False
+        return resp.status_code in {401, 403, 404}
+
+    def _looks_like_login_page(self, resp: requests.Response) -> bool:
+        if self.allow_anonymous:
+            return False
+        login_tokens = ["<form", "password", "remember", "login", "sign in"]
+        body = resp.text.lower()
+        return any(token in body for token in login_tokens) or (
+            self.login_path.strip("/") in resp.url
+        )
 
     @staticmethod
     def _is_fabric_detail_link(url: str) -> bool:
@@ -359,7 +395,7 @@ class FormensScraper:
 
         payload = {
             "source": self.base_url,
-            "scraped_at": datetime.utcnow().isoformat(timespec="seconds"),
+            "scraped_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "count": len(records),
             "fabrics": [asdict(record) for record in records],
         }
@@ -429,6 +465,14 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable TLS verification (only for debugging)",
     )
+    parser.add_argument(
+        "--allow-anonymous",
+        action="store_true",
+        help=(
+            "Skip authentication if the portal allows anonymous access. "
+            "Otherwise the scraper will fail fast when listings redirect to login."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -447,6 +491,7 @@ def main() -> None:
         page_param=args.page_param,
         download_images=not args.no_images,
         verify_tls=not args.insecure,
+        allow_anonymous=args.allow_anonymous,
     )
     scraper.run()
 
