@@ -77,6 +77,75 @@ Estimated Cost: ~$0.008
 
 ---
 
+### 3. `scrape_formens_b2b.py`
+
+**Zweck:** Lädt den kompletten Stoffkatalog (≈1988 Artikel) von b2b2.formens.ro erneut herunter, inklusive fehlender Details wie Preis-Kategorie, Zusammensetzung, Ursprung und Bilder.
+
+**Was es macht:**
+- Meldet sich mit E-Mail/Passwort oder einem bestehenden Session-Cookie am B2B-Portal an
+- Durchläuft die paginierten Stofflisten und sammelt alle Detail-Links
+- Extrahiert Attribute aus JSON-LD, Tabellen und Definition Lists (inkl. Preis-Kat., Composition, Origin, Gewicht)
+- Lädt das Hauptbild jedes Stoffs herunter (für DALL·E/Moodboards)
+- Schreibt die Ergebnisse nach `storage/fabrics/formens_fabrics.json` und speichert Bilder unter `storage/fabrics/images/`
+
+**Usage:**
+```bash
+python scripts/scrape_formens_b2b.py \
+  --email "$FORMENS_EMAIL" --password "$FORMENS_PASSWORD" \
+  --output-dir storage/fabrics --max-pages 120
+
+# Alternativ: Browser-Cookie statt Login nutzen
+python scripts/scrape_formens_b2b.py --cookie "sessionid=..." --max-pages 120
+```
+
+**Output:**
+- `storage/fabrics/formens_fabrics.json` mit allen Stoffen und Metadaten
+- Bilder im Ordner `storage/fabrics/images/`
+
+**Dauer:** Hängt von der Portal-Latenz ab; Skript pausiert standardmäßig ~0.7s zwischen Requests, um Throttling zu vermeiden
+
+**Hinweise:**
+- `--listing-path` und `--page-param` sind konfigurierbar, falls die Pagination angepasst werden muss
+- `--no-images` kann genutzt werden, wenn nur Metadaten benötigt werden
+
+---
+
+### 3b. `import_formens_scrape_to_rag.py`
+
+**Zweck:** Schreibt die von `scrape_formens_b2b.py` erzeugten Stoffdaten in die Postgres-Datenbank (Tabelle `fabrics`) und erzeugt optional RAG-Dokumente mit Embeddings für die `rag_docs`-Tabelle.
+
+**Anmeldung / Zugangsdaten:**
+- Datenbank: `POSTGRES_CONNECTION_STRING` **oder** `DATABASE_URL` in `.env`
+- OpenAI (nur für RAG-Embeddings): `OPENAI_API_KEY` in `.env`
+- Scraper-Login (Formens): `FORMENS_EMAIL`, `FORMENS_PASSWORD` oder `--cookie` beim Scraper-Aufruf
+
+**Usage:**
+```bash
+# Nur Datenbank-Update (kein RAG, keine Embeddings nötig)
+python scripts/import_formens_scrape_to_rag.py \
+  --input storage/fabrics/formens_fabrics.json \
+  --no-rag
+
+# Mit RAG-Embeddings (Standard-Kategorie: fabrics_formens)
+python scripts/import_formens_scrape_to_rag.py \
+  --input storage/fabrics/formens_fabrics.json \
+  --rag-category fabrics_formens \
+  --batch-size 15
+```
+
+**Was passiert:**
+- Upsert in `fabrics` anhand `fabric_code` (Code, Name, Zusammensetzung, Gewicht, Preis-Kategorie, Ursprung in `additional_metadata`)
+- Optional: Erstellung eines RAG-Text-Chunks pro Stoff + OpenAI-Embedding → Insert/Update in `rag_docs`
+- Idempotent: Wiederholtes Ausführen aktualisiert bestehende Datensätze
+
+**Dauer & Kosten:**
+- Ohne RAG: Sekundenbereich
+- Mit RAG: abhängig von OpenAI-Rate-Limit; Kosten nur für Embeddings
+
+**Hinweis:** Nach erfolgreichem Import sind RAG-Abfragen wie „zeig mir Stoffe“ direkt nutzbar. Bei Bedarf kann `--rag-category` angepasst werden, um die Dokumente zu isolieren.
+
+---
+
 ## 🚀 Setup-Reihenfolge
 
 Nach frischem Database Setup:
