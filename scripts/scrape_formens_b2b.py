@@ -39,7 +39,7 @@ from bs4 import BeautifulSoup
 
 
 DEFAULT_BASE_URL = "https://b2b2.formens.ro"
-DEFAULT_LISTING_PATH = "/fabric"
+DEFAULT_LISTING_PATH = "/stocktisue"
 DEFAULT_LOGIN_PATH = "/auth/login"
 
 
@@ -78,7 +78,7 @@ class FormensScraper:
         allow_anonymous: bool = False,
         output_dir: Path = Path("storage/fabrics"),
         sleep_seconds: float = 0.7,
-        max_pages: int = 120,
+        max_pages: int = 999,
         page_param: str = "page",
         download_images: bool = True,
         verify_tls: bool = True,
@@ -304,7 +304,7 @@ class FormensScraper:
                 if page == 1:
                     # Try alternative paths on first page
                     alternative_found = False
-                    for alt_path in ['/fabrics', '/stocktisue', '/products', '/catalog', '/stoffe']:
+                    for alt_path in ['/stocktisue', '/fabrics', '/fabric', '/products', '/catalog', '/stoffe']:
                         print(f"  Trying alternative: {alt_path}")
                         alt_url = f"{self.base_url}{alt_path}?page=1"
                         try:
@@ -665,7 +665,7 @@ def parse_args() -> argparse.Namespace:
         "--login-path", help="Relative login path", default=DEFAULT_LOGIN_PATH
     )
     parser.add_argument(
-        "--max-pages", type=int, default=120, help="Maximum listing pages to scan"
+        "--max-pages", type=int, default=999, help="Maximum listing pages to scan (stops automatically when no new products found)"
     )
     parser.add_argument(
         "--page-param", default="page", help="Query parameter used for pagination"
