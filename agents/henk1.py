@@ -32,6 +32,7 @@ class Henk1Agent(BaseAgent):
         """
         print(f"=== HENK1 PROCESS: henk1_rag_queried = {state.henk1_rag_queried}")
         print(f"=== HENK1 PROCESS: customer_id = {state.customer.customer_id}")
+        print(f"=== HENK1 PROCESS: conversation_history length = {len(state.conversation_history)}")
 
         # If RAG has been queried and customer saw fabrics, mark complete
         if state.henk1_rag_queried:
@@ -47,11 +48,14 @@ class Henk1Agent(BaseAgent):
                 should_continue=True,
             )
 
-        # First contact with customer: Welcome and start needs assessment
-        print("=== HENK1: First contact - starting needs assessment conversation")
+        # Check if this is first contact or ongoing conversation
+        has_conversation = len(state.conversation_history) > 0
 
-        # Create a warm, personal welcome message following AIDA principle
-        welcome_message = """Moin! Schön, dass du hier bist! 👋
+        if not has_conversation:
+            # First contact with customer: Welcome and start needs assessment
+            print("=== HENK1: First contact - starting needs assessment conversation")
+
+            welcome_message = """Moin! Schön, dass du hier bist! 👋
 
 Ein maßgeschneiderter Anzug – da bist du bei mir genau richtig. Ich bin HENK und helfe dir, den perfekten Anzug für dich zu finden.
 
@@ -67,9 +71,33 @@ Lass uns kurz über deine Wünsche sprechen:
 
 Je mehr ich über deine Vorstellungen weiß, desto besser kann ich dir passende Stoffe und Designs zeigen! 🎩"""
 
-        return AgentDecision(
-            next_agent="operator",
-            message=welcome_message,
-            action=None,
-            should_continue=False,  # Wait for user response
-        )
+            return AgentDecision(
+                next_agent="operator",
+                message=welcome_message,
+                action=None,
+                should_continue=False,  # Wait for user response
+            )
+
+        else:
+            # Ongoing conversation - acknowledge customer input and continue assessment
+            print("=== HENK1: Ongoing conversation - processing customer response")
+
+            # Simple acknowledgment message
+            # In real implementation, this would use LLM to understand context
+            response_message = """Perfekt! Eine Hochzeit im Sommer – da haben wir viele stilvolle Möglichkeiten! 🌞
+
+Für Sommerhochzeiten empfehle ich leichtere Stoffe, die atmungsaktiv sind und trotzdem elegant aussehen.
+
+**Noch ein paar Fragen:**
+- Bist du Gast oder Bräutigam?
+- Gibt es eine bestimmte Farbrichtung? (Navy, Grau, Beige, oder etwas Ausgefallenes?)
+- Budget-Rahmen ungefähr?
+
+Dann kann ich dir gleich passende Stoffe zeigen! 🎩"""
+
+            return AgentDecision(
+                next_agent="operator",
+                message=response_message,
+                action=None,
+                should_continue=False,  # Wait for next user response
+            )
