@@ -17,10 +17,12 @@ Kompletter Workflow zum Scrapen aller Stoffe von Formens B2B und Import in die P
 pip install requests beautifulsoup4 asyncpg
 
 # Umgebungsvariablen setzen
-export FORMENS_EMAIL="deine@email.de"
+export FORMENS_USERNAME="deinUsername"  # ⚠️ Username, NICHT Email!
 export FORMENS_PASSWORD="deinPasswort"
 export DATABASE_URL="postgresql://user:pass@host:port/dbname"
 ```
+
+⚠️ **WICHTIG**: Formens B2B verwendet einen **Username** (nicht Email) für den Login!
 
 ---
 
@@ -32,8 +34,17 @@ Das Scraping-Script holt alle Stoffe von `https://b2b2.formens.ro/stocktisue` un
 
 ```bash
 python scripts/scrape_formens_b2b.py \
-  --email "$FORMENS_EMAIL" \
+  --username "$FORMENS_USERNAME" \
   --password "$FORMENS_PASSWORD" \
+  --output-dir storage/fabrics
+```
+
+**ODER** direkt ohne Umgebungsvariablen:
+
+```bash
+python scripts/scrape_formens_b2b.py \
+  --username "Henning" \
+  --password "deinPasswort" \
   --output-dir storage/fabrics
 ```
 
@@ -147,10 +158,12 @@ Jetzt kannst du die Stoffe im RAG abfragen:
 
 ## 🔄 Kompletter Workflow (Copy-Paste)
 
+### Option 1: Manuell
+
 ```bash
 # 1. Scrapen
 python scripts/scrape_formens_b2b.py \
-  --email "$FORMENS_EMAIL" \
+  --username "$FORMENS_USERNAME" \
   --password "$FORMENS_PASSWORD" \
   --output-dir storage/fabrics
 
@@ -162,6 +175,18 @@ python scripts/generate_fabric_embeddings.py
 
 # 4. Test
 python scripts/verify_embeddings.py
+```
+
+### Option 2: Automatisch mit Quick-Start-Script
+
+```bash
+# Credentials setzen
+export FORMENS_USERNAME="Henning"
+export FORMENS_PASSWORD="deinPasswort"
+export DATABASE_URL="postgresql://user:pass@host:port/dbname"
+
+# Alles auf einmal ausführen
+./scripts/formens_quickstart.sh
 ```
 
 ---

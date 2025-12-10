@@ -15,8 +15,10 @@ frequently. It focuses on the following:
 
 Example:
     python scripts/scrape_formens_b2b.py \
-        --email "$FORMENS_EMAIL" --password "$FORMENS_PASSWORD" \
-        --output-dir storage/fabrics --max-pages 120
+        --username "$FORMENS_USERNAME" --password "$FORMENS_PASSWORD" \
+        --output-dir storage/fabrics
+
+Note: Formens B2B uses a username (not email) for authentication.
 
 You can also pass an authenticated cookie (copied from the browser) via
 ``--cookie`` if form-based login fails.
