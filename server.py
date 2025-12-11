@@ -2,10 +2,15 @@
 
 import asyncio
 import json
+import os
 import uuid
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Dict, Optional, Tuple
+from dotenv import load_dotenv
+
+# Load environment variables from .env
+load_dotenv()
 
 from workflow.graph_state import HenkGraphState, create_initial_state
 from workflow.workflow import create_smart_workflow
