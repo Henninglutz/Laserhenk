@@ -45,6 +45,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
+from uuid import uuid4
 
 
 def parse_weight(raw_weight: Optional[str]) -> Optional[int]:
@@ -168,7 +169,7 @@ def build_fabric_payload(row: Dict[str, str]) -> Dict[str, object]:
     name = " ".join(name_parts) if name_parts else f"Stoff {fabric_code or 'unbekannt'}"
 
     return {
-        "id": fabric_code,
+        "id": str(uuid4()),
         "fabric_code": fabric_code,
         "name": name,
         "supplier": supplier,
@@ -227,13 +228,11 @@ async def upsert_fabric(conn: asyncpg.Connection, payload: Dict[str, object]) ->
         INSERT INTO fabrics (
             id, fabric_code, name, supplier, composition, weight,
             color, pattern, category, price_category,
-            origin, stock_status, additional_metadata,
-            created_at, updated_at
+            origin, stock_status, additional_metadata
         ) VALUES (
             $1, $2, $3, $4, $5, $6,
             $7, $8, $9, $10, $11,
-            $12, $13, $14,
-            NOW(), NOW()
+            $12, $13
         )
         """,
         payload["id"],
