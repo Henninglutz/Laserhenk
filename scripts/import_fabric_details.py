@@ -168,6 +168,7 @@ def build_fabric_payload(row: Dict[str, str]) -> Dict[str, object]:
     name = " ".join(name_parts) if name_parts else f"Stoff {fabric_code or 'unbekannt'}"
 
     return {
+        "id": fabric_code,
         "fabric_code": fabric_code,
         "name": name,
         "supplier": supplier,
@@ -224,17 +225,18 @@ async def upsert_fabric(conn: asyncpg.Connection, payload: Dict[str, object]) ->
     await conn.execute(
         """
         INSERT INTO fabrics (
-            fabric_code, name, supplier, composition, weight,
+            id, fabric_code, name, supplier, composition, weight,
             color, pattern, category, price_category,
             origin, stock_status, additional_metadata,
             created_at, updated_at
         ) VALUES (
-            $1, $2, $3, $4, $5,
-            $6, $7, $8, $9,
-            $10, $11, $12,
+            $1, $2, $3, $4, $5, $6,
+            $7, $8, $9, $10, $11,
+            $12, $13, $14,
             NOW(), NOW()
         )
         """,
+        payload["id"],
         payload["fabric_code"],
         payload["name"],
         payload["supplier"],
