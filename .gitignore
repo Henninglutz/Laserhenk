@@ -63,3 +63,8 @@ Thumbs.db
 data/
 temp/
 *.tmp
+
+# Large fabric data (scraped images and JSON)
+storage/
+database/fabric/
+/storage/fabrics/images/

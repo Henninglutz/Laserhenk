@@ -55,19 +55,17 @@ class Henk1Agent(BaseAgent):
             # First contact with customer: Welcome and start needs assessment
             print("=== HENK1: First contact - starting needs assessment conversation")
 
-            welcome_message = """Moin! Schön, dass du hier bist! 👋
+            welcome_message = """
+Lass uns kurz über dan Ablauf sprechen:
 
-Ein maßgeschneiderter Anzug – da bist du bei mir genau richtig. Ich bin HENK und helfe dir, den perfekten Anzug für dich zu finden.
+**Wir fertigen ausschließlich maßgeschneiderte Anzüge**
+Der Weg dahin:
+- Deine Wünsche
+- Erste Ideen, Stile und Designs
+- Maßnehmen mit Deinem Smartphone
+- Fertigstellen vom Schnittbild, Kontrolle durch die Schneider und Rückmeldung an Dich VOR der Produktion
 
-Lass uns kurz über deine Wünsche sprechen:
-
-**Für welchen Anlass brauchst du den Anzug?**
-- Hochzeit (als Gast oder Bräutigam?)
-- Business/Büro
-- Besonderes Event
-- Oder einfach für den Alltag?
-
-**Und hast du schon eine Vorstellung vom Budget?**
+Und hast du schon eine Vorstellung vom Budget?
 
 Je mehr ich über deine Vorstellungen weiß, desto besser kann ich dir passende Stoffe und Designs zeigen! 🎩"""
 
