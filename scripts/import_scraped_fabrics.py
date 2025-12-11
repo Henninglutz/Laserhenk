@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import re
+import uuid
 from pathlib import Path
 from datetime import datetime
 
@@ -161,15 +162,17 @@ async def import_scraped_fabrics(conn, json_path: Path):
 
             else:
                 # Insert new fabric
+                fabric_id = uuid.uuid4()
                 await conn.execute("""
                     INSERT INTO fabrics (
-                        fabric_code, name, composition, weight, color, pattern,
+                        id, fabric_code, name, composition, weight, color, pattern,
                         category, stock_status, supplier, origin,
                         description, care_instructions, additional_metadata,
                         created_at, updated_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
                 """,
+                    fabric_id,
                     fabric_code,
                     fabric.get('name') or f"Stoff {fabric_code}",
                     fabric.get('composition'),
