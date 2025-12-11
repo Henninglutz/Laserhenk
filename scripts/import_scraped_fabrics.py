@@ -13,12 +13,11 @@ import argparse
 import json
 import os
 import re
-import uuid
 from pathlib import Path
 from datetime import datetime
 
 
-def parse_weight(weight_str) -> int:
+def parse_weight(weight_str: str) -> int:
     """
     Parse weight string to integer.
 
@@ -26,15 +25,10 @@ def parse_weight(weight_str) -> int:
         '250g/m²' -> 250
         '280 g/m²' -> 280
         '320gr/m' -> 320
-        250 -> 250 (already int)
         None -> None
     """
     if not weight_str:
         return None
-
-    # If already an integer, return as is
-    if isinstance(weight_str, int):
-        return weight_str
 
     # Extract digits from weight string
     match = re.search(r'(\d+)', str(weight_str))
@@ -73,13 +67,8 @@ async def import_scraped_fabrics(conn, json_path: Path):
     with open(json_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
-    # Support both formats: {"fabrics": [...]} and [...]
-    if isinstance(data, list):
-        fabrics = data
-        meta = {}
-    else:
-        fabrics = data.get('fabrics', [])
-        meta = data.get('meta', {})
+    fabrics = data.get('fabrics', [])
+    meta = data.get('meta', {})
 
     print(f"✓ Loaded {len(fabrics)} fabrics from JSON")
     print(f"  Source: {meta.get('source', 'Unknown')}")
@@ -162,17 +151,15 @@ async def import_scraped_fabrics(conn, json_path: Path):
 
             else:
                 # Insert new fabric
-                fabric_id = uuid.uuid4()
                 await conn.execute("""
                     INSERT INTO fabrics (
-                        id, fabric_code, name, composition, weight, color, pattern,
+                        fabric_code, name, composition, weight, color, pattern,
                         category, stock_status, supplier, origin,
                         description, care_instructions, additional_metadata,
                         created_at, updated_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
                 """,
-                    fabric_id,
                     fabric_code,
                     fabric.get('name') or f"Stoff {fabric_code}",
                     fabric.get('composition'),
