@@ -33,7 +33,7 @@ python scripts/import_fabric_details.py --dry-run
    ```
    - Der Standardpfad ist `storage/fabrics_export-2.csv`; passe ihn bei Bedarf mit `--source` an.
 3. Während des Imports siehst du Fortschrittsmeldungen (z. B. wie viele Einträge eingefügt/aktualisiert wurden). Zeilen ohne `Stoffcode` werden übersprungen und als Fehler gezählt.
-4. Neue Einträge werden über `fabric_code` eingefügt. Die Datenbank vergibt dabei automatisch eine UUID als `id` (Pflichtfeld), bestehende Einträge werden anhand des `fabric_code` gefunden und aktualisiert.
+4. Neue Einträge werden über `fabric_code` eingefügt. Die Datenbank vergibt dabei automatisch eine UUID als `id` (Pflichtfeld), setzt `created_at`/`updated_at` auf den aktuellen Zeitpunkt, und bestehende Einträge werden anhand des `fabric_code` gefunden und aktualisiert.
 
 ## Was das Skript macht
 - Erwartet eine Semikolon-separierte CSV mit Spalten wie `Stoffcode`, `Stofflieferant`, `Lager`, `Gewicht`, `Saison`, `Status` u. a.

@@ -228,11 +228,12 @@ async def upsert_fabric(conn: asyncpg.Connection, payload: Dict[str, object]) ->
         INSERT INTO fabrics (
             id, fabric_code, name, supplier, composition, weight,
             color, pattern, category, price_category,
-            origin, stock_status, additional_metadata
+            origin, stock_status, additional_metadata,
+            created_at, updated_at
         ) VALUES (
             $1, $2, $3, $4, $5, $6,
             $7, $8, $9, $10, $11,
-            $12, $13
+            $12, $13, NOW(), NOW()
         )
         """,
         payload["id"],
