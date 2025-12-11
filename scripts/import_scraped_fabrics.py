@@ -17,7 +17,7 @@ from pathlib import Path
 from datetime import datetime
 
 
-def parse_weight(weight_str: str) -> int:
+def parse_weight(weight_str) -> int:
     """
     Parse weight string to integer.
 
@@ -25,10 +25,15 @@ def parse_weight(weight_str: str) -> int:
         '250g/m²' -> 250
         '280 g/m²' -> 280
         '320gr/m' -> 320
+        250 -> 250 (already int)
         None -> None
     """
     if not weight_str:
         return None
+
+    # If already an integer, return as is
+    if isinstance(weight_str, int):
+        return weight_str
 
     # Extract digits from weight string
     match = re.search(r'(\d+)', str(weight_str))
@@ -67,8 +72,13 @@ async def import_scraped_fabrics(conn, json_path: Path):
     with open(json_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
-    fabrics = data.get('fabrics', [])
-    meta = data.get('meta', {})
+    # Support both formats: {"fabrics": [...]} and [...]
+    if isinstance(data, list):
+        fabrics = data
+        meta = {}
+    else:
+        fabrics = data.get('fabrics', [])
+        meta = data.get('meta', {})
 
     print(f"✓ Loaded {len(fabrics)} fabrics from JSON")
     print(f"  Source: {meta.get('source', 'Unknown')}")
