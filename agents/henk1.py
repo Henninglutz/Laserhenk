@@ -1,7 +1,10 @@
 """HENK1 Agent - Bedarfsermittlung (AIDA Prinzip)."""
 
+import os
+from openai import AsyncOpenAI
 from agents.base import AgentDecision, BaseAgent
 from models.customer import SessionState
+from typing import Optional
 
 
 class Henk1Agent(BaseAgent):
@@ -19,6 +22,7 @@ class Henk1Agent(BaseAgent):
     def __init__(self):
         """Initialize HENK1 Agent."""
         super().__init__("henk1")
+        self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     async def process(self, state: SessionState) -> AgentDecision:
         """
@@ -79,25 +83,142 @@ Je mehr ich über deine Vorstellungen weiß, desto besser kann ich dir passende 
             )
 
         else:
-            # Ongoing conversation - acknowledge customer input and continue assessment
+            # Ongoing conversation - use LLM to understand and respond
             print("=== HENK1: Ongoing conversation - processing customer response")
 
-            # Simple acknowledgment message
-            # In real implementation, this would use LLM to understand context
-            response_message = """Perfekt! Eine Hochzeit im Sommer – da haben wir viele stilvolle Möglichkeiten! 🌞
+            # Get user's latest message
+            user_input = state.user_input or ""
 
-Für Sommerhochzeiten empfehle ich leichtere Stoffe, die atmungsaktiv sind und trotzdem elegant aussehen.
+            # Build conversation context
+            messages = [
+                {"role": "system", "content": self._get_system_prompt()},
+            ]
 
-**Noch ein paar Fragen:**
-- Bist du Gast oder Bräutigam?
-- Gibt es eine bestimmte Farbrichtung? (Navy, Grau, Beige, oder etwas Ausgefallenes?)
-- Budget-Rahmen ungefähr?
+            # Add conversation history
+            for msg in state.conversation_history[-10:]:  # Last 10 messages
+                role = "assistant" if msg.get("sender") in ["henk1", "system"] else "user"
+                content = msg.get("content", "")
+                if content:
+                    messages.append({"role": role, "content": content})
 
-Dann kann ich dir gleich passende Stoffe zeigen! 🎩"""
+            # Add current user input
+            if user_input:
+                messages.append({"role": "user", "content": user_input})
 
-            return AgentDecision(
-                next_agent="operator",
-                message=response_message,
-                action=None,
-                should_continue=False,  # Wait for next user response
+            # Call LLM
+            response = await self.client.chat.completions.create(
+                model="gpt-4-turbo-preview",
+                messages=messages,
+                temperature=0.7,
             )
+
+            llm_response = response.choices[0].message.content
+
+            # Check if we should query RAG (simple keyword detection for now)
+            should_query_rag = self._should_query_rag(user_input, state)
+
+            if should_query_rag:
+                print("=== HENK1: Customer ready for fabric recommendations, calling RAG")
+
+                # Extract search criteria from conversation
+                criteria = self._extract_search_criteria(user_input, state)
+
+                return AgentDecision(
+                    next_agent="operator",
+                    message=llm_response,  # Show LLM response before RAG results
+                    action="query_rag",  # Trigger RAG tool
+                    action_params=criteria,  # Pass extracted criteria
+                    should_continue=True,
+                )
+            else:
+                # Continue conversation
+                return AgentDecision(
+                    next_agent="operator",
+                    message=llm_response,
+                    action=None,
+                    should_continue=False,  # Wait for user response
+                )
+
+    def _get_system_prompt(self) -> str:
+        """Get HENK1 system prompt for needs assessment."""
+        return """Du bist HENK1, der freundliche Maßanzug-Berater bei LASERHENK.
+
+Deine Aufgabe:
+- Führe eine natürliche Bedarfsermittlung durch (AIDA-Prinzip)
+- Finde heraus: Anlass, Farbwünsche, Stoffpräferenzen, Budget
+- Sei herzlich, persönlich und kompetent
+- Nutze lockere Sprache ("du", "Moin", emoji 🎩)
+- Stelle 2-3 Fragen pro Nachricht, nicht zu viele auf einmal
+
+Wenn der Kunde bereit ist Stoffe zu sehen (z.B. "zeig mir Stoffe", "welche Optionen gibt es", "lass mal sehen"),
+sage ihm dass du gleich passende Empfehlungen zusammenstellst.
+
+Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
+
+    def _should_query_rag(self, user_input: str, state: SessionState) -> bool:
+        """Determine if we should query RAG based on user input."""
+        user_input_lower = user_input.lower()
+
+        # Keywords that indicate customer wants to see fabrics
+        fabric_keywords = [
+            "stoff", "stoffe", "zeig", "zeigen", "empfehlung", "empfehlungen",
+            "option", "optionen", "auswahl", "angebot", "material", "materialien",
+            "vorschlag", "vorschläge", "lass", "sehen", "haben",
+        ]
+
+        # Check if any keyword is in user input
+        has_fabric_request = any(keyword in user_input_lower for keyword in fabric_keywords)
+
+        # Check if we have enough context (at least 2 messages in conversation)
+        has_context = len(state.conversation_history) >= 2
+
+        return has_fabric_request and has_context
+
+    def _extract_search_criteria(self, user_input: str, state: SessionState) -> dict:
+        """Extract search criteria from conversation context."""
+        user_input_lower = user_input.lower()
+
+        # Extract colors (simple keyword matching)
+        colors = []
+        color_keywords = {
+            "blau": "Blue", "navy": "Navy", "dunkelblau": "Navy",
+            "grau": "Grey", "dunkelgrau": "Dark Grey", "hellgrau": "Light Grey",
+            "schwarz": "Black",
+            "braun": "Brown", "beige": "Beige", "camel": "Camel",
+            "grün": "Green", "olive": "Olive",
+        }
+
+        for keyword, color in color_keywords.items():
+            if keyword in user_input_lower:
+                colors.append(color)
+
+        # Extract patterns
+        patterns = []
+        pattern_keywords = {
+            "uni": "Solid", "einfarbig": "Solid",
+            "streifen": "Stripes", "gestreift": "Stripes",
+            "karo": "Check", "kariert": "Check",
+            "fischgrat": "Herringbone",
+        }
+
+        for keyword, pattern in pattern_keywords.items():
+            if keyword in user_input_lower:
+                patterns.append(pattern)
+
+        # If no specific criteria found, use conversation history
+        if not colors and not patterns:
+            # Check full conversation for context
+            for msg in state.conversation_history[-5:]:
+                content = msg.get("content", "").lower()
+                for keyword, color in color_keywords.items():
+                    if keyword in content and color not in colors:
+                        colors.append(color)
+                for keyword, pattern in pattern_keywords.items():
+                    if keyword in content and pattern not in patterns:
+                        patterns.append(pattern)
+
+        return {
+            "query": user_input,
+            "colors": colors,
+            "patterns": patterns,
+        }
