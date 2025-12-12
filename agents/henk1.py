@@ -84,8 +84,12 @@ Je mehr ich über deine Vorstellungen weiß, desto besser kann ich dir passende 
             # Ongoing conversation - use LLM to understand and respond
             print("=== HENK1: Ongoing conversation - processing customer response")
 
-            # Get user's latest message
-            user_input = state.user_input or ""
+            # Get user's latest message from conversation history
+            user_input = ""
+            for msg in reversed(state.conversation_history):
+                if isinstance(msg, dict) and msg.get("role") == "user":
+                    user_input = msg.get("content", "")
+                    break
 
             # Build conversation context
             messages = [
@@ -94,13 +98,17 @@ Je mehr ich über deine Vorstellungen weiß, desto besser kann ich dir passende 
 
             # Add conversation history
             for msg in state.conversation_history[-10:]:  # Last 10 messages
-                role = "assistant" if msg.get("sender") in ["henk1", "system"] else "user"
-                content = msg.get("content", "")
-                if content:
-                    messages.append({"role": role, "content": content})
+                if isinstance(msg, dict):
+                    role = "assistant" if msg.get("sender") in ["henk1", "system"] else "user"
+                    content = msg.get("content", "")
+                    if content:
+                        messages.append({"role": role, "content": content})
 
-            # Add current user input
-            if user_input:
+            # Add current user input if not already in history
+            if user_input and not any(
+                isinstance(m, dict) and m.get("role") == "user" and m.get("content") == user_input
+                for m in messages
+            ):
                 messages.append({"role": "user", "content": user_input})
 
             # Call LLM

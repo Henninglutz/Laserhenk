@@ -274,6 +274,10 @@ async def conversation_node(state: HenkGraphState) -> HenkGraphState:
             "awaiting_user_input": True,
         }
 
+    # Sync messages from graph state to session_state.conversation_history
+    messages = state.get("messages", [])
+    session_state.conversation_history = messages
+
     try:
         decision = await agent.process(session_state)
 

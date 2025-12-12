@@ -246,7 +246,8 @@ els.clear.addEventListener("click", () => {
     "Drei Infos genügen für den Start:\n" +
     "• Was ist der Anlass? (z.B. Hochzeit, Gala, Business)\n" +
     "• Welcher Stil-Vibe? (klassisch, modern, auffällig)\n" +
-    "• Welche Farbrichtung? (z.B. dunkle Töne, helle Farben)"
+    "• Welche Farbrichtung? (z.B. dunkle Töne, helle Farben)\n\n" +
+    "💡 Tipp: Fragen zu Preisen, Lieferzeit, Prozess oder AGB beantworte ich gerne jederzeit!"
   );
 });
 

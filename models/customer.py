@@ -68,7 +68,7 @@ class SessionState(BaseModel):
     customer: Customer
     measurements: Optional[Measurements] = None
     design_preferences: DesignPreferences = Field(default_factory=DesignPreferences)
-    conversation_history: list[str] = Field(default_factory=list)
+    conversation_history: list[dict] = Field(default_factory=list, description="Message history as list of dicts with role/content/sender")
     current_agent: Optional[str] = Field(None, description="Current active agent")
     mood_image_url: Optional[str] = Field(
         None, description="Generated DALLE mood image"
