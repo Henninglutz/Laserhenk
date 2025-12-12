@@ -70,7 +70,7 @@ def create_session():
 
 @api_bp.route('/chat', methods=['POST'])
 @jwt_required_optional
-async def chat():
+def chat():
     """
     Chat Endpoint - verarbeite User-Nachricht.
 
@@ -109,8 +109,9 @@ async def chat():
         state['messages'] = history
         state['user_input'] = message
 
-        # Process with workflow
-        final_state = await _workflow.ainvoke(state)
+        # Process with workflow (synchronous wrapper for async)
+        import asyncio
+        final_state = asyncio.run(_workflow.ainvoke(state))
         _sessions[sid] = final_state
 
         # Extract assistant reply
