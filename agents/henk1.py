@@ -60,11 +60,13 @@ class Henk1Agent(BaseAgent):
             print("=== HENK1: First contact - starting needs assessment conversation")
 
             welcome_message = """
-Kurz noch ein paar Basis Themen zu unserer Arbeitsweise: Wir fertigen ausschließlich Maßkleidung, ist für alle beteiligten von Vorteil. Es dauert ca. 6 Wochen, wir besprechen Deine Wünsche, erste Ideen und Designs, Nehmen Maß mit Deinem Smartphone, stellen das Schnittbild fertig und kontrollieren mit den Schneidern, Designern und melden uns bei Dir VOR der Fertigung.
+Hallo! Ich bin HENK, dein persönlicher Berater für maßgeschneiderte Anzüge.
 
-Und hast du schon eine Vorstellung vom Budget?
+Kurz zu unserem Prozess: Wir fertigen ausschließlich Maßkleidung (ca. 6 Wochen Lieferzeit). Wir besprechen deine Wünsche, erstellen Design-Vorschläge, nehmen Maß mit deinem Smartphone, und du bekommst vor der Produktion nochmal eine Freigabe-Anfrage.
 
-Je mehr ich über deine Vorstellungen weiß, desto besser kann ich dir passende Stoffe und Designs zeigen! 🎩"""
+Erzähl mir: Für welchen Anlass brauchst du den Anzug? Und hast du schon Vorstellungen zu Farbe, Stil oder Budget?
+
+💡 *Tipp: Fragen zu Preisen, Lieferzeit oder Prozess beantworte ich gerne jederzeit!*"""
 
             return AgentDecision(
                 next_agent="operator",
