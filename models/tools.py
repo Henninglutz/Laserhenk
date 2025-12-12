@@ -18,7 +18,9 @@ class RAGQuery(BaseModel):
     context_filter: Optional[dict] = Field(
         None, description="Additional filters (e.g., product category)"
     )
+    category: Optional[str] = Field(None, description="Category filter")
     top_k: int = Field(5, description="Number of results to return")
+    limit: int = Field(10, description="Alias for top_k")
 
 
 class RAGResult(BaseModel):
@@ -45,7 +47,13 @@ class CRMLeadCreate(BaseModel):
     stage: str = Field("initial_contact", description="Pipeline stage")
     source: str = Field("henk_bot", description="Lead source")
     notes: Optional[str] = None
+    deal_value: Optional[float] = Field(None, description="Deal value in EUR")
     custom_fields: Optional[dict] = None
+
+    @property
+    def name(self) -> str:
+        """Alias für customer_name."""
+        return self.customer_name
 
 
 class CRMLeadUpdate(BaseModel):
@@ -54,6 +62,7 @@ class CRMLeadUpdate(BaseModel):
     lead_id: str
     stage: Optional[str] = None
     notes: Optional[str] = None
+    updates: Optional[dict] = Field(None, description="Update fields")
     custom_fields: Optional[dict] = None
     status: Optional[str] = None
 
@@ -64,6 +73,7 @@ class CRMLeadResponse(BaseModel):
     lead_id: str
     success: bool
     message: Optional[str] = None
+    deal_id: Optional[str] = None
     data: Optional[dict] = None
 
 

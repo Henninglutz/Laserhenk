@@ -72,7 +72,7 @@ class RAGTool:
 
     async def query(self, query_request: RAGQuery) -> RAGResult:
         """
-        Query RAG database.
+        Query RAG database with semantic search.
 
         Args:
             query_request: RAG query parameters
@@ -80,11 +80,21 @@ class RAGTool:
         Returns:
             RAG query results
         """
-        # TODO: Implement actual RAG query logic
-        # Placeholder für jetzt
+        logger.info(f"[RAGTool.query] query='{query_request.query}'")
+
+        # Use generic search method
+        results = await self.search(
+            query=query_request.query,
+            limit=query_request.limit,
+            category=query_request.category,
+        )
+
         return RAGResult(
-            results=[],
-            metadata={"query": query_request.query},
+            results=results,
+            metadata={
+                "query": query_request.query,
+                "count": len(results),
+            },
         )
 
     async def retrieve_customer_context(self, customer_id: str) -> RAGResult:
@@ -97,8 +107,23 @@ class RAGTool:
         Returns:
             Customer context from database
         """
-        # TODO: Implement customer context retrieval
-        return RAGResult(results=[], metadata={"customer_id": customer_id})
+        logger.info(f"[RAGTool.retrieve_customer_context] customer_id={customer_id}")
+
+        # Search for customer-specific documents
+        query = f"Customer preferences and history for {customer_id}"
+        results = await self.search(
+            query=query,
+            category="customer",
+            limit=5,
+        )
+
+        return RAGResult(
+            results=results,
+            metadata={
+                "customer_id": customer_id,
+                "count": len(results),
+            },
+        )
 
     async def search_fabrics(
         self, criteria: FabricSearchCriteria

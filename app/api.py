@@ -1,0 +1,226 @@
+"""API Blueprint - Chat und Session Management."""
+
+import uuid
+from typing import Dict
+
+from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required
+from pydantic import ValidationError
+
+from app.middleware import jwt_required_optional, get_current_user_id
+from workflow.graph_state import HenkGraphState, create_initial_state
+from workflow.workflow import create_smart_workflow
+
+api_bp = Blueprint('api', __name__)
+
+# Global workflow und sessions
+_workflow = create_smart_workflow()
+_sessions: Dict[str, HenkGraphState] = {}
+
+
+def _get_or_create_session(session_id: str = None, user_id: str = None) -> tuple[str, HenkGraphState]:
+    """
+    Hole oder erstelle Session.
+
+    Args:
+        session_id: Optional Session ID
+        user_id: Optional User ID (für authenticated users)
+
+    Returns:
+        Tuple (session_id, state)
+    """
+    if session_id and session_id in _sessions:
+        state = _sessions[session_id]
+        # Setze user_id wenn authenticated
+        if user_id and 'user_id' not in state:
+            state['user_id'] = user_id
+        return session_id, state
+
+    # Neue Session erstellen
+    new_sid = session_id or str(uuid.uuid4())
+    new_state = create_initial_state(new_sid)
+
+    if user_id:
+        new_state['user_id'] = user_id
+
+    _sessions[new_sid] = new_state
+    return new_sid, new_state
+
+
+@api_bp.route('/session', methods=['POST'])
+@jwt_required_optional
+def create_session():
+    """
+    Erstelle neue Session.
+
+    Optional:
+        - JWT Token für authenticated user
+
+    Returns:
+        201: Session ID
+    """
+    user_id = get_current_user_id()
+    session_id, _ = _get_or_create_session(user_id=user_id)
+
+    return jsonify({
+        'session_id': session_id,
+        'authenticated': user_id is not None,
+    }), 201
+
+
+@api_bp.route('/chat', methods=['POST'])
+@jwt_required_optional
+def chat():
+    """
+    Chat Endpoint - verarbeite User-Nachricht.
+
+    Body:
+        - message: str (required)
+        - session_id: str (optional)
+
+    Optional:
+        - JWT Token für authenticated user
+
+    Returns:
+        200: Assistant response
+        400: Validation error
+    """
+    try:
+        data = request.get_json()
+        message = str(data.get('message', '')).strip()
+
+        if not message:
+            return jsonify({'error': 'Nachricht darf nicht leer sein'}), 400
+
+        session_id = data.get('session_id')
+        user_id = get_current_user_id()
+
+        # Get or create session
+        sid, state = _get_or_create_session(session_id=session_id, user_id=user_id)
+
+        # Add user message to history
+        history = list(state.get('messages', []))
+        history.append({
+            'role': 'user',
+            'content': message,
+            'sender': 'user',
+        })
+
+        state['messages'] = history
+        state['user_input'] = message
+
+        # Process with workflow (synchronous wrapper for async)
+        import asyncio
+        final_state = asyncio.run(_workflow.ainvoke(state))
+        _sessions[sid] = final_state
+
+        # Extract assistant reply
+        reply = 'Danke, ich habe alles notiert.'
+        for msg in reversed(final_state.get('messages', [])):
+            if msg.get('role') == 'assistant':
+                reply = msg.get('content', reply)
+                break
+
+        # Current stage
+        stage = final_state.get('current_agent') or final_state.get('next_agent') or 'henk1'
+
+        return jsonify({
+            'reply': reply,
+            'session_id': sid,
+            'stage': stage,
+            'authenticated': user_id is not None,
+            'messages': final_state.get('messages', []),
+        }), 200
+
+    except ValidationError as e:
+        return jsonify({'error': 'Validation error', 'details': e.errors()}), 400
+    except Exception as e:
+        return jsonify({'error': 'Internal error', 'message': str(e)}), 500
+
+
+@api_bp.route('/sessions', methods=['GET'])
+@jwt_required()
+def list_sessions():
+    """
+    Liste alle Sessions für den aktuellen User.
+
+    Headers:
+        Authorization: Bearer <access_token>
+
+    Returns:
+        200: Liste von Sessions
+    """
+    user_id = get_current_user_id()
+
+    user_sessions = []
+    for sid, state in _sessions.items():
+        if state.get('user_id') == user_id:
+            user_sessions.append({
+                'session_id': sid,
+                'current_agent': state.get('current_agent'),
+                'message_count': len(state.get('messages', [])),
+            })
+
+    return jsonify({'sessions': user_sessions}), 200
+
+
+@api_bp.route('/session/<session_id>', methods=['GET'])
+@jwt_required_optional
+def get_session(session_id: str):
+    """
+    Hole Session-Details.
+
+    Args:
+        session_id: Session ID
+
+    Returns:
+        200: Session state
+        404: Session not found
+        403: Unauthorized (wenn Session zu anderem User gehört)
+    """
+    if session_id not in _sessions:
+        return jsonify({'error': 'Session nicht gefunden'}), 404
+
+    state = _sessions[session_id]
+    user_id = get_current_user_id()
+
+    # Check authorization (wenn Session authenticated ist)
+    session_user_id = state.get('user_id')
+    if session_user_id and session_user_id != user_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    return jsonify({
+        'session_id': session_id,
+        'current_agent': state.get('current_agent'),
+        'messages': state.get('messages', []),
+        'authenticated': session_user_id is not None,
+    }), 200
+
+
+@api_bp.route('/session/<session_id>', methods=['DELETE'])
+@jwt_required_optional
+def delete_session(session_id: str):
+    """
+    Lösche Session.
+
+    Args:
+        session_id: Session ID
+
+    Returns:
+        204: Session gelöscht
+        404: Session not found
+        403: Unauthorized
+    """
+    if session_id not in _sessions:
+        return jsonify({'error': 'Session nicht gefunden'}), 404
+
+    state = _sessions[session_id]
+    user_id = get_current_user_id()
+
+    # Check authorization
+    session_user_id = state.get('user_id')
+    if session_user_id and session_user_id != user_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    del _sessions[session_id]
+    return '', 204

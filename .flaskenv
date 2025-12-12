@@ -1,0 +1,4 @@
+FLASK_APP=app
+FLASK_ENV=development
+FLASK_DEBUG=False
+PORT=8000
