@@ -177,9 +177,12 @@ async function sendMessage(userText){
     }
 
     history.push({ role: "assistant", content: reply });
-    addMessage("assistant", reply);
 
-    // Handle moodboard display if scheduled
+    // Check if there's an image_url in the response (DALL-E generated images)
+    const imageUrl = data.image_url || null;
+    addMessage("assistant", reply, imageUrl);
+
+    // Handle moodboard display if scheduled (legacy format)
     if (data.payload && data.payload.moodboard) {
       const moodboard = data.payload.moodboard;
       if (moodboard.status === "scheduled" && moodboard.image_url) {

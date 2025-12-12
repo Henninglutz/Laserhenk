@@ -1,0 +1,8 @@
+# Beispiel-Dateien für DALL-E Prompts
+
+Lege hier Referenz-Bilder ab:
+
+- `outfit_examples/` - Referenz-Outfits
+- `fabrics/` - Stoff-Fotos für Textur-Referenzen
+- `details/` - Detail-Aufnahmen (Revers, Knöpfe, etc.)
+- `moodboards/` - Mood Board Inspirationen

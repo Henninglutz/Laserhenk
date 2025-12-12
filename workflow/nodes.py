@@ -316,6 +316,61 @@ async def conversation_node(state: HenkGraphState) -> HenkGraphState:
                 "messages": messages,
             }
 
+        # Handle DALL-E mood board generation (HENK1)
+        if decision.action == "generate_mood_board":
+            logger.info(f"[Conversation] Agent {current_agent_name} requested mood board generation")
+
+            # Mark that mood board will be shown
+            updated_session_state.henk1_mood_board_shown = True
+
+            messages = list(state.get("messages", []))
+            if decision.message and decision.message.strip():
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": decision.message,
+                        "sender": current_agent_name,
+                        "metadata": {"action": decision.action},
+                    }
+                )
+
+            # Route to dalle_tool with mood board parameters
+            return {
+                "session_state": updated_session_state,
+                "current_agent": current_agent_name,
+                "next_agent": "dalle_mood_board",
+                "pending_action": decision.action_params or {},
+                "awaiting_user_input": False,
+                "phase_complete": False,
+                "messages": messages,
+            }
+
+        # Handle DALL-E outfit visualization (Design Henk)
+        if decision.action == "generate_image":
+            logger.info(f"[Conversation] Agent {current_agent_name} requested outfit image generation")
+
+            messages = list(state.get("messages", []))
+            if decision.message and decision.message.strip():
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": decision.message,
+                        "sender": current_agent_name,
+                        "metadata": {"action": decision.action},
+                    }
+                )
+
+            # Route to dalle_tool with outfit visualization parameters
+            return {
+                "session_state": updated_session_state,
+                "current_agent": current_agent_name,
+                "next_agent": "dalle_outfit",
+                "pending_action": decision.action_params or {},
+                "awaiting_user_input": False,
+                "phase_complete": False,
+                "messages": messages,
+            }
+
         # Handle other special actions
         if current_agent_name == "henk1" and not updated_session_state.customer.customer_id:
             updated_session_state.customer.customer_id = (
@@ -406,18 +461,66 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
     try:
         if next_agent == "rag_tool":
             result = await _execute_rag_tool(action_params, state)
+            messages.append({"role": "assistant", "content": result, "sender": next_agent})
+
+        elif next_agent == "dalle_mood_board":
+            result, image_url = await _execute_dalle_mood_board(action_params, state)
+            messages.append({
+                "role": "assistant",
+                "content": result,
+                "sender": next_agent,
+                "metadata": {"image_url": image_url} if image_url else {}
+            })
+            # Store image URL in session state
+            if image_url:
+                session_state = state["session_state"]
+                if isinstance(session_state, dict):
+                    session_state = SessionState(**session_state)
+                session_state.mood_image_url = image_url
+                # Add to generation history
+                session_state.image_generation_history.append({
+                    "url": image_url,
+                    "type": "mood_board",
+                    "timestamp": str(state.get("metadata", {}).get("timestamp")),
+                    "approved": False,
+                })
+                state["session_state"] = session_state
+
+        elif next_agent == "dalle_outfit":
+            result, image_url = await _execute_dalle_outfit(action_params, state)
+            messages.append({
+                "role": "assistant",
+                "content": result,
+                "sender": next_agent,
+                "metadata": {"image_url": image_url} if image_url else {}
+            })
+            # Store image URL in session state
+            if image_url:
+                session_state = state["session_state"]
+                if isinstance(session_state, dict):
+                    session_state = SessionState(**session_state)
+                session_state.mood_image_url = image_url
+                # Add to generation history
+                session_state.image_generation_history.append({
+                    "url": image_url,
+                    "type": "outfit_visualization",
+                    "timestamp": str(state.get("metadata", {}).get("timestamp")),
+                    "approved": False,
+                })
+                state["session_state"] = session_state
 
         elif next_agent == "comparison_tool":
             result = await _execute_comparison_tool(action_params, state)
+            messages.append({"role": "assistant", "content": result, "sender": next_agent})
 
         elif next_agent == "pricing_tool":
             result = await _execute_pricing_tool(action_params, state)
+            messages.append({"role": "assistant", "content": result, "sender": next_agent})
 
         else:
             logger.warning(f"[ToolsDispatcher] Unknown tool: {next_agent}")
             result = "Tool nicht gefunden."
-
-        messages.append({"role": "assistant", "content": result, "sender": next_agent})
+            messages.append({"role": "assistant", "content": result, "sender": next_agent})
 
         logger.info(f"[ToolsDispatcher] Tool '{next_agent}' executed successfully")
 
@@ -567,6 +670,134 @@ Option 1: {items[0]}
 Option 2: {items[1]}
 
 _[Detaillierter Vergleich wird noch implementiert]_"""
+
+
+async def _execute_dalle_mood_board(
+    params: Dict[str, Any], state: HenkGraphState
+) -> tuple[str, Optional[str]]:
+    """
+    DALL-E Mood Board Tool: Generiert Mood Board für Stil-Inspiration.
+
+    Args:
+        params: Generation-Parameter (style_keywords, colors, occasion, session_id)
+        state: Graph State für Context
+
+    Returns:
+        Tuple of (formatted_message, image_url)
+    """
+    from tools.dalle_tool import get_dalle_tool
+
+    style_keywords = params.get("style_keywords", [])
+    colors = params.get("colors", [])
+    occasion = params.get("occasion")
+    session_id = params.get("session_id")
+
+    logger.info(
+        f"[DALLE_MoodBoard] Generating mood board: "
+        f"style={style_keywords}, colors={colors}, occasion={occasion}"
+    )
+
+    try:
+        dalle = get_dalle_tool()
+        response = await dalle.generate_mood_board(
+            style_keywords=style_keywords,
+            colors=colors,
+            occasion=occasion,
+            session_id=session_id,
+        )
+
+        if response.success and response.image_url:
+            logger.info(f"[DALLE_MoodBoard] Success: {response.image_url}")
+
+            message = f"""🎨 **Dein Mood Board ist fertig!**
+
+Basierend auf deinen Vorstellungen ({', '.join(style_keywords if style_keywords else ['elegant', 'modern'])})
+habe ich dieses visuelle Konzept für dich erstellt.
+
+**Was denkst du?** Trifft das deinen Geschmack?
+
+Lass es mich wissen, dann passen wir es an oder ich zeige dir konkrete Stoffe! 🎩"""
+
+            return message, response.image_url
+
+        else:
+            logger.error(f"[DALLE_MoodBoard] Failed: {response.error}")
+            message = """Entschuldigung, beim Erstellen des Mood Boards gab es ein Problem.
+
+Lass uns trotzdem weitermachen – was ist dir wichtig bei deinem Anzug? 🎩"""
+            return message, None
+
+    except Exception as e:
+        logger.error(f"[DALLE_MoodBoard] Exception: {e}", exc_info=True)
+        message = """Entschuldigung, das Mood Board konnte gerade nicht generiert werden.
+
+Macht nichts – ich kann dir auch so helfen! Was schwebt dir vor? 🎩"""
+        return message, None
+
+
+async def _execute_dalle_outfit(
+    params: Dict[str, Any], state: HenkGraphState
+) -> tuple[str, Optional[str]]:
+    """
+    DALL-E Outfit Visualization Tool: Generiert fotorealistische Outfit-Darstellung.
+
+    Args:
+        params: Generation-Parameter (fabric_data, design_preferences, style_keywords, session_id)
+        state: Graph State für Context
+
+    Returns:
+        Tuple of (formatted_message, image_url)
+    """
+    from tools.dalle_tool import get_dalle_tool
+
+    fabric_data = params.get("fabric_data", {})
+    design_preferences = params.get("design_preferences", {})
+    style_keywords = params.get("style_keywords", [])
+    session_id = params.get("session_id")
+
+    logger.info(
+        f"[DALLE_Outfit] Generating outfit visualization: "
+        f"fabrics={list(fabric_data.keys())}, design={list(design_preferences.keys())}"
+    )
+
+    try:
+        dalle = get_dalle_tool()
+        response = await dalle.generate_outfit_visualization(
+            fabric_data=fabric_data,
+            design_preferences=design_preferences,
+            style_keywords=style_keywords,
+            session_id=session_id,
+        )
+
+        if response.success and response.image_url:
+            logger.info(f"[DALLE_Outfit] Success: {response.image_url}")
+
+            message = f"""✨ **Dein Outfit-Entwurf ist fertig!**
+
+So könnte dein maßgeschneiderter Anzug aussehen – basierend auf:
+- Deiner Stoffauswahl
+- Den Design-Details (Revers, Schulter, etc.)
+- Deinem persönlichen Stil
+
+**Gefällt dir die Richtung?**
+
+Wir können jederzeit Anpassungen vornehmen! 🎩"""
+
+            return message, response.image_url
+
+        else:
+            logger.error(f"[DALLE_Outfit] Failed: {response.error}")
+            message = """Entschuldigung, beim Erstellen des Outfit-Entwurfs gab es ein Problem.
+
+Macht nichts – lass uns die Details besprechen und ich beschreibe dir dein Traumoutfit! 🎩"""
+            return message, None
+
+    except Exception as e:
+        logger.error(f"[DALLE_Outfit] Exception: {e}", exc_info=True)
+        message = """Entschuldigung, der Outfit-Entwurf konnte gerade nicht generiert werden.
+
+Kein Problem – wir machen trotzdem weiter! Was möchtest du noch anpassen? 🎩"""
+        return message, None
 
 
 async def _execute_pricing_tool(params: Dict[str, Any], state: HenkGraphState) -> str:

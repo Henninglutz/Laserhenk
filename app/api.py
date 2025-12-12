@@ -114,23 +114,34 @@ def chat():
         final_state = asyncio.run(_workflow.ainvoke(state))
         _sessions[sid] = final_state
 
-        # Extract assistant reply
+        # Extract assistant reply and image_url
         reply = 'Danke, ich habe alles notiert.'
+        image_url = None
         for msg in reversed(final_state.get('messages', [])):
             if msg.get('role') == 'assistant':
                 reply = msg.get('content', reply)
-                break
+                # Check if message has image_url in metadata
+                metadata = msg.get('metadata', {})
+                if 'image_url' in metadata:
+                    image_url = metadata['image_url']
+                    break
 
         # Current stage
         stage = final_state.get('current_agent') or final_state.get('next_agent') or 'henk1'
 
-        return jsonify({
+        response_data = {
             'reply': reply,
             'session_id': sid,
             'stage': stage,
             'authenticated': user_id is not None,
             'messages': final_state.get('messages', []),
-        }), 200
+        }
+
+        # Add image_url if present
+        if image_url:
+            response_data['image_url'] = image_url
+
+        return jsonify(response_data), 200
 
     except ValidationError as e:
         return jsonify({'error': 'Validation error', 'details': e.errors()}), 400
@@ -224,3 +235,72 @@ def delete_session(session_id: str):
 
     del _sessions[session_id]
     return '', 204
+
+
+@api_bp.route('/session/<session_id>/approve-image', methods=['POST'])
+@jwt_required_optional
+def approve_image(session_id: str):
+    """
+    Bestätige ein generiertes Bild.
+
+    Args:
+        session_id: Session ID
+
+    Body:
+        - image_url: str (required)
+        - image_type: str (optional, default: "outfit_visualization")
+
+    Returns:
+        200: Image approved successfully
+        400: Invalid request
+        404: Session not found
+    """
+    if session_id not in _sessions:
+        return jsonify({'error': 'Session nicht gefunden'}), 404
+
+    try:
+        data = request.get_json()
+        image_url = data.get('image_url')
+
+        if not image_url:
+            return jsonify({'error': 'image_url is required'}), 400
+
+        image_type = data.get('image_type', 'outfit_visualization')
+
+        # Get session state
+        state = _sessions[session_id]
+        from models.customer import SessionState
+        session_state = state.get('session_state')
+        if isinstance(session_state, dict):
+            session_state = SessionState(**session_state)
+
+        # Approve image using storage manager
+        import asyncio
+        from tools.image_storage import get_storage_manager
+
+        storage = get_storage_manager()
+        success = asyncio.run(storage.approve_image(
+            session_state=session_state,
+            image_url=image_url,
+            image_type=image_type,
+        ))
+
+        # Archive to session docs
+        if success:
+            asyncio.run(storage.archive_to_session_docs(
+                session_id=session_id,
+                image_url=image_url,
+            ))
+
+        # Update session state
+        state['session_state'] = session_state
+        _sessions[session_id] = state
+
+        return jsonify({
+            'success': success,
+            'approved_image': image_url,
+            'message': 'Bild wurde bestätigt und archiviert',
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': 'Internal error', 'message': str(e)}), 500
