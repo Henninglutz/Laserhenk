@@ -241,12 +241,7 @@ els.clear.addEventListener("click", () => {
   sessionId = null;
   els.chat.innerHTML = "";
   addMessage("assistant",
-    "Hallo! Ich bin HENK, dein persönlicher Maßschneider für exklusive Herrenmode.\n\n" +
-    "Erzähl mir von deinem Anlass – ich erstelle dir ein komplettes Outfit mit Sakko, Hemd, Hose (und Weste, wenn passend).\n\n" +
-    "Drei Infos genügen für den Start:\n" +
-    "• Was ist der Anlass? (z.B. Hochzeit, Gala, Business)\n" +
-    "• Welcher Stil-Vibe? (klassisch, modern, auffällig)\n" +
-    "• Welche Farbrichtung? (z.B. dunkle Töne, helle Farben)"
+    "💡 Tipp: Fragen zu Preisen, Lieferzeit, Prozess oder AGB beantworte ich gerne jederzeit!"
   );
 });
 
