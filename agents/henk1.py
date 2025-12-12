@@ -52,99 +52,69 @@ class Henk1Agent(BaseAgent):
                 should_continue=True,
             )
 
-        # Check if this is first contact or ongoing conversation
-        has_conversation = len(state.conversation_history) > 0
+        # Always use LLM for conversation - no hardcoded welcome message
+        print("=== HENK1: Processing customer message with LLM")
 
-        if not has_conversation:
-            # First contact with customer: Welcome and start needs assessment
-            print("=== HENK1: First contact - starting needs assessment conversation")
+        # Get user's latest message from conversation history
+        user_input = ""
+        for msg in reversed(state.conversation_history):
+            if isinstance(msg, dict) and msg.get("role") == "user":
+                user_input = msg.get("content", "")
+                break
 
-            welcome_message = """
-Lass uns kurz über dan Ablauf sprechen:
+        # Build conversation context
+        messages = [
+            {"role": "system", "content": self._get_system_prompt()},
+        ]
 
-**Wir fertigen ausschließlich maßgeschneiderte Anzüge**
-Der Weg dahin:
-- Deine Wünsche
-- Erste Ideen, Stile und Designs
-- Maßnehmen mit Deinem Smartphone
-- Fertigstellen vom Schnittbild, Kontrolle durch die Schneider und Rückmeldung an Dich VOR der Produktion
+        # Add conversation history
+        for msg in state.conversation_history[-10:]:  # Last 10 messages
+            if isinstance(msg, dict):
+                role = "assistant" if msg.get("sender") in ["henk1", "system"] else "user"
+                content = msg.get("content", "")
+                if content:
+                    messages.append({"role": role, "content": content})
 
-Und hast du schon eine Vorstellung vom Budget?
+        # Add current user input if not already in history
+        if user_input and not any(
+            isinstance(m, dict) and m.get("role") == "user" and m.get("content") == user_input
+            for m in messages
+        ):
+            messages.append({"role": "user", "content": user_input})
 
-Je mehr ich über deine Vorstellungen weiß, desto besser kann ich dir passende Stoffe und Designs zeigen! 🎩"""
+        # Call LLM
+        response = await self.client.chat.completions.create(
+            model="gpt-4-turbo-preview",
+            messages=messages,
+            temperature=0.7,
+        )
+
+        llm_response = response.choices[0].message.content
+
+        # Check if we should query RAG (simple keyword detection for now)
+        should_query_rag = self._should_query_rag(user_input, state)
+
+        if should_query_rag:
+            print("=== HENK1: Customer ready for fabric recommendations, calling RAG")
+
+            # Extract search criteria from conversation
+            criteria = self._extract_search_criteria(user_input, state)
 
             return AgentDecision(
                 next_agent="operator",
-                message=welcome_message,
+                message=llm_response,  # Show LLM response before RAG results
+                action="query_rag",  # Trigger RAG tool
+                action_params=criteria,  # Pass extracted criteria
+                should_continue=True,
+            )
+        else:
+            # Continue conversation
+            return AgentDecision(
+                next_agent="operator",
+                message=llm_response,
                 action=None,
                 should_continue=False,  # Wait for user response
             )
-
-        else:
-            # Ongoing conversation - use LLM to understand and respond
-            print("=== HENK1: Ongoing conversation - processing customer response")
-
-            # Get user's latest message from conversation history
-            user_input = ""
-            for msg in reversed(state.conversation_history):
-                if isinstance(msg, dict) and msg.get("role") == "user":
-                    user_input = msg.get("content", "")
-                    break
-
-            # Build conversation context
-            messages = [
-                {"role": "system", "content": self._get_system_prompt()},
-            ]
-
-            # Add conversation history
-            for msg in state.conversation_history[-10:]:  # Last 10 messages
-                if isinstance(msg, dict):
-                    role = "assistant" if msg.get("sender") in ["henk1", "system"] else "user"
-                    content = msg.get("content", "")
-                    if content:
-                        messages.append({"role": role, "content": content})
-
-            # Add current user input if not already in history
-            if user_input and not any(
-                isinstance(m, dict) and m.get("role") == "user" and m.get("content") == user_input
-                for m in messages
-            ):
-                messages.append({"role": "user", "content": user_input})
-
-            # Call LLM
-            response = await self.client.chat.completions.create(
-                model="gpt-4-turbo-preview",
-                messages=messages,
-                temperature=0.7,
-            )
-
-            llm_response = response.choices[0].message.content
-
-            # Check if we should query RAG (simple keyword detection for now)
-            should_query_rag = self._should_query_rag(user_input, state)
-
-            if should_query_rag:
-                print("=== HENK1: Customer ready for fabric recommendations, calling RAG")
-
-                # Extract search criteria from conversation
-                criteria = self._extract_search_criteria(user_input, state)
-
-                return AgentDecision(
-                    next_agent="operator",
-                    message=llm_response,  # Show LLM response before RAG results
-                    action="query_rag",  # Trigger RAG tool
-                    action_params=criteria,  # Pass extracted criteria
-                    should_continue=True,
-                )
-            else:
-                # Continue conversation
-                return AgentDecision(
-                    next_agent="operator",
-                    message=llm_response,
-                    action=None,
-                    should_continue=False,  # Wait for user response
-                )
-
     def _get_system_prompt(self) -> str:
         """Get HENK1 system prompt for needs assessment."""
         return """Du bist HENK1, der freundliche Maßanzug-Berater bei LASERHENK.

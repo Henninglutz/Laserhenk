@@ -4,6 +4,7 @@
 import asyncio
 import os
 import sys
+import uuid
 from pathlib import Path
 
 # Add parent directory to path
@@ -99,7 +100,8 @@ async def import_faq_to_rag():
             embedding_str = str(embedding)
 
             # Insert into rag_docs
-            doc_id = f"faq_{idx}"
+            # Generate UUID from section title for consistency
+            doc_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, f"laserhenk.faq.{title}")
 
             query = """
                 INSERT INTO rag_docs (doc_id, content, embedding, meta_json)
@@ -119,7 +121,7 @@ async def import_faq_to_rag():
 
             await async_conn.execute(
                 query,
-                doc_id,
+                str(doc_uuid),
                 full_text,
                 embedding_str,
                 str(meta).replace("'", '"')  # Convert to JSON
