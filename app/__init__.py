@@ -18,7 +18,13 @@ def create_app() -> Flask:
     Returns:
         Konfigurierte Flask App
     """
-    app = Flask(__name__)
+    # Flask mit korrektem template und static folder
+    app = Flask(
+        __name__,
+        template_folder='../templates',
+        static_folder='../templates/static',
+        static_url_path='/static'
+    )
 
     # Flask Configuration
     app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'dev-secret-change-in-production')
@@ -51,8 +57,8 @@ def create_app() -> Flask:
     # Root - serve static frontend
     @app.route('/')
     def index():
-        from flask import send_from_directory
-        return send_from_directory('templates', 'index.html')
+        from flask import render_template
+        return render_template('index.html')
 
     return app
 
