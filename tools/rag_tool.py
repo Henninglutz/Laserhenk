@@ -186,6 +186,15 @@ class RAGTool:
                     "f.stock_status IN ('in_stock', 'low_stock', 'on_order')"
                 )
 
+            # IMPORTANT: Exclude shirts - only return suit fabrics
+            # Shirts have fabric_code starting with 'SH' or category containing 'shirt'
+            where_clauses.append(
+                "(f.fabric_code NOT LIKE 'SH%' AND f.fabric_code NOT LIKE '%SH%')"
+            )
+            where_clauses.append(
+                "(f.category IS NULL OR (f.category NOT ILIKE '%shirt%' AND f.category NOT ILIKE '%hemd%'))"
+            )
+
             where_sql = ""
             if where_clauses:
                 where_sql = "AND " + " AND ".join(where_clauses)

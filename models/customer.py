@@ -94,6 +94,16 @@ class SessionState(BaseModel):
         description="History of all generated images (url, type, timestamp, approved)",
     )
 
+    # Fabric Images tracking
+    shown_fabric_images: list[dict] = Field(
+        default_factory=list,
+        description="History of fabric images shown to user (url, fabric_code, name, timestamp)",
+    )
+    favorite_fabric: Optional[dict] = Field(
+        None,
+        description="User's selected favorite fabric (fabric_code, name, color, image_url)",
+    )
+
     # Handoff Payloads (tracking inter-agent data transfer)
     henk1_to_design_payload: Optional[dict] = Field(
         None, description="HENK1 → Design HENK handoff data"

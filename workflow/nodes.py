@@ -14,6 +14,7 @@ Nodes:
 import os
 from typing import Dict, Any, Optional
 import logging
+from datetime import datetime
 
 from agents.operator import OperatorAgent
 from agents.supervisor_agent import SupervisorAgent, SupervisorDecision
@@ -481,13 +482,28 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
     logger.info(
         f"[ToolsDispatcher] Executing tool='{next_agent}' with params={action_params}"
     )
+    logger.info(f"[ToolsDispatcher] current_agent='{current_agent}' (will return here after tool execution)")
 
     messages = list(state.get("messages", []))
 
     try:
         if next_agent == "rag_tool":
-            result = await _execute_rag_tool(action_params, state)
-            messages.append({"role": "assistant", "content": result, "sender": next_agent})
+            result, fabric_images = await _execute_rag_tool(action_params, state)
+
+            # Build metadata with fabric_images
+            metadata = {}
+            if fabric_images:
+                metadata["fabric_images"] = fabric_images
+                # Also add first image as primary image_url for backward compatibility
+                metadata["image_url"] = fabric_images[0]["url"]
+                logger.info(f"[ToolsDispatcher] RAG returned {len(fabric_images)} fabric images")
+
+            messages.append({
+                "role": "assistant",
+                "content": result,
+                "sender": next_agent,
+                "metadata": metadata
+            })
 
         elif next_agent == "dalle_mood_board":
             result, image_url = await _execute_dalle_mood_board(action_params, state)
@@ -576,6 +592,10 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
             result = await _execute_pricing_tool(action_params, state)
             messages.append({"role": "assistant", "content": result, "sender": next_agent})
 
+        elif next_agent == "mark_favorite_fabric":
+            result = await _execute_mark_favorite_fabric(action_params, state)
+            messages.append({"role": "assistant", "content": result, "sender": next_agent})
+
         else:
             logger.warning(f"[ToolsDispatcher] Unknown tool: {next_agent}")
             result = "Tool nicht gefunden."
@@ -620,7 +640,7 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
 # ==================== Tool Implementations ====================
 
 
-async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> str:
+async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> tuple[str, Optional[list[dict]]]:
     """
     RAG Tool: Sucht Stoffe/Bilder via Vector Search.
 
@@ -629,7 +649,8 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> st
         state: Graph State für Context
 
     Returns:
-        Formatierte Suchergebnisse mit Stoff-Empfehlungen
+        Tuple of (formatted_message, fabric_images_list)
+        fabric_images_list = [{"url": str, "fabric_code": str, "name": str}, ...] or None
     """
     from tools.rag_tool import RAGTool
     from models.fabric import FabricSearchCriteria
@@ -641,6 +662,61 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> st
     # Extract colors, patterns from query if provided, or use defaults
     colors = params.get("colors", [])
     patterns = params.get("patterns", [])
+
+    # IMPORTANT: Extract colors from query if not explicitly provided
+    if not colors and query:
+        query_lower = query.lower()
+        # Map German color names to English (for database)
+        color_map = {
+            "blau": "blue",
+            "marine": "navy",
+            "navy": "navy",
+            "hellblau": "light blue",
+            "dunkelblau": "dark blue",
+            "grau": "grey",
+            "schwarz": "black",
+            "braun": "brown",
+            "beige": "beige",
+            "grün": "green",
+        }
+
+        # Check if user is EXCLUDING certain colors (not grau, nicht beige, etc.)
+        excluded_colors = []
+        for german, english in color_map.items():
+            if f"nicht {german}" in query_lower or f"kein {german}" in query_lower or f"nicht {english}" in query_lower:
+                excluded_colors.append(english)
+                logger.info(f"[RAGTool] User excluded color: {english}")
+
+        extracted_colors = []
+        for german, english in color_map.items():
+            # Only extract if NOT in negation context (nicht/kein)
+            if german in query_lower:
+                # Check context - is it negated?
+                if not (f"nicht {german}" in query_lower or f"kein {german}" in query_lower):
+                    extracted_colors.append(english)
+
+        if extracted_colors:
+            colors = extracted_colors
+            logger.info(f"[RAGTool] Extracted colors from query: {colors}")
+
+        # If user excluded colors but didn't specify new ones, clear stored colors
+        if excluded_colors and not extracted_colors:
+            logger.warning(f"[RAGTool] User excluded colors but didn't specify alternatives: {excluded_colors}")
+
+    # CHECK SESSION STATE for previously set color preferences
+    # If no colors found in current query, use stored preferences
+    if not colors and session_state.design_preferences:
+        stored_colors = session_state.design_preferences.suit_colors
+        if stored_colors:
+            colors = stored_colors
+            logger.info(f"[RAGTool] Using stored color preferences from session: {colors}")
+
+    # STORE colors in session state for future queries (maintain context!)
+    if colors and session_state:
+        if not session_state.design_preferences.suit_colors:
+            session_state.design_preferences.suit_colors = colors
+            state["session_state"] = session_state
+            logger.info(f"[RAGTool] Stored color preferences in session: {colors}")
 
     # If no specific criteria, create basic search
     criteria = FabricSearchCriteria(
@@ -655,7 +731,7 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> st
 
         # Format Results
         if not recommendations:
-            return """Hmm, ich habe gerade keine passenden Stoffe in der Datenbank gefunden.
+            return ("""Hmm, ich habe gerade keine passenden Stoffe in der Datenbank gefunden.
 
 Das kann daran liegen, dass die Datenbank noch nicht vollständig gefüllt ist.
 
@@ -663,7 +739,7 @@ Das kann daran liegen, dass die Datenbank noch nicht vollständig gefüllt ist.
 - Gib mir mehr Details zu deinen Wünschen (Farbe, Muster, Anlass)
 - Oder lass uns direkt über Design und Schnitt sprechen
 
-Wie möchtest du weitermachen? 🎩"""
+Wie möchtest du weitermachen? 🎩""", None)
 
         # Store RAG results in session state for later use (e.g., fabric image display)
         session_state = state.get("session_state")
@@ -711,17 +787,57 @@ Wie möchtest du weitermachen? 🎩"""
         if len(recommendations) > 5:
             formatted += f"_...und {len(recommendations) - 5} weitere Stoffe verfügbar_\n\n"
 
-        formatted += "**Moment, ich zeige dir die Top 2 Stoffe visuell! 🎨**"
+        # BUILD FABRIC IMAGES - Nuclear Option: Return images directly!
+        fabric_images = []
+        for i, rec in enumerate(recommendations[:2], 1):  # Top 2 fabrics
+            fabric = rec.fabric
 
-        return formatted
+            # Get image URL - USE LOCAL IMAGES from storage/fabrics/images/
+            # Flask serves these via /fabrics/images/ route
+            fabric_code_clean = fabric.fabric_code.replace('/', '_')  # Clean filename
+            image_url = f"/fabrics/images/{fabric_code_clean}.jpg"
+
+            # Fallback: If database has external URLs, use those
+            if fabric.image_urls and fabric.image_urls[0]:
+                # Prefer local images, but keep external URLs as backup
+                pass  # Keep local path
+
+            # Ultimate fallback: placeholder (Flask route will handle FileNotFoundError)
+            # No need for explicit check - Flask route redirects to placeholder if file missing
+
+            fabric_images.append({
+                "url": image_url,
+                "fabric_code": fabric.fabric_code,
+                "name": fabric.name or "Hochwertiger Stoff",
+                "color": fabric.color or "Klassisch",
+                "pattern": fabric.pattern or "Uni",
+                "composition": fabric.composition or "Edle Wollmischung",
+                "similarity_score": rec.similarity_score,
+            })
+
+        # TRACK FABRIC IMAGES IN SESSION HISTORY
+        for img in fabric_images:
+            session_state.shown_fabric_images.append({
+                **img,  # Include all fabric data (url, fabric_code, name, etc.)
+                "timestamp": datetime.now().isoformat(),
+                "query": query,  # Track what user searched for
+            })
+        state["session_state"] = session_state
+
+        logger.info(f"[RAGTool] Returning {len(fabric_images)} fabric images directly")
+        logger.info(f"[RAGTool] Total fabric images in session: {len(session_state.shown_fabric_images)}")
+
+        formatted += f"**Hier sind deine Top {len(fabric_images)} Stoffe mit Bildern! 🎨**"
+
+        return formatted, fabric_images
 
     except Exception as e:
         logger.error(f"[RAGTool] Error during fabric search: {e}", exc_info=True)
-        return """Entschuldigung, beim Abrufen der Stoffe gab es ein technisches Problem.
+        return ("""Entschuldigung, beim Abrufen der Stoffe gab es ein technisches Problem.
 
 Lass uns trotzdem weitermachen – ich kann dir auch ohne Datenbank bei der Auswahl helfen!
 
-Was ist dir wichtig bei deinem Anzug? 🎩"""
+Was ist dir wichtig bei deinem Anzug? 🎩""", None)
 
     finally:
         await rag.close()
@@ -865,6 +981,25 @@ async def _execute_dalle_outfit(
     style_keywords = params.get("style_keywords", [])
     session_id = params.get("session_id")
 
+    # CHECK FOR FAVORITE FABRIC in session state
+    session_state = state.get("session_state")
+    favorite_fabric = None
+    if session_state and session_state.favorite_fabric:
+        favorite_fabric = session_state.favorite_fabric
+        logger.info(f"[DALLE_Outfit] Using favorite fabric: {favorite_fabric['fabric_code']}")
+
+        # Merge favorite fabric into fabric_data if not already present
+        if not fabric_data or "fabric_code" not in fabric_data:
+            fabric_data = {
+                "fabric_code": favorite_fabric["fabric_code"],
+                "name": favorite_fabric.get("name", ""),
+                "color": favorite_fabric.get("color", ""),
+                "pattern": favorite_fabric.get("pattern", ""),
+                "composition": favorite_fabric.get("composition", ""),
+                "image_url": favorite_fabric.get("image_url", ""),
+            }
+            logger.info("[DALLE_Outfit] Favorite fabric added to fabric_data")
+
     logger.info(
         f"[DALLE_Outfit] Generating outfit visualization: "
         f"fabrics={list(fabric_data.keys())}, design={list(design_preferences.keys())}"
@@ -882,10 +1017,15 @@ async def _execute_dalle_outfit(
         if response.success and response.image_url:
             logger.info(f"[DALLE_Outfit] Success: {response.image_url}")
 
-            message = f"""✨ **Dein Outfit-Entwurf ist fertig!**
+            # Build message with fabric info if favorite was used
+            fabric_info = ""
+            if favorite_fabric:
+                fabric_info = f"\n🌟 **Mit deinem Favorit-Stoff:** {favorite_fabric['fabric_code']} - {favorite_fabric.get('name', '')}\n"
 
+            message = f"""✨ **Dein Outfit-Entwurf ist fertig!**
+{fabric_info}
 So könnte dein maßgeschneiderter Anzug aussehen – basierend auf:
-- Deiner Stoffauswahl
+- Deiner Stoffauswahl ({fabric_data.get('fabric_code', 'N/A')})
 - Den Design-Details (Revers, Schulter, etc.)
 - Deinem persönlichen Stil
 
@@ -1136,3 +1276,78 @@ _Inkl. individueller Anpassung, Maßanfertigung und Premium-Service._
 _Preis kann sich bei finaler Stoffauswahl/Details noch ändern._"""
 
     return result
+
+
+async def _execute_mark_favorite_fabric(params: Dict[str, Any], state: HenkGraphState) -> str:
+    """
+    Mark Favorite Fabric: User selects a favorite fabric from shown options.
+
+    This fabric will be passed to DALL-E for outfit generation.
+
+    Args:
+        params: {
+            "fabric_code": str,  # Which fabric to mark as favorite
+            "selection_method": str,  # "index" (1st, 2nd) or "code" (10C4017)
+        }
+        state: Graph state with session_state
+
+    Returns:
+        Confirmation message
+    """
+    session_state = state.get("session_state")
+    if not session_state:
+        logger.error("[MarkFavorite] No session_state found")
+        return "Fehler: Keine Session gefunden."
+
+    fabric_code = params.get("fabric_code")
+    selection_method = params.get("selection_method", "code")
+
+    logger.info(f"[MarkFavorite] Marking favorite: fabric_code={fabric_code}, method={selection_method}")
+
+    # If selection by index (e.g., "der erste", "nummer 2")
+    if selection_method == "index":
+        index = params.get("index", 0)
+        shown_fabrics = session_state.shown_fabric_images
+
+        if not shown_fabrics or index >= len(shown_fabrics):
+            return f"Fehler: Kein Stoff an Position {index+1} gefunden."
+
+        # Get fabric by index
+        favorite = shown_fabrics[index]
+        fabric_code = favorite["fabric_code"]
+    else:
+        # Find fabric by code in shown_fabric_images
+        shown_fabrics = session_state.shown_fabric_images
+        favorite = None
+
+        for img in shown_fabrics:
+            if img["fabric_code"] == fabric_code:
+                favorite = img
+                break
+
+        if not favorite:
+            return f"Fehler: Stoff {fabric_code} wurde nicht angezeigt."
+
+    # Store favorite in session state
+    session_state.favorite_fabric = {
+        "fabric_code": favorite["fabric_code"],
+        "name": favorite.get("name", ""),
+        "color": favorite.get("color", ""),
+        "pattern": favorite.get("pattern", ""),
+        "composition": favorite.get("composition", ""),
+        "image_url": favorite["url"],
+        "marked_at": datetime.now().isoformat(),
+    }
+
+    state["session_state"] = session_state
+
+    logger.info(f"[MarkFavorite] Favorite marked: {favorite['fabric_code']} - {favorite.get('name')}")
+
+    return f"""**Perfekt! Dein Favorit ist gespeichert! 🌟**
+
+**{favorite.get('name', 'Ausgewählter Stoff')}**
+🏷️ Code: {favorite['fabric_code']}
+🎨 Farbe: {favorite.get('color', 'Klassisch')}
+✨ Muster: {favorite.get('pattern', 'Uni')}
+
+Soll ich dir jetzt passende Outfit-Vorschläge mit diesem Stoff generieren? 🎨"""

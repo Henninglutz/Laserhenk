@@ -138,18 +138,18 @@ class Henk1Agent(BaseAgent):
             else:
                 logger.warning("[HENK1] No fabrics in rag_context, skipping image display")
 
-        # If RAG has been queried and fabric images shown, mark complete
+        # If RAG has been queried and fabric images shown, mark complete and wait for user
         if state.henk1_rag_queried and state.henk1_mood_board_shown:
-            logger.info("[HENK1] RAG queried and fabric images shown, marking complete")
+            logger.info("[HENK1] RAG queried and fabric images shown, HENK1 complete - waiting for user response")
             # Mark customer as identified (for Operator routing)
             if not state.customer.customer_id:
                 state.customer.customer_id = f"TEMP_{state.session_id[:8]}"
 
             return AgentDecision(
                 next_agent="operator",
-                message=None,  # Fabric images already shown
+                message=None,  # Fabric images already shown, no additional message needed
                 action=None,
-                should_continue=True,
+                should_continue=False,  # WAIT for user response to fabric images
             )
 
         # NOTE: Old mood board generation (BEFORE RAG) has been removed
