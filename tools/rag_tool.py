@@ -233,6 +233,15 @@ class RAGTool:
             # Format results as FabricRecommendation
             recommendations = []
             for result in results:
+                # Extract image URLs from additional_metadata
+                metadata = result.get("additional_metadata") or {}
+                image_url = metadata.get("image_url")
+                image_path = metadata.get("image_path")
+
+                # Build image lists
+                image_urls = [image_url] if image_url else []
+                local_image_paths = [image_path] if image_path else []
+
                 # Create FabricData
                 fabric_data = FabricData(
                     fabric_code=result["fabric_code"],
@@ -247,6 +256,9 @@ class RAGTool:
                     origin=result["origin"],
                     care_instructions=result["care_instructions"],
                     description=result["description"],
+                    image_urls=image_urls,
+                    local_image_paths=local_image_paths,
+                    additional_metadata=metadata,
                 )
 
                 # Determine match reasons

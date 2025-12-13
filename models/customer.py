@@ -59,6 +59,9 @@ class DesignPreferences(BaseModel):
     button_style: Optional[str] = None
     pocket_style: Optional[str] = None
     additional_notes: Optional[str] = None
+    approved_image: Optional[str] = Field(
+        None, description="User-approved DALL-E generated outfit image URL"
+    )
 
 
 class SessionState(BaseModel):
@@ -80,6 +83,15 @@ class SessionState(BaseModel):
     henk1_rag_queried: bool = Field(default=False, description="HENK1 has queried RAG")
     design_rag_queried: bool = Field(
         default=False, description="Design HENK has queried RAG"
+    )
+
+    # DALL-E Image Generation tracking
+    henk1_mood_board_shown: bool = Field(
+        default=False, description="HENK1 has shown mood board"
+    )
+    image_generation_history: list[dict] = Field(
+        default_factory=list,
+        description="History of all generated images (url, type, timestamp, approved)",
     )
 
     # Handoff Payloads (tracking inter-agent data transfer)

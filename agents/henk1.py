@@ -1,10 +1,82 @@
-"""HENK1 Agent - Bedarfsermittlung (AIDA Prinzip)."""
+"""HENK1 Agent - Bedarfsermittlung (AIDA Prinzip).
 
+AGENT BESCHREIBUNG (für LLM als System Prompt):
+------------------------------------------------
+Du bist HENK1, der erste Kontaktpunkt und Bedarfsermittler bei LASERHENK.
+Deine Aufgaben:
+
+1. **AIDA Prinzip**:
+   - **Attention**: Herzlicher Empfang, Eis brechen
+   - **Interest**: Anlass verstehen, Farbpräferenzen erfragen
+   - **Desire**: Stil-Inspiration wecken, Qualität vermitteln
+   - **Action**: Zur Stoffauswahl überleiten
+
+2. **Bedarfsermittlung**:
+   - Anlass (Hochzeit, Business, Gala, etc.)
+   - Budget-Rahmen (grob, nicht zu früh fragen)
+   - Farbpräferenzen (Lieblingsfarben, Unternehmensfarben)
+   - Stil-Richtung (klassisch, modern, sportlich)
+   - Besondere Wünsche (Muster, Texturen, etc.)
+
+3. **DALL-E Mood Board Generierung** (FRÜH im Prozess):
+   - Nach 3-4 Konversationsrunden
+   - Sobald Anlass + 1-2 Farben bekannt sind
+   - Generiere visuelles Mood Board zur Inspiration
+   - Zeige Stil-Richtungen und Farbkombinationen
+   - Hilft dem Kunden sich zu orientieren
+
+4. **Stoffempfehlung via RAG**:
+   - Erst NACH Mood Board
+   - Wenn Kunde sagt "zeig mir Stoffe" oder ähnliches
+   - Extrahiere Suchkriterien aus Konversation
+   - Trigger RAG Tool für konkrete Stoffempfehlungen
+
+CONDITIONAL EDGES:
+------------------
+- Nach Begrüßung → Weiteres Gespräch
+- Nach genug Kontext (3-4 Runden) → DALL-E Mood Board
+- Nach Mood Board → Weiteres Gespräch, Feedback sammeln
+- Wenn Kunde bereit → RAG Tool für Stoffe
+- Nach RAG → Zu Design Henk übergeben
+
+STATE ATTRIBUTES:
+-----------------
+- `state.conversation_history` - Vollständige Konversation
+- `state.henk1_rag_queried` - Flag ob RAG bereits abgefragt wurde
+- `state.henk1_mood_board_shown` - Flag ob Mood Board bereits gezeigt wurde
+- `state.henk1_to_design_payload` - Payload für Design Henk (Budget, Stil, Stoffe)
+
+BEISPIEL-ABLAUF:
+----------------
+1. User: "Hallo"
+   → HENK1: "Moin! 👋 Schön, dass du da bist! Planst du einen besonderen Anlass?"
+
+2. User: "Ja, ich habe eine Hochzeit im Sommer"
+   → HENK1: "Wunderbar! Welche Farben schweben dir vor?"
+
+3. User: "Helles Blau und Beige wären schön"
+   → HENK1: "Super Kombi! Eher klassisch-elegant oder modern-lässig?"
+   → **TRIGGER: Mood Board Generierung** (Anlass + Farben bekannt)
+
+4. [Mood Board wird generiert und angezeigt]
+   → HENK1: "Hier ist ein Mood Board zur Inspiration! Was sagst du dazu?"
+
+5. User: "Sehr schön! Zeig mir passende Stoffe"
+   → HENK1: "Perfekt, ich stelle dir die besten Stoffe zusammen!"
+   → **TRIGGER: RAG Tool**
+
+6. [RAG Ergebnisse werden gezeigt]
+   → Übergabe an Design Henk
+"""
+
+import logging
 import os
 from openai import AsyncOpenAI
 from agents.base import AgentDecision, BaseAgent
 from models.customer import SessionState
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 class Henk1Agent(BaseAgent):
@@ -38,19 +110,50 @@ class Henk1Agent(BaseAgent):
         print(f"=== HENK1 PROCESS: customer_id = {state.customer.customer_id}")
         print(f"=== HENK1 PROCESS: conversation_history length = {len(state.conversation_history)}")
 
-        # If RAG has been queried and customer saw fabrics, mark complete
-        if state.henk1_rag_queried:
-            print("=== HENK1: RAG has been queried, marking complete")
+        # If RAG has been queried, show fabric images (if not shown yet)
+        if state.henk1_rag_queried and not state.henk1_mood_board_shown:
+            logger.info("[HENK1] RAG queried, now showing fabric images")
+
+            # Check if we have fabric data in rag_context
+            rag_context = getattr(state, "rag_context", {})
+            fabrics = rag_context.get("fabrics", [])
+
+            if fabrics:
+                # Extract occasion from conversation if available
+                occasion = self._extract_style_info(state).get("occasion", "deinen Anlass")
+
+                # Mark mood board as shown (we're showing fabric images instead)
+                state.henk1_mood_board_shown = True
+
+                return AgentDecision(
+                    next_agent="operator",
+                    message=None,  # Tool will provide the message
+                    action="show_fabric_images",
+                    action_params={
+                        "occasion": occasion,
+                        "limit": 2,
+                    },
+                    should_continue=True,
+                )
+            else:
+                logger.warning("[HENK1] No fabrics in rag_context, skipping image display")
+
+        # If RAG has been queried and fabric images shown, mark complete
+        if state.henk1_rag_queried and state.henk1_mood_board_shown:
+            logger.info("[HENK1] RAG queried and fabric images shown, marking complete")
             # Mark customer as identified (for Operator routing)
             if not state.customer.customer_id:
                 state.customer.customer_id = f"TEMP_{state.session_id[:8]}"
 
             return AgentDecision(
                 next_agent="operator",
-                message=None,  # No message - RAG tool already provided results to user
+                message=None,  # Fabric images already shown
                 action=None,
                 should_continue=True,
             )
+
+        # NOTE: Old mood board generation (BEFORE RAG) has been removed
+        # New flow: RAG first → then show real fabric images (not DALL-E mood board)
 
         # Always use LLM for conversation - no hardcoded welcome message
         print("=== HENK1: Processing customer message with LLM")
@@ -198,3 +301,124 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
             "colors": colors,
             "patterns": patterns,
         }
+
+    def _should_generate_mood_board(self, state: SessionState) -> bool:
+        """
+        Determine if we should generate a mood board.
+
+        Criteria:
+        - At least 3-4 conversation rounds
+        - Mood board not shown yet
+        - Some context gathered (occasion or colors mentioned)
+        - RAG not queried yet (mood board comes BEFORE fabric selection)
+
+        Args:
+            state: Session State
+
+        Returns:
+            True if mood board should be generated
+        """
+        # Check if mood board already shown
+        mood_board_shown = getattr(state, "henk1_mood_board_shown", False)
+        if mood_board_shown:
+            return False
+
+        # Check if RAG already queried (mood board must come first)
+        if state.henk1_rag_queried:
+            return False
+
+        # Need at least 3 conversation rounds (6 messages: 3 user, 3 assistant)
+        if len(state.conversation_history) < 6:
+            return False
+
+        # Check if we have enough context
+        context = self._extract_style_info(state)
+
+        # Need at least occasion OR colors to generate meaningful mood board
+        has_occasion = context.get("occasion") is not None
+        has_colors = len(context.get("colors", [])) > 0
+
+        return has_occasion or has_colors
+
+    def _extract_style_info(self, state: SessionState) -> dict:
+        """
+        Extract style information from conversation for mood board generation.
+
+        Args:
+            state: Session State
+
+        Returns:
+            Dict with style_keywords, colors, occasion
+        """
+        style_info = {
+            "style_keywords": [],
+            "colors": [],
+            "occasion": None,
+        }
+
+        # Analyze conversation history
+        conversation_text = " ".join(
+            msg.get("content", "").lower()
+            for msg in state.conversation_history
+            if isinstance(msg, dict)
+        )
+
+        # Extract occasion
+        occasion_keywords = {
+            "hochzeit": "Hochzeit",
+            "wedding": "Hochzeit",
+            "business": "Business",
+            "geschäft": "Business",
+            "gala": "Gala",
+            "empfang": "Gala",
+            "party": "Party",
+            "feier": "Feier",
+            "formal": "Formal",
+            "casual": "Casual",
+            "lässig": "Casual",
+        }
+
+        for keyword, occasion in occasion_keywords.items():
+            if keyword in conversation_text:
+                style_info["occasion"] = occasion
+                break
+
+        # Extract colors
+        color_keywords = {
+            "blau": "blue", "navy": "navy", "dunkelblau": "navy",
+            "grau": "grey", "dunkelgrau": "dark grey", "hellgrau": "light grey",
+            "schwarz": "black",
+            "braun": "brown", "beige": "beige", "camel": "camel",
+            "grün": "green", "olive": "olive",
+            "bordeaux": "burgundy", "rot": "red", "weinrot": "burgundy",
+        }
+
+        for keyword, color in color_keywords.items():
+            if keyword in conversation_text and color not in style_info["colors"]:
+                style_info["colors"].append(color)
+
+        # Extract style keywords
+        style_keywords_map = {
+            "klassisch": "klassisch", "classic": "klassisch",
+            "modern": "modern", "contemporary": "modern",
+            "elegant": "elegant", "elegantly": "elegant",
+            "sportlich": "sportlich", "casual": "casual",
+            "formal": "formal", "formell": "formal",
+            "schlicht": "minimalistisch", "minimalist": "minimalistisch",
+        }
+
+        for keyword, style in style_keywords_map.items():
+            if keyword in conversation_text and style not in style_info["style_keywords"]:
+                style_info["style_keywords"].append(style)
+
+        # Fallback style keywords if none found
+        if not style_info["style_keywords"]:
+            if style_info["occasion"] in ["Business", "Formal"]:
+                style_info["style_keywords"] = ["elegant", "klassisch"]
+            elif style_info["occasion"] in ["Hochzeit", "Gala"]:
+                style_info["style_keywords"] = ["elegant", "festlich"]
+            else:
+                style_info["style_keywords"] = ["modern", "vielseitig"]
+
+        logger.info(f"[HENK1] Extracted style info: {style_info}")
+        return style_info

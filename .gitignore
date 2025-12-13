@@ -68,3 +68,9 @@ temp/
 storage/
 database/fabric/
 /storage/fabrics/images/
+
+# DALL-E Generated Images (local cache)
+generated_images/
+
+# Session Docs (archived images and files)
+docs/sessions/

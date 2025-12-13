@@ -95,7 +95,8 @@ class DALLEImageRequest(BaseModel):
 class DALLEImageResponse(BaseModel):
     """Response from DALLE image generation."""
 
-    image_url: str
+    image_url: Optional[str] = None
+    local_path: Optional[str] = Field(None, description="Local file path to saved image")
     revised_prompt: Optional[str] = Field(None, description="DALLE revised prompt")
     success: bool = True
     error: Optional[str] = None

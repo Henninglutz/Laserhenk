@@ -93,13 +93,56 @@ function el(tag, className, text){
   return n;
 }
 
-function addMessage(role, content, imageUrl = null){
+function addMessage(role, content, imageUrl = null, fabricImages = null){
   const wrap = el("div", `msg ${role}`);
   const bubble = el("div", "bubble");
   bubble.innerHTML = sanitize(content).replace(/\n/g, "<br/>");
 
-  // Add image if provided
-  if (imageUrl) {
+  // Add multiple fabric images (side-by-side)
+  if (fabricImages && Array.isArray(fabricImages) && fabricImages.length > 0) {
+    const fabricContainer = document.createElement("div");
+    fabricContainer.style.display = "flex";
+    fabricContainer.style.gap = "10px";
+    fabricContainer.style.marginTop = "10px";
+    fabricContainer.style.flexWrap = "wrap";
+
+    fabricImages.forEach((fabric) => {
+      const fabricCard = document.createElement("div");
+      fabricCard.style.flex = "1";
+      fabricCard.style.minWidth = "200px";
+      fabricCard.style.maxWidth = "300px";
+      fabricCard.style.border = "1px solid #ddd";
+      fabricCard.style.borderRadius = "8px";
+      fabricCard.style.padding = "10px";
+      fabricCard.style.backgroundColor = "#f9f9f9";
+
+      // Fabric image
+      const img = document.createElement("img");
+      img.src = fabric.url;
+      img.alt = fabric.name || "Fabric";
+      img.style.width = "100%";
+      img.style.borderRadius = "4px";
+      img.style.marginBottom = "8px";
+      fabricCard.appendChild(img);
+
+      // Fabric details
+      const details = document.createElement("div");
+      details.style.fontSize = "12px";
+      details.innerHTML = `
+        <strong>${fabric.name || 'Fabric'}</strong><br/>
+        <small>Ref: ${fabric.fabric_code || 'N/A'}</small><br/>
+        ${fabric.color ? `🎨 ${fabric.color}<br/>` : ''}
+        ${fabric.pattern ? `✨ ${fabric.pattern}` : ''}
+      `;
+      fabricCard.appendChild(details);
+
+      fabricContainer.appendChild(fabricCard);
+    });
+
+    bubble.appendChild(fabricContainer);
+  }
+  // Add single image if provided (DALL-E mood boards, outfit visualizations)
+  else if (imageUrl) {
     const img = document.createElement("img");
     img.src = imageUrl;
     img.alt = "Moodboard";
@@ -177,9 +220,17 @@ async function sendMessage(userText){
     }
 
     history.push({ role: "assistant", content: reply });
-    addMessage("assistant", reply);
 
-    // Handle moodboard display if scheduled
+    // Check for fabric images (multiple images from RAG)
+    const fabricImages = data.fabric_images || null;
+
+    // Check if there's an image_url in the response (DALL-E generated images)
+    const imageUrl = data.image_url || null;
+
+    // Display message with images (fabric images take precedence)
+    addMessage("assistant", reply, imageUrl, fabricImages);
+
+    // Handle moodboard display if scheduled (legacy format)
     if (data.payload && data.payload.moodboard) {
       const moodboard = data.payload.moodboard;
       if (moodboard.status === "scheduled" && moodboard.image_url) {
