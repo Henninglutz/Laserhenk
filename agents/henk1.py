@@ -131,7 +131,7 @@ class Henk1Agent(BaseAgent):
                     action="show_fabric_images",
                     action_params={
                         "occasion": occasion,
-                        "limit": 2,
+                        "limit": 5,  # Show top 5 fabric images
                     },
                     should_continue=True,
                 )
@@ -238,11 +238,19 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
         """Determine if we should query RAG based on user input."""
         user_input_lower = user_input.lower()
 
-        # Keywords that indicate customer wants to see fabrics
+        # Keywords that indicate customer wants to see fabrics or images
         fabric_keywords = [
+            # Direct fabric requests
             "stoff", "stoffe", "zeig", "zeigen", "empfehlung", "empfehlungen",
             "option", "optionen", "auswahl", "angebot", "material", "materialien",
             "vorschlag", "vorschläge", "lass", "sehen", "haben",
+            # Image/visual requests
+            "bild", "bilder", "foto", "fotos", "visuell", "ansehen",
+            # Color mentions with action verbs
+            "blau", "navy", "grau", "schwarz", "braun", "beige", "grün",
+            # Quality/fabric-related terms
+            "qualität", "wolle", "leinen", "baumwolle", "seide", "kaschmir",
+            "muster", "farbe", "farben", "farbrichtung",
         ]
 
         # Check if any keyword is in user input
@@ -260,11 +268,13 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
         # Extract colors (simple keyword matching)
         colors = []
         color_keywords = {
-            "blau": "Blue", "navy": "Navy", "dunkelblau": "Navy",
+            "mittelblau": "Blue", "blau": "Blue", "navy": "Navy", "dunkelblau": "Navy",
+            "hellblau": "Light Blue", "königsblau": "Royal Blue",
             "grau": "Grey", "dunkelgrau": "Dark Grey", "hellgrau": "Light Grey",
             "schwarz": "Black",
             "braun": "Brown", "beige": "Beige", "camel": "Camel",
             "grün": "Green", "olive": "Olive",
+            "bordeaux": "Burgundy", "rot": "Red", "weinrot": "Burgundy",
         }
 
         for keyword, color in color_keywords.items():

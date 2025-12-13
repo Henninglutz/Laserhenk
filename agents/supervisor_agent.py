@@ -290,6 +290,19 @@ IMPORTANT: Always return a valid SupervisorDecision object with all required fie
                     raise ValueError(f"Unknown result structure: {type(result)}")
 
             # Validate we got a SupervisorDecision
+            # Handle case where LLM returns JSON string instead of Pydantic object
+            if isinstance(decision, str):
+                logger.info("[SupervisorAgent] Decision is string, attempting JSON parse")
+                try:
+                    import json
+                    decision_dict = json.loads(decision)
+                    decision = SupervisorDecision(**decision_dict)
+                    logger.info("[SupervisorAgent] Successfully parsed JSON string to SupervisorDecision")
+                except Exception as parse_error:
+                    logger.error(f"[SupervisorAgent] Failed to parse JSON string: {parse_error}")
+                    logger.error(f"[SupervisorAgent] Decision value: {decision}")
+                    raise TypeError(f"Expected SupervisorDecision, got string that failed to parse: {parse_error}")
+
             if not isinstance(decision, SupervisorDecision):
                 logger.error(f"[SupervisorAgent] Decision is {type(decision).__name__}, not SupervisorDecision!")
                 logger.error(f"[SupervisorAgent] Decision value: {decision}")

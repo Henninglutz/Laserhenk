@@ -486,10 +486,14 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
 
     try:
         if next_agent == "rag_tool":
+            # Capture lead when customer requests fabric information
+            await _capture_lead_if_needed(state, trigger="rag_query")
             result = await _execute_rag_tool(action_params, state)
             messages.append({"role": "assistant", "content": result, "sender": next_agent})
 
         elif next_agent == "dalle_mood_board":
+            # Capture lead when generating mood board (shows high engagement)
+            await _capture_lead_if_needed(state, trigger="mood_board_generation")
             result, image_url = await _execute_dalle_mood_board(action_params, state)
             messages.append({
                 "role": "assistant",
@@ -536,6 +540,8 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
                 state["session_state"] = session_state
 
         elif next_agent == "show_fabric_images":
+            # Capture lead when showing fabric images (customer is engaged)
+            await _capture_lead_if_needed(state, trigger="fabric_image_view")
             result, fabric_images = await _execute_show_fabric_images(action_params, state)
             # fabric_images is a list of dicts with url, fabric_code, name, etc.
             metadata = {}
@@ -620,6 +626,66 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
 # ==================== Tool Implementations ====================
 
 
+async def _capture_lead_if_needed(state: HenkGraphState, trigger: str) -> None:
+    """
+    Capture lead in CRM if customer shows engagement.
+
+    Args:
+        state: Graph state with session and customer data
+        trigger: What triggered the lead capture (e.g., "rag_query", "image_generation")
+    """
+    from tools.crm_tool import CRMTool
+    from models.tools import CRMLeadCreate
+
+    try:
+        session_state = state.get("session_state")
+        if isinstance(session_state, dict):
+            session_state = SessionState(**session_state)
+
+        # Check if lead already captured for this session
+        if getattr(session_state, "lead_captured", False):
+            logger.info(f"[LeadCapture] Lead already captured for session {session_state.session_id}")
+            return
+
+        # Extract customer info from session
+        customer = session_state.customer
+
+        # We need at least an email or name to create a lead
+        # For now, use temporary data from conversation
+        conversation_text = " ".join(
+            msg.get("content", "")
+            for msg in state.get("messages", [])
+            if isinstance(msg, dict) and msg.get("role") == "user"
+        )
+
+        # Create temporary lead data
+        # In production, you'd collect email via a form
+        lead_data = CRMLeadCreate(
+            name=customer.customer_id or f"Lead_{session_state.session_id[:8]}",
+            email=f"temp_{session_state.session_id[:8]}@laserhenk.com",  # Temporary
+            phone=None,
+            source=f"HENK1_Chatbot_{trigger}",
+            notes=f"Conversation: {conversation_text[:200]}...",
+            deal_value=0.0,  # Will be updated later
+        )
+
+        # Create lead
+        crm = CRMTool()
+        response = await crm.create_lead(lead_data)
+
+        if response.success:
+            logger.info(f"[LeadCapture] Lead created: {response.lead_id} (trigger={trigger})")
+            # Mark lead as captured
+            session_state.lead_captured = True
+            state["session_state"] = session_state
+        else:
+            logger.warning(f"[LeadCapture] Failed to create lead: {response.message}")
+
+    except Exception as e:
+        logger.error(f"[LeadCapture] Error capturing lead: {e}", exc_info=True)
+        # Don't fail workflow if lead capture fails
+
+
 async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> str:
     """
     RAG Tool: Sucht Stoffe/Bilder via Vector Search.
@@ -693,7 +759,7 @@ Wie möchtest du weitermachen? 🎩"""
         state["session_state"] = session_state
 
         formatted = "**Passende Stoffe für deinen Anzug:**\n\n"
-        for i, rec in enumerate(recommendations[:5], 1):
+        for i, rec in enumerate(recommendations[:10], 1):
             fabric = rec.fabric
             formatted += f"**{i}. {fabric.name or 'Hochwertiger Stoff'}**\n"
             formatted += f"   🏷️ Code: {fabric.fabric_code}\n"
@@ -708,8 +774,8 @@ Wie möchtest du weitermachen? 🎩"""
 
             formatted += "\n"
 
-        if len(recommendations) > 5:
-            formatted += f"_...und {len(recommendations) - 5} weitere Stoffe verfügbar_\n\n"
+        if len(recommendations) > 10:
+            formatted += f"_...und {len(recommendations) - 10} weitere Stoffe verfügbar_\n\n"
 
         formatted += "**Moment, ich zeige dir die Top 2 Stoffe visuell! 🎨**"
 
@@ -806,7 +872,7 @@ Lass uns zuerst Stoffe auswählen! Welche Farben und Muster interessieren dich? 
     try:
         dalle = get_dalle_tool()
         response = await dalle.generate_mood_board_with_fabrics(
-            fabrics=fabrics[:2],  # Top 2 fabrics
+            fabrics=fabrics[:5],  # Top 5 fabrics
             occasion=occasion,
             style_keywords=style_keywords,
             session_id=session_id,
@@ -816,17 +882,19 @@ Lass uns zuerst Stoffe auswählen! Welche Farben und Muster interessieren dich? 
             logger.info(f"[DALLE_MoodBoard] Composite created: {response.image_url}")
 
             # Get fabric names for message
-            fabric_names = [f.get("name", "Hochwertiger Stoff") for f in fabrics[:2]]
+            fabric_names = [f.get("name", "Hochwertiger Stoff") for f in fabrics[:5]]
+
+            # Build fabric list for message
+            fabric_list = "\n".join(f"- **{name}**" for name in fabric_names)
 
             message = f"""🎨 **Dein Mood Board ist fertig!**
 
-Ich zeige dir die Top 2 Stoffe in ihrer perfekten Umgebung:
-- **{fabric_names[0]}**
-- **{fabric_names[1]}** (als Alternative)
+Ich zeige dir die Top {len(fabric_names)} Stoffe in ihrer perfekten Umgebung:
+{fabric_list}
 
 Die kleinen Stoffbilder unten rechts zeigen die echten Referenzen! 📸
 
-**Was denkst du?** Welcher Stoff gefällt dir besser? 🎩"""
+**Was denkst du?** Welche Stoffe gefallen dir am besten? 🎩"""
 
             return message, response.image_url
 
@@ -944,7 +1012,10 @@ async def _execute_show_fabric_images(
 Lass mich nochmal die Datenbank abfragen! Welche Farben interessieren dich? 🎩"""
             return message, None
 
-        # Get top 2 fabrics with images
+        # Get limit from params (default 5)
+        limit = params.get("limit", 5)
+
+        # Get top N fabrics with images
         fabrics_with_images = []
         for fabric in fabrics[:10]:  # Check first 10 fabrics
             image_urls = fabric.get("image_urls", [])
@@ -973,7 +1044,7 @@ Lass mich nochmal die Datenbank abfragen! Welche Farben interessieren dich? 🎩
                     "similarity_score": fabric.get("similarity_score", 0.0),
                 })
 
-            if len(fabrics_with_images) >= 2:
+            if len(fabrics_with_images) >= limit:
                 break
 
         if not fabrics_with_images:

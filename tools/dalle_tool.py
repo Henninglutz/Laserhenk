@@ -126,7 +126,7 @@ class DALLETool:
             )
 
         # Build detailed prompt with fabric descriptions
-        prompt = self._build_mood_board_prompt(fabrics[:2], occasion, style_keywords)
+        prompt = self._build_mood_board_prompt(fabrics[:5], occasion, style_keywords)
 
         # Generate mood board with DALL-E
         dalle_response = await self.generate_image(
@@ -150,7 +150,7 @@ class DALLETool:
         # Create composite with fabric thumbnails
         try:
             composite_img = self._create_composite_with_fabric_thumbnails(
-                mood_board_img, fabrics[:2]
+                mood_board_img, fabrics[:5]
             )
 
             # Save composite image
@@ -206,7 +206,7 @@ class DALLETool:
 
         # Fabric descriptions
         fabric_descriptions = []
-        for i, fabric in enumerate(fabrics[:2], 1):
+        for i, fabric in enumerate(fabrics[:5], 1):
             color = fabric.get("color", "classic")
             pattern = fabric.get("pattern", "solid")
             composition = fabric.get("composition", "fine wool")
@@ -270,7 +270,7 @@ NOTE: Leave bottom-right corner clear (for fabric swatches overlay)."""
 
         # Download and resize fabric images
         fabric_thumbnails = []
-        for fabric in fabrics[:2]:
+        for fabric in fabrics[:5]:
             image_urls = fabric.get("image_urls", [])
             if not image_urls or not image_urls[0]:
                 continue

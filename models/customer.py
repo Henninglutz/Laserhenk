@@ -94,6 +94,11 @@ class SessionState(BaseModel):
         description="History of all generated images (url, type, timestamp, approved)",
     )
 
+    # CRM Lead tracking
+    lead_captured: bool = Field(
+        default=False, description="Lead has been captured in CRM"
+    )
+
     # Handoff Payloads (tracking inter-agent data transfer)
     henk1_to_design_payload: Optional[dict] = Field(
         None, description="HENK1 → Design HENK handoff data"
