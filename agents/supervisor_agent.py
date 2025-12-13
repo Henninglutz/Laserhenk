@@ -52,7 +52,7 @@ class SupervisorDecision(BaseModel):
         default="Routing based on user message analysis",
         description="Begründung für Routing-Entscheidung (1-2 Sätze)",
         min_length=10,
-        max_length=200,
+        max_length=500,  # Increased from 200 to allow longer explanations
     )
 
     action_params: Optional[Dict[str, Any]] = Field(
