@@ -110,41 +110,50 @@ class Henk1Agent(BaseAgent):
         print(f"=== HENK1 PROCESS: customer_id = {state.customer.customer_id}")
         print(f"=== HENK1 PROCESS: conversation_history length = {len(state.conversation_history)}")
 
-        # If RAG has been queried and customer saw fabrics, mark complete
-        if state.henk1_rag_queried:
-            logger.info("[HENK1] RAG has been queried, marking complete")
+        # If RAG has been queried, show fabric images (if not shown yet)
+        if state.henk1_rag_queried and not state.henk1_mood_board_shown:
+            logger.info("[HENK1] RAG queried, now showing fabric images")
+
+            # Check if we have fabric data in rag_context
+            rag_context = getattr(state, "rag_context", {})
+            fabrics = rag_context.get("fabrics", [])
+
+            if fabrics:
+                # Extract occasion from conversation if available
+                occasion = self._extract_style_info(state).get("occasion", "deinen Anlass")
+
+                # Mark mood board as shown (we're showing fabric images instead)
+                state.henk1_mood_board_shown = True
+
+                return AgentDecision(
+                    next_agent="operator",
+                    message=None,  # Tool will provide the message
+                    action="show_fabric_images",
+                    action_params={
+                        "occasion": occasion,
+                        "limit": 2,
+                    },
+                    should_continue=True,
+                )
+            else:
+                logger.warning("[HENK1] No fabrics in rag_context, skipping image display")
+
+        # If RAG has been queried and fabric images shown, mark complete
+        if state.henk1_rag_queried and state.henk1_mood_board_shown:
+            logger.info("[HENK1] RAG queried and fabric images shown, marking complete")
             # Mark customer as identified (for Operator routing)
             if not state.customer.customer_id:
                 state.customer.customer_id = f"TEMP_{state.session_id[:8]}"
 
             return AgentDecision(
                 next_agent="operator",
-                message=None,  # No message - RAG tool already provided results to user
+                message=None,  # Fabric images already shown
                 action=None,
                 should_continue=True,
             )
 
-        # Check if we should generate mood board (early visual inspiration)
-        should_generate_mood_board = self._should_generate_mood_board(state)
-
-        if should_generate_mood_board:
-            logger.info("[HENK1] Triggering mood board generation")
-
-            # Extract style info from conversation
-            style_info = self._extract_style_info(state)
-
-            return AgentDecision(
-                next_agent="operator",
-                message="Moment, ich erstelle dir ein visuelles Mood Board zur Inspiration! 🎨",
-                action="generate_mood_board",
-                action_params={
-                    "style_keywords": style_info.get("style_keywords", []),
-                    "colors": style_info.get("colors", []),
-                    "occasion": style_info.get("occasion"),
-                    "session_id": state.session_id,
-                },
-                should_continue=True,
-            )
+        # NOTE: Old mood board generation (BEFORE RAG) has been removed
+        # New flow: RAG first → then show real fabric images (not DALL-E mood board)
 
         # Always use LLM for conversation - no hardcoded welcome message
         print("=== HENK1: Processing customer message with LLM")

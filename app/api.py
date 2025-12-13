@@ -114,15 +114,19 @@ def chat():
         final_state = asyncio.run(_workflow.ainvoke(state))
         _sessions[sid] = final_state
 
-        # Extract assistant reply and image_url
+        # Extract assistant reply, image_url, and fabric_images
         reply = 'Danke, ich habe alles notiert.'
         image_url = None
+        fabric_images = None
         for msg in reversed(final_state.get('messages', [])):
             if msg.get('role') == 'assistant':
                 reply = msg.get('content', reply)
-                # Check if message has image_url in metadata
+                # Check if message has image_url or fabric_images in metadata
                 metadata = msg.get('metadata', {})
-                if 'image_url' in metadata:
+                if 'fabric_images' in metadata:
+                    fabric_images = metadata['fabric_images']
+                    break
+                elif 'image_url' in metadata:
                     image_url = metadata['image_url']
                     break
 
@@ -140,6 +144,10 @@ def chat():
         # Add image_url if present
         if image_url:
             response_data['image_url'] = image_url
+
+        # Add fabric_images if present
+        if fabric_images:
+            response_data['fabric_images'] = fabric_images
 
         return jsonify(response_data), 200
 

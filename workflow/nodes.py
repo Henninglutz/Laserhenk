@@ -371,6 +371,32 @@ async def conversation_node(state: HenkGraphState) -> HenkGraphState:
                 "messages": messages,
             }
 
+        # Handle fabric image display (HENK1 - shows real fabric images from RAG)
+        if decision.action == "show_fabric_images":
+            logger.info(f"[Conversation] Agent {current_agent_name} requested fabric image display")
+
+            messages = list(state.get("messages", []))
+            if decision.message and decision.message.strip():
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": decision.message,
+                        "sender": current_agent_name,
+                        "metadata": {"action": decision.action},
+                    }
+                )
+
+            # Route to show_fabric_images tool
+            return {
+                "session_state": updated_session_state,
+                "current_agent": current_agent_name,
+                "next_agent": "show_fabric_images",
+                "pending_action": decision.action_params or {},
+                "awaiting_user_input": False,
+                "phase_complete": False,
+                "messages": messages,
+            }
+
         # Handle other special actions
         if current_agent_name == "henk1" and not updated_session_state.customer.customer_id:
             updated_session_state.customer.customer_id = (
@@ -509,6 +535,39 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
                 })
                 state["session_state"] = session_state
 
+        elif next_agent == "show_fabric_images":
+            result, fabric_images = await _execute_show_fabric_images(action_params, state)
+            # fabric_images is a list of dicts with url, fabric_code, name, etc.
+            metadata = {}
+            if fabric_images:
+                # Store multiple fabric images in metadata
+                metadata["fabric_images"] = fabric_images
+                # Also store first image as primary image_url for backward compatibility
+                metadata["image_url"] = fabric_images[0]["url"]
+
+            messages.append({
+                "role": "assistant",
+                "content": result,
+                "sender": next_agent,
+                "metadata": metadata
+            })
+
+            # Store fabric images in session state
+            if fabric_images:
+                session_state = state["session_state"]
+                if isinstance(session_state, dict):
+                    session_state = SessionState(**session_state)
+                # Store in session for later reference
+                for img in fabric_images:
+                    session_state.image_generation_history.append({
+                        "url": img["url"],
+                        "type": "fabric_image",
+                        "fabric_code": img["fabric_code"],
+                        "timestamp": str(state.get("metadata", {}).get("timestamp")),
+                        "approved": False,
+                    })
+                state["session_state"] = session_state
+
         elif next_agent == "comparison_tool":
             result = await _execute_comparison_tool(action_params, state)
             messages.append({"role": "assistant", "content": result, "sender": next_agent})
@@ -606,10 +665,38 @@ Das kann daran liegen, dass die Datenbank noch nicht vollständig gefüllt ist.
 
 Wie möchtest du weitermachen? 🎩"""
 
+        # Store RAG results in session state for later use (e.g., fabric image display)
+        session_state = state.get("session_state")
+        if isinstance(session_state, dict):
+            session_state = SessionState(**session_state)
+
+        # Store fabric recommendations for potential image display
+        session_state.rag_context = {
+            "fabrics": [
+                {
+                    "fabric_code": rec.fabric.fabric_code,
+                    "name": rec.fabric.name,
+                    "color": rec.fabric.color,
+                    "pattern": rec.fabric.pattern,
+                    "composition": rec.fabric.composition,
+                    "weight": rec.fabric.weight,
+                    "image_urls": rec.fabric.image_urls,
+                    "local_image_paths": rec.fabric.local_image_paths,
+                    "similarity_score": rec.similarity_score,
+                }
+                for rec in recommendations[:10]
+            ],
+            "query": query,
+            "colors": colors,
+            "patterns": patterns,
+        }
+        state["session_state"] = session_state
+
         formatted = "**Passende Stoffe für deinen Anzug:**\n\n"
         for i, rec in enumerate(recommendations[:5], 1):
             fabric = rec.fabric
             formatted += f"**{i}. {fabric.name or 'Hochwertiger Stoff'}**\n"
+            formatted += f"   🏷️ Code: {fabric.fabric_code}\n"
             formatted += f"   📦 Material: {fabric.composition or 'Edle Wollmischung'}\n"
             formatted += f"   🎨 Farbe: {fabric.color or 'Klassisch'}\n"
             formatted += f"   ✨ Muster: {fabric.pattern or 'Uni'}\n"
@@ -624,7 +711,7 @@ Wie möchtest du weitermachen? 🎩"""
         if len(recommendations) > 5:
             formatted += f"_...und {len(recommendations) - 5} weitere Stoffe verfügbar_\n\n"
 
-        formatted += "**Was denkst du?** Soll ich dir mehr über einen dieser Stoffe erzählen? 🎩"
+        formatted += "**Moment, ich zeige dir die Top 2 Stoffe visuell! 🎨**"
 
         return formatted
 
@@ -797,6 +884,109 @@ Macht nichts – lass uns die Details besprechen und ich beschreibe dir dein Tra
         message = """Entschuldigung, der Outfit-Entwurf konnte gerade nicht generiert werden.
 
 Kein Problem – wir machen trotzdem weiter! Was möchtest du noch anpassen? 🎩"""
+        return message, None
+
+
+async def _execute_show_fabric_images(
+    params: Dict[str, Any], state: HenkGraphState
+) -> tuple[str, Optional[list[dict]]]:
+    """
+    Show Fabric Images: Zeigt echte Stoffbilder aus RAG-Ergebnissen.
+
+    WICHTIG: Verwendet ECHTE Stoffbilder aus der Datenbank, KEINE DALL-E Generation!
+
+    Args:
+        params: Display-Parameter (optional: limit, occasion)
+        state: Graph State mit rag_context
+
+    Returns:
+        Tuple of (formatted_message, fabric_images_list)
+        fabric_images_list = [{"url": str, "fabric_code": str, "name": str}, ...]
+    """
+    logger.info("[ShowFabricImages] Displaying real fabric images from RAG results")
+
+    try:
+        session_state = state.get("session_state")
+        if isinstance(session_state, dict):
+            session_state = SessionState(**session_state)
+
+        # Get RAG context with fabric data
+        rag_context = getattr(session_state, "rag_context", {})
+        fabrics = rag_context.get("fabrics", [])
+
+        if not fabrics:
+            logger.warning("[ShowFabricImages] No fabrics in RAG context")
+            message = """Hmm, ich habe keine Stoff-Daten gefunden.
+
+Lass mich nochmal die Datenbank abfragen! Welche Farben interessieren dich? 🎩"""
+            return message, None
+
+        # Get top 2 fabrics with images
+        fabrics_with_images = []
+        for fabric in fabrics[:10]:  # Check first 10 fabrics
+            image_urls = fabric.get("image_urls", [])
+            local_paths = fabric.get("local_image_paths", [])
+
+            # Prefer local paths, fallback to URLs
+            image_url = None
+            if local_paths and local_paths[0]:
+                # Convert local path to web-accessible URL
+                # Assuming images are in generated_images/ or a static folder
+                local_path = local_paths[0]
+                # TODO: Configure proper static file serving
+                # For now, use the remote URL
+                image_url = image_urls[0] if image_urls else None
+            elif image_urls and image_urls[0]:
+                image_url = image_urls[0]
+
+            if image_url:
+                fabrics_with_images.append({
+                    "url": image_url,
+                    "fabric_code": fabric.get("fabric_code", ""),
+                    "name": fabric.get("name", "Hochwertiger Stoff"),
+                    "color": fabric.get("color", ""),
+                    "pattern": fabric.get("pattern", ""),
+                    "composition": fabric.get("composition", ""),
+                    "similarity_score": fabric.get("similarity_score", 0.0),
+                })
+
+            if len(fabrics_with_images) >= 2:
+                break
+
+        if not fabrics_with_images:
+            logger.warning("[ShowFabricImages] No fabric images available")
+            message = """Die Stoffbilder sind leider noch nicht verfügbar.
+
+Aber ich kann dir die technischen Details zeigen – welcher Stoff interessiert dich am meisten? 🎩"""
+            return message, None
+
+        # Build message with fabric details
+        occasion = params.get("occasion", "deinen Anlass")
+
+        message = f"""🎨 **Hier sind deine Top {len(fabrics_with_images)} Stoff-Empfehlungen!**
+
+"""
+
+        for i, fabric in enumerate(fabrics_with_images, 1):
+            message += f"""**{i}. {fabric['name']}** (Ref: {fabric['fabric_code']})
+   🎨 Farbe: {fabric['color']}
+   ✨ Muster: {fabric['pattern']}
+   📦 Material: {fabric['composition']}
+
+"""
+
+        message += f"""Die Stoffe werden perfekt zu {occasion} passen!
+
+**Was denkst du?** Welcher gefällt dir besser? 🎩"""
+
+        logger.info(f"[ShowFabricImages] Returning {len(fabrics_with_images)} fabric images")
+        return message, fabrics_with_images
+
+    except Exception as e:
+        logger.error(f"[ShowFabricImages] Exception: {e}", exc_info=True)
+        message = """Entschuldigung, beim Laden der Stoffbilder gab es ein Problem.
+
+Lass uns trotzdem weitermachen – ich beschreibe dir die Stoffe! 🎩"""
         return message, None
 
 
