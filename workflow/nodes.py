@@ -680,14 +680,43 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> tu
             "grün": "green",
         }
 
+        # Check if user is EXCLUDING certain colors (not grau, nicht beige, etc.)
+        excluded_colors = []
+        for german, english in color_map.items():
+            if f"nicht {german}" in query_lower or f"kein {german}" in query_lower or f"nicht {english}" in query_lower:
+                excluded_colors.append(english)
+                logger.info(f"[RAGTool] User excluded color: {english}")
+
         extracted_colors = []
         for german, english in color_map.items():
+            # Only extract if NOT in negation context (nicht/kein)
             if german in query_lower:
-                extracted_colors.append(english)
+                # Check context - is it negated?
+                if not (f"nicht {german}" in query_lower or f"kein {german}" in query_lower):
+                    extracted_colors.append(english)
 
         if extracted_colors:
             colors = extracted_colors
             logger.info(f"[RAGTool] Extracted colors from query: {colors}")
+
+        # If user excluded colors but didn't specify new ones, clear stored colors
+        if excluded_colors and not extracted_colors:
+            logger.warning(f"[RAGTool] User excluded colors but didn't specify alternatives: {excluded_colors}")
+
+    # CHECK SESSION STATE for previously set color preferences
+    # If no colors found in current query, use stored preferences
+    if not colors and session_state.design_preferences:
+        stored_colors = session_state.design_preferences.suit_colors
+        if stored_colors:
+            colors = stored_colors
+            logger.info(f"[RAGTool] Using stored color preferences from session: {colors}")
+
+    # STORE colors in session state for future queries (maintain context!)
+    if colors and session_state:
+        if not session_state.design_preferences.suit_colors:
+            session_state.design_preferences.suit_colors = colors
+            state["session_state"] = session_state
+            logger.info(f"[RAGTool] Stored color preferences in session: {colors}")
 
     # If no specific criteria, create basic search
     criteria = FabricSearchCriteria(
