@@ -49,6 +49,7 @@ class SupervisorDecision(BaseModel):
     ] = Field(description="Ziel-Agent oder -Tool für nächsten Schritt")
 
     reasoning: str = Field(
+        default="Routing based on user message analysis",
         description="Begründung für Routing-Entscheidung (1-2 Sätze)",
         min_length=10,
         max_length=200,
