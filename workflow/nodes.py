@@ -763,47 +763,70 @@ async def _execute_dalle_mood_board(
     params: Dict[str, Any], state: HenkGraphState
 ) -> tuple[str, Optional[str]]:
     """
-    DALL-E Mood Board Tool: Generiert Mood Board für Stil-Inspiration.
+    DALL-E Mood Board Tool: Generiert Composite Mood Board mit echten Stoffbildern.
+
+    WICHTIG: Erstellt Composite-Bild:
+    1. Holt Stoffdaten aus rag_context (falls vorhanden)
+    2. DALL-E generiert Mood Board basierend auf Stoffbeschreibungen + Anlass
+    3. Echte Stofffotos werden als Thumbnails (10%) unten rechts eingefügt
 
     Args:
         params: Generation-Parameter (style_keywords, colors, occasion, session_id)
-        state: Graph State für Context
+        state: Graph State mit optional rag_context
 
     Returns:
-        Tuple of (formatted_message, image_url)
+        Tuple of (formatted_message, composite_image_url)
     """
     from tools.dalle_tool import get_dalle_tool
 
     style_keywords = params.get("style_keywords", [])
-    colors = params.get("colors", [])
-    occasion = params.get("occasion")
+    occasion = params.get("occasion", "elegant occasion")
     session_id = params.get("session_id")
 
     logger.info(
-        f"[DALLE_MoodBoard] Generating mood board: "
-        f"style={style_keywords}, colors={colors}, occasion={occasion}"
+        f"[DALLE_MoodBoard] Generating composite mood board: "
+        f"style={style_keywords}, occasion={occasion}"
     )
+
+    # Extract fabrics from rag_context if available
+    session_state = state.get("session_state")
+    if isinstance(session_state, dict):
+        session_state = SessionState(**session_state)
+
+    rag_context = getattr(session_state, "rag_context", {})
+    fabrics = rag_context.get("fabrics", [])
+
+    if not fabrics:
+        logger.warning("[DALLE_MoodBoard] No fabrics in rag_context, cannot create composite")
+        message = """Moment – ich brauche erst Stoffempfehlungen, um ein passendes Mood Board zu erstellen.
+
+Lass uns zuerst Stoffe auswählen! Welche Farben und Muster interessieren dich? 🎩"""
+        return message, None
 
     try:
         dalle = get_dalle_tool()
-        response = await dalle.generate_mood_board(
-            style_keywords=style_keywords,
-            colors=colors,
+        response = await dalle.generate_mood_board_with_fabrics(
+            fabrics=fabrics[:2],  # Top 2 fabrics
             occasion=occasion,
+            style_keywords=style_keywords,
             session_id=session_id,
         )
 
         if response.success and response.image_url:
-            logger.info(f"[DALLE_MoodBoard] Success: {response.image_url}")
+            logger.info(f"[DALLE_MoodBoard] Composite created: {response.image_url}")
+
+            # Get fabric names for message
+            fabric_names = [f.get("name", "Hochwertiger Stoff") for f in fabrics[:2]]
 
             message = f"""🎨 **Dein Mood Board ist fertig!**
 
-Basierend auf deinen Vorstellungen ({', '.join(style_keywords if style_keywords else ['elegant', 'modern'])})
-habe ich dieses visuelle Konzept für dich erstellt.
+Ich zeige dir die Top 2 Stoffe in ihrer perfekten Umgebung:
+- **{fabric_names[0]}**
+- **{fabric_names[1]}** (als Alternative)
 
-**Was denkst du?** Trifft das deinen Geschmack?
+Die kleinen Stoffbilder unten rechts zeigen die echten Referenzen! 📸
 
-Lass es mich wissen, dann passen wir es an oder ich zeige dir konkrete Stoffe! 🎩"""
+**Was denkst du?** Welcher Stoff gefällt dir besser? 🎩"""
 
             return message, response.image_url
 
@@ -811,14 +834,14 @@ Lass es mich wissen, dann passen wir es an oder ich zeige dir konkrete Stoffe! �
             logger.error(f"[DALLE_MoodBoard] Failed: {response.error}")
             message = """Entschuldigung, beim Erstellen des Mood Boards gab es ein Problem.
 
-Lass uns trotzdem weitermachen – was ist dir wichtig bei deinem Anzug? 🎩"""
+Lass uns trotzdem weitermachen – ich beschreibe dir die Stoffe! 🎩"""
             return message, None
 
     except Exception as e:
         logger.error(f"[DALLE_MoodBoard] Exception: {e}", exc_info=True)
         message = """Entschuldigung, das Mood Board konnte gerade nicht generiert werden.
 
-Macht nichts – ich kann dir auch so helfen! Was schwebt dir vor? 🎩"""
+Macht nichts – lass uns über die Stoffe sprechen! 🎩"""
         return message, None
 
 
