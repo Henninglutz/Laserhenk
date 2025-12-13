@@ -487,8 +487,22 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
 
     try:
         if next_agent == "rag_tool":
-            result = await _execute_rag_tool(action_params, state)
-            messages.append({"role": "assistant", "content": result, "sender": next_agent})
+            result, fabric_images = await _execute_rag_tool(action_params, state)
+
+            # Build metadata with fabric_images
+            metadata = {}
+            if fabric_images:
+                metadata["fabric_images"] = fabric_images
+                # Also add first image as primary image_url for backward compatibility
+                metadata["image_url"] = fabric_images[0]["url"]
+                logger.info(f"[ToolsDispatcher] RAG returned {len(fabric_images)} fabric images")
+
+            messages.append({
+                "role": "assistant",
+                "content": result,
+                "sender": next_agent,
+                "metadata": metadata
+            })
 
         elif next_agent == "dalle_mood_board":
             result, image_url = await _execute_dalle_mood_board(action_params, state)
@@ -621,7 +635,7 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
 # ==================== Tool Implementations ====================
 
 
-async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> str:
+async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> tuple[str, Optional[list[dict]]]:
     """
     RAG Tool: Sucht Stoffe/Bilder via Vector Search.
 
@@ -630,7 +644,8 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> st
         state: Graph State für Context
 
     Returns:
-        Formatierte Suchergebnisse mit Stoff-Empfehlungen
+        Tuple of (formatted_message, fabric_images_list)
+        fabric_images_list = [{"url": str, "fabric_code": str, "name": str}, ...] or None
     """
     from tools.rag_tool import RAGTool
     from models.fabric import FabricSearchCriteria
@@ -656,7 +671,7 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> st
 
         # Format Results
         if not recommendations:
-            return """Hmm, ich habe gerade keine passenden Stoffe in der Datenbank gefunden.
+            return ("""Hmm, ich habe gerade keine passenden Stoffe in der Datenbank gefunden.
 
 Das kann daran liegen, dass die Datenbank noch nicht vollständig gefüllt ist.
 
@@ -664,7 +679,7 @@ Das kann daran liegen, dass die Datenbank noch nicht vollständig gefüllt ist.
 - Gib mir mehr Details zu deinen Wünschen (Farbe, Muster, Anlass)
 - Oder lass uns direkt über Design und Schnitt sprechen
 
-Wie möchtest du weitermachen? 🎩"""
+Wie möchtest du weitermachen? 🎩""", None)
 
         # Store RAG results in session state for later use (e.g., fabric image display)
         session_state = state.get("session_state")
@@ -712,17 +727,46 @@ Wie möchtest du weitermachen? 🎩"""
         if len(recommendations) > 5:
             formatted += f"_...und {len(recommendations) - 5} weitere Stoffe verfügbar_\n\n"
 
-        formatted += "**Moment, ich zeige dir die Top 2 Stoffe visuell! 🎨**"
+        # BUILD FABRIC IMAGES - Nuclear Option: Return images directly!
+        fabric_images = []
+        for i, rec in enumerate(recommendations[:2], 1):  # Top 2 fabrics
+            fabric = rec.fabric
 
-        return formatted
+            # Get image URL (prefer first image_url, fallback to placeholder)
+            image_url = None
+            if fabric.image_urls and fabric.image_urls[0]:
+                image_url = fabric.image_urls[0]
+            elif fabric.local_image_paths and fabric.local_image_paths[0]:
+                # For local paths, we'd need to serve them statically
+                # For now, use placeholder
+                image_url = f"https://via.placeholder.com/400x300?text={fabric.fabric_code}"
+            else:
+                # No image available, use placeholder
+                image_url = f"https://via.placeholder.com/400x300?text={fabric.fabric_code}"
+
+            fabric_images.append({
+                "url": image_url,
+                "fabric_code": fabric.fabric_code,
+                "name": fabric.name or "Hochwertiger Stoff",
+                "color": fabric.color or "Klassisch",
+                "pattern": fabric.pattern or "Uni",
+                "composition": fabric.composition or "Edle Wollmischung",
+                "similarity_score": rec.similarity_score,
+            })
+
+        logger.info(f"[RAGTool] Returning {len(fabric_images)} fabric images directly")
+
+        formatted += f"**Hier sind deine Top {len(fabric_images)} Stoffe mit Bildern! 🎨**"
+
+        return formatted, fabric_images
 
     except Exception as e:
         logger.error(f"[RAGTool] Error during fabric search: {e}", exc_info=True)
-        return """Entschuldigung, beim Abrufen der Stoffe gab es ein technisches Problem.
+        return ("""Entschuldigung, beim Abrufen der Stoffe gab es ein technisches Problem.
 
 Lass uns trotzdem weitermachen – ich kann dir auch ohne Datenbank bei der Auswahl helfen!
 
-Was ist dir wichtig bei deinem Anzug? 🎩"""
+Was ist dir wichtig bei deinem Anzug? 🎩""", None)
 
     finally:
         await rag.close()
