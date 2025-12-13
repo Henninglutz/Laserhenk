@@ -14,6 +14,7 @@ Nodes:
 import os
 from typing import Dict, Any, Optional
 import logging
+from datetime import datetime
 
 from agents.operator import OperatorAgent
 from agents.supervisor_agent import SupervisorAgent, SupervisorDecision
@@ -591,6 +592,10 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
             result = await _execute_pricing_tool(action_params, state)
             messages.append({"role": "assistant", "content": result, "sender": next_agent})
 
+        elif next_agent == "mark_favorite_fabric":
+            result = await _execute_mark_favorite_fabric(action_params, state)
+            messages.append({"role": "assistant", "content": result, "sender": next_agent})
+
         else:
             logger.warning(f"[ToolsDispatcher] Unknown tool: {next_agent}")
             result = "Tool nicht gefunden."
@@ -758,17 +763,18 @@ Wie möchtest du weitermachen? 🎩""", None)
         for i, rec in enumerate(recommendations[:2], 1):  # Top 2 fabrics
             fabric = rec.fabric
 
-            # Get image URL (prefer first image_url, fallback to placeholder)
-            image_url = None
+            # Get image URL - USE LOCAL IMAGES from storage/fabrics/images/
+            # Flask serves these via /fabrics/images/ route
+            fabric_code_clean = fabric.fabric_code.replace('/', '_')  # Clean filename
+            image_url = f"/fabrics/images/{fabric_code_clean}.jpg"
+
+            # Fallback: If database has external URLs, use those
             if fabric.image_urls and fabric.image_urls[0]:
-                image_url = fabric.image_urls[0]
-            elif fabric.local_image_paths and fabric.local_image_paths[0]:
-                # For local paths, we'd need to serve them statically
-                # For now, use placeholder
-                image_url = f"https://via.placeholder.com/400x300?text={fabric.fabric_code}"
-            else:
-                # No image available, use placeholder
-                image_url = f"https://via.placeholder.com/400x300?text={fabric.fabric_code}"
+                # Prefer local images, but keep external URLs as backup
+                pass  # Keep local path
+
+            # Ultimate fallback: placeholder (Flask route will handle FileNotFoundError)
+            # No need for explicit check - Flask route redirects to placeholder if file missing
 
             fabric_images.append({
                 "url": image_url,
@@ -780,7 +786,17 @@ Wie möchtest du weitermachen? 🎩""", None)
                 "similarity_score": rec.similarity_score,
             })
 
+        # TRACK FABRIC IMAGES IN SESSION HISTORY
+        for img in fabric_images:
+            session_state.shown_fabric_images.append({
+                **img,  # Include all fabric data (url, fabric_code, name, etc.)
+                "timestamp": datetime.now().isoformat(),
+                "query": query,  # Track what user searched for
+            })
+        state["session_state"] = session_state
+
         logger.info(f"[RAGTool] Returning {len(fabric_images)} fabric images directly")
+        logger.info(f"[RAGTool] Total fabric images in session: {len(session_state.shown_fabric_images)}")
 
         formatted += f"**Hier sind deine Top {len(fabric_images)} Stoffe mit Bildern! 🎨**"
 
@@ -936,6 +952,25 @@ async def _execute_dalle_outfit(
     style_keywords = params.get("style_keywords", [])
     session_id = params.get("session_id")
 
+    # CHECK FOR FAVORITE FABRIC in session state
+    session_state = state.get("session_state")
+    favorite_fabric = None
+    if session_state and session_state.favorite_fabric:
+        favorite_fabric = session_state.favorite_fabric
+        logger.info(f"[DALLE_Outfit] Using favorite fabric: {favorite_fabric['fabric_code']}")
+
+        # Merge favorite fabric into fabric_data if not already present
+        if not fabric_data or "fabric_code" not in fabric_data:
+            fabric_data = {
+                "fabric_code": favorite_fabric["fabric_code"],
+                "name": favorite_fabric.get("name", ""),
+                "color": favorite_fabric.get("color", ""),
+                "pattern": favorite_fabric.get("pattern", ""),
+                "composition": favorite_fabric.get("composition", ""),
+                "image_url": favorite_fabric.get("image_url", ""),
+            }
+            logger.info("[DALLE_Outfit] Favorite fabric added to fabric_data")
+
     logger.info(
         f"[DALLE_Outfit] Generating outfit visualization: "
         f"fabrics={list(fabric_data.keys())}, design={list(design_preferences.keys())}"
@@ -953,10 +988,15 @@ async def _execute_dalle_outfit(
         if response.success and response.image_url:
             logger.info(f"[DALLE_Outfit] Success: {response.image_url}")
 
-            message = f"""✨ **Dein Outfit-Entwurf ist fertig!**
+            # Build message with fabric info if favorite was used
+            fabric_info = ""
+            if favorite_fabric:
+                fabric_info = f"\n🌟 **Mit deinem Favorit-Stoff:** {favorite_fabric['fabric_code']} - {favorite_fabric.get('name', '')}\n"
 
+            message = f"""✨ **Dein Outfit-Entwurf ist fertig!**
+{fabric_info}
 So könnte dein maßgeschneiderter Anzug aussehen – basierend auf:
-- Deiner Stoffauswahl
+- Deiner Stoffauswahl ({fabric_data.get('fabric_code', 'N/A')})
 - Den Design-Details (Revers, Schulter, etc.)
 - Deinem persönlichen Stil
 
@@ -1207,3 +1247,78 @@ _Inkl. individueller Anpassung, Maßanfertigung und Premium-Service._
 _Preis kann sich bei finaler Stoffauswahl/Details noch ändern._"""
 
     return result
+
+
+async def _execute_mark_favorite_fabric(params: Dict[str, Any], state: HenkGraphState) -> str:
+    """
+    Mark Favorite Fabric: User selects a favorite fabric from shown options.
+
+    This fabric will be passed to DALL-E for outfit generation.
+
+    Args:
+        params: {
+            "fabric_code": str,  # Which fabric to mark as favorite
+            "selection_method": str,  # "index" (1st, 2nd) or "code" (10C4017)
+        }
+        state: Graph state with session_state
+
+    Returns:
+        Confirmation message
+    """
+    session_state = state.get("session_state")
+    if not session_state:
+        logger.error("[MarkFavorite] No session_state found")
+        return "Fehler: Keine Session gefunden."
+
+    fabric_code = params.get("fabric_code")
+    selection_method = params.get("selection_method", "code")
+
+    logger.info(f"[MarkFavorite] Marking favorite: fabric_code={fabric_code}, method={selection_method}")
+
+    # If selection by index (e.g., "der erste", "nummer 2")
+    if selection_method == "index":
+        index = params.get("index", 0)
+        shown_fabrics = session_state.shown_fabric_images
+
+        if not shown_fabrics or index >= len(shown_fabrics):
+            return f"Fehler: Kein Stoff an Position {index+1} gefunden."
+
+        # Get fabric by index
+        favorite = shown_fabrics[index]
+        fabric_code = favorite["fabric_code"]
+    else:
+        # Find fabric by code in shown_fabric_images
+        shown_fabrics = session_state.shown_fabric_images
+        favorite = None
+
+        for img in shown_fabrics:
+            if img["fabric_code"] == fabric_code:
+                favorite = img
+                break
+
+        if not favorite:
+            return f"Fehler: Stoff {fabric_code} wurde nicht angezeigt."
+
+    # Store favorite in session state
+    session_state.favorite_fabric = {
+        "fabric_code": favorite["fabric_code"],
+        "name": favorite.get("name", ""),
+        "color": favorite.get("color", ""),
+        "pattern": favorite.get("pattern", ""),
+        "composition": favorite.get("composition", ""),
+        "image_url": favorite["url"],
+        "marked_at": datetime.now().isoformat(),
+    }
+
+    state["session_state"] = session_state
+
+    logger.info(f"[MarkFavorite] Favorite marked: {favorite['fabric_code']} - {favorite.get('name')}")
+
+    return f"""**Perfekt! Dein Favorit ist gespeichert! 🌟**
+
+**{favorite.get('name', 'Ausgewählter Stoff')}**
+🏷️ Code: {favorite['fabric_code']}
+🎨 Farbe: {favorite.get('color', 'Klassisch')}
+✨ Muster: {favorite.get('pattern', 'Uni')}
+
+Soll ich dir jetzt passende Outfit-Vorschläge mit diesem Stoff generieren? 🎨"""
