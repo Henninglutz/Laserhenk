@@ -683,8 +683,8 @@ async def _capture_lead_if_needed(state: HenkGraphState, trigger: str) -> None:
             notes_parts.append(f"Farbe: {preferences.get('selected_fabric_color', 'N/A')}")
 
         # Add selected fabrics from rag_context
-        rag_context = getattr(session_state, "rag_context", {})
-        if rag_context.get("fabrics"):
+        rag_context = getattr(session_state, "rag_context", {}) or {}
+        if rag_context and rag_context.get("fabrics"):
             fabric_count = len(rag_context["fabrics"])
             notes_parts.append(f"Stoffoptionen angezeigt: {fabric_count}")
 
@@ -705,7 +705,7 @@ async def _capture_lead_if_needed(state: HenkGraphState, trigger: str) -> None:
         # Create lead data with structured information
         # In production, you'd collect email via a form
         lead_data = CRMLeadCreate(
-            name=customer.customer_id or f"Lead_{session_state.session_id[:8]}",
+            customer_name=customer.customer_id or f"Lead_{session_state.session_id[:8]}",
             email=f"temp_{session_state.session_id[:8]}@laserhenk.com",  # Temporary
             phone=None,
             source=f"HENK1_Chatbot_{trigger}",
