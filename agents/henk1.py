@@ -120,7 +120,17 @@ class Henk1Agent(BaseAgent):
 
             if fabrics:
                 # Extract occasion from conversation if available
-                occasion = self._extract_style_info(state).get("occasion", "deinen Anlass")
+                style_info = self._extract_style_info(state)
+                occasion = style_info.get("occasion", "deinen Anlass")
+
+                # Store customer preferences for CRM and DALL-E
+                state.customer_preferences = {
+                    "occasion": style_info.get("occasion"),
+                    "colors": style_info.get("colors", []),
+                    "style_keywords": style_info.get("style_keywords", []),
+                    "budget": style_info.get("budget"),
+                    "extracted_at": "henk1_fabric_display",
+                }
 
                 # Mark mood board as shown (we're showing fabric images)
                 state.henk1_mood_board_shown = True
@@ -164,6 +174,16 @@ class Henk1Agent(BaseAgent):
 
                     # Extract style info for outfit generation
                     style_info = self._extract_style_info(state)
+
+                    # Update customer preferences with selected fabric
+                    if not state.customer_preferences:
+                        state.customer_preferences = {}
+                    state.customer_preferences.update({
+                        "selected_fabric_code": selected_fabric.get("fabric_code"),
+                        "selected_fabric_name": selected_fabric.get("name"),
+                        "selected_fabric_color": selected_fabric.get("color"),
+                        "fabric_selected_at": "henk1_user_selection",
+                    })
 
                     # Trigger outfit visualization with selected fabric
                     return AgentDecision(
@@ -397,12 +417,13 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
             state: Session State
 
         Returns:
-            Dict with style_keywords, colors, occasion
+            Dict with style_keywords, colors, occasion, budget
         """
         style_info = {
             "style_keywords": [],
             "colors": [],
             "occasion": None,
+            "budget": None,
         }
 
         # Analyze conversation history
@@ -459,6 +480,29 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
         for keyword, style in style_keywords_map.items():
             if keyword in conversation_text and style not in style_info["style_keywords"]:
                 style_info["style_keywords"].append(style)
+
+        # Extract budget hints
+        budget_keywords = {
+            "kein budget": "unlimited",
+            "keine grenze": "unlimited",
+            "unbegrenzt": "unlimited",
+            "unter 1000": "under_1000",
+            "unter 1500": "under_1500",
+            "unter 2000": "under_2000",
+            "bis 1000": "under_1000",
+            "bis 1500": "under_1500",
+            "bis 2000": "under_2000",
+            "günstig": "budget_conscious",
+            "erschwinglich": "budget_conscious",
+            "premium": "premium",
+            "luxus": "luxury",
+            "hochwertig": "premium",
+        }
+
+        for keyword, budget in budget_keywords.items():
+            if keyword in conversation_text:
+                style_info["budget"] = budget
+                break
 
         # Fallback style keywords if none found
         if not style_info["style_keywords"]:

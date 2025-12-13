@@ -99,6 +99,12 @@ class SessionState(BaseModel):
         default=False, description="Lead has been captured in CRM"
     )
 
+    # Customer preferences extracted from conversation
+    customer_preferences: Optional[dict] = Field(
+        default_factory=dict,
+        description="Structured customer preferences (occasion, budget, style, colors, etc.)"
+    )
+
     # Handoff Payloads (tracking inter-agent data transfer)
     henk1_to_design_payload: Optional[dict] = Field(
         None, description="HENK1 → Design HENK handoff data"

@@ -652,22 +652,64 @@ async def _capture_lead_if_needed(state: HenkGraphState, trigger: str) -> None:
         # Extract customer info from session
         customer = session_state.customer
 
-        # We need at least an email or name to create a lead
-        # For now, use temporary data from conversation
-        conversation_text = " ".join(
-            msg.get("content", "")
-            for msg in state.get("messages", [])
-            if isinstance(msg, dict) and msg.get("role") == "user"
-        )
+        # Extract structured preferences
+        preferences = getattr(session_state, "customer_preferences", {})
 
-        # Create temporary lead data
+        # Build structured notes
+        notes_parts = []
+
+        # Add occasion if available
+        if preferences.get("occasion"):
+            notes_parts.append(f"Anlass: {preferences['occasion']}")
+
+        # Add colors if available
+        if preferences.get("colors"):
+            colors_str = ", ".join(preferences["colors"])
+            notes_parts.append(f"Farbwünsche: {colors_str}")
+
+        # Add style keywords
+        if preferences.get("style_keywords"):
+            style_str = ", ".join(preferences["style_keywords"])
+            notes_parts.append(f"Stil: {style_str}")
+
+        # Add budget if available
+        if preferences.get("budget"):
+            notes_parts.append(f"Budget: {preferences['budget']}")
+
+        # Add selected fabric if user has chosen one
+        if preferences.get("selected_fabric_code"):
+            fabric_info = f"{preferences['selected_fabric_name']} ({preferences['selected_fabric_code']})"
+            notes_parts.append(f"Gewählter Stoff: {fabric_info}")
+            notes_parts.append(f"Farbe: {preferences.get('selected_fabric_color', 'N/A')}")
+
+        # Add selected fabrics from rag_context
+        rag_context = getattr(session_state, "rag_context", {})
+        if rag_context.get("fabrics"):
+            fabric_count = len(rag_context["fabrics"])
+            notes_parts.append(f"Stoffoptionen angezeigt: {fabric_count}")
+
+        # Add trigger information
+        notes_parts.append(f"Lead-Trigger: {trigger}")
+
+        # Fallback: Add conversation snippet if no structured data
+        if not notes_parts:
+            conversation_text = " ".join(
+                msg.get("content", "")
+                for msg in state.get("messages", [])
+                if isinstance(msg, dict) and msg.get("role") == "user"
+            )
+            notes_parts.append(f"Conversation: {conversation_text[:200]}...")
+
+        structured_notes = "\n".join(notes_parts)
+
+        # Create lead data with structured information
         # In production, you'd collect email via a form
         lead_data = CRMLeadCreate(
             name=customer.customer_id or f"Lead_{session_state.session_id[:8]}",
             email=f"temp_{session_state.session_id[:8]}@laserhenk.com",  # Temporary
             phone=None,
             source=f"HENK1_Chatbot_{trigger}",
-            notes=f"Conversation: {conversation_text[:200]}...",
+            notes=structured_notes,
             deal_value=0.0,  # Will be updated later
         )
 
