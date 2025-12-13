@@ -1,71 +1,14 @@
-"""DALL-E Image Generation Tool.
+"""DALLE Tool - Image Generation with Fabric Reference Compositing."""
 
-Generiert Outfit-Visualisierungen und Mood Images für HENK1 und Design Henk Agenten.
-
-AGENT GUIDE:
-------------
-Dieses Tool wird für folgende Szenarien verwendet:
-
-1. **HENK1 (Bedarfsermittlung)**:
-   - Nach erfolgreicher Stoffempfehlung
-   - Generiert Outfit-Vorschläge basierend auf Kundenpräferenzen
-   - Zeigt visuelle Inspiration für Stilrichtungen
-
-2. **Design Henk (Design Präferenzen)**:
-   - Nach Sammlung von Design-Details (Revers, Schulter, Futter)
-   - Generiert Mood-Images für finale Outfit-Visualisierung
-   - Iterative Anpassung basierend auf Kundenfeedback
-
-3. **LASERHENK (Finalisierung & Verkauf)**:
-   - Generiert finale Outfit-Visualisierung mit allen Details
-   - Für Verkaufspräsentation
-
-VERWENDUNG:
------------
-```python
-# Im Agent Action zurückgeben:
-return AgentDecision(
-    next_agent="operator",
-    action="generate_image",
-    action_params={
-        "prompt_type": "outfit_visualization",  # oder "mood_board"
-        "fabric_data": {...},  # Stoffdaten aus RAG
-        "design_preferences": {...},  # Design-Details
-        "style_keywords": ["elegant", "modern", "business"]
-    },
-    message="Erstelle eine Outfit-Visualisierung..."
-)
-```
-
-PROMPT TYPEN:
--------------
-- **outfit_visualization**: Fotorealistische Outfit-Darstellung
-- **mood_board**: Stil-Inspiration und Farbkombinationen
-- **detail_focus**: Close-up von Details (Revers, Knöpfe, etc.)
-- **fabric_texture**: Stoff-Textur Visualisierung
-
-CONDITIONAL EDGES:
-------------------
-Nach DALL-E Ausführung:
-- Bei Erfolg: Rückkehr zum anfragenden Agent mit image_url im State
-- Bei Fehler: Rückkehr mit error message, Agent entscheidet über Fallback
-- Bei User-Ablehnung: Re-Generation mit angepasstem Prompt
-
-STATE ATTRIBUTES:
------------------
-- `state.mood_image_url`: Gespeicherte Bild-URL
-- `state.design_preferences.approved_image`: User-bestätigtes Bild
-- `state.dalle_output`: Vollständige DALL-E Response (url, revised_prompt)
-- `state.image_generation_history`: Liste aller generierten Bilder pro Session
-"""
-
-import base64
 import logging
 import os
-from datetime import datetime
+import io
 from pathlib import Path
-from typing import Dict, Any, Optional
-import httpx
+from typing import Optional, Dict, Any, List
+from datetime import datetime
+
+import requests
+from PIL import Image, ImageDraw, ImageFont
 from openai import AsyncOpenAI
 
 from models.tools import DALLEImageRequest, DALLEImageResponse
@@ -75,208 +18,65 @@ logger = logging.getLogger(__name__)
 
 class DALLETool:
     """
-    DALL-E Image Generation Tool.
+    DALLE Image Generation Tool with Fabric Reference Compositing.
 
-    Generiert Bilder mit OpenAI DALL-E 3 API.
-    Unterstützt Prompt-Templates aus prompts/ Ordner.
+    Features:
+    - DALL-E 3 API integration
+    - Mood board generation with fabric descriptions
+    - Composite images: DALL-E mood board + real fabric thumbnails
+    - Local image caching
     """
 
     def __init__(self, api_key: Optional[str] = None):
         """
-        Initialize DALL-E Tool.
+        Initialize DALLE Tool.
 
         Args:
-            api_key: OpenAI API Key (defaults to OPENAI_API_KEY env var)
+            api_key: OpenAI API key (defaults to env var)
         """
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        if not self.api_key:
-            raise ValueError("OPENAI_API_KEY not set in environment")
-
-        self.client = AsyncOpenAI(api_key=self.api_key)
+        self.client = AsyncOpenAI(api_key=self.api_key) if self.api_key else None
         self.enabled = os.getenv("ENABLE_DALLE", "true").lower() == "true"
-
-        # Prompt templates directory
-        self.prompts_dir = Path(__file__).parent.parent / "prompts"
-
-        # Image storage directory
         self.images_dir = Path(__file__).parent.parent / "generated_images"
-        self.images_dir.mkdir(exist_ok=True)
+        self.images_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"[DALLETool] Initialized (enabled={self.enabled})")
+        if not self.client:
+            logger.warning("[DALLETool] OpenAI API key not set, DALL-E disabled")
+            self.enabled = False
 
-    def load_prompt_template(self, template_name: str) -> str:
+    async def generate_image(self, request: DALLEImageRequest) -> DALLEImageResponse:
         """
-        Lade Prompt-Template aus prompts/ Ordner.
+        Generate image with DALL-E 3.
 
         Args:
-            template_name: Name des Templates (z.B. "outfit_visualization")
+            request: Image generation parameters
 
         Returns:
-            Template-Inhalt als String
-        """
-        template_path = self.prompts_dir / f"{template_name}.txt"
-
-        if not template_path.exists():
-            logger.warning(f"[DALLETool] Template nicht gefunden: {template_path}")
-            return ""
-
-        with open(template_path, "r", encoding="utf-8") as f:
-            return f.read().strip()
-
-    def build_prompt(
-        self,
-        prompt_type: str,
-        fabric_data: Optional[Dict[str, Any]] = None,
-        design_preferences: Optional[Dict[str, Any]] = None,
-        style_keywords: Optional[list[str]] = None,
-        custom_additions: Optional[str] = None,
-    ) -> str:
-        """
-        Erstelle DALL-E Prompt aus Template + Daten.
-
-        Args:
-            prompt_type: Art des Prompts (outfit_visualization, mood_board, etc.)
-            fabric_data: Stoffdaten (Farben, Muster, Textur)
-            design_preferences: Design-Details (Revers, Schulter, Futter)
-            style_keywords: Stil-Schlagwörter (elegant, modern, etc.)
-            custom_additions: Zusätzliche freie Text-Anweisungen
-
-        Returns:
-            Vollständiger DALL-E Prompt
-        """
-        # Lade Template
-        template = self.load_prompt_template(prompt_type)
-
-        if not template:
-            # Fallback auf generischen Prompt
-            logger.warning(f"[DALLETool] Verwende Fallback-Prompt für {prompt_type}")
-            template = self.load_prompt_template("default") or ""
-
-        # Baue Prompt-Komponenten
-        components = []
-
-        # Base Template
-        if template:
-            components.append(template)
-
-        # Fabric Data
-        if fabric_data:
-            fabric_desc = self._format_fabric_description(fabric_data)
-            components.append(f"\n\nSTOFF-DETAILS:\n{fabric_desc}")
-
-        # Design Preferences
-        if design_preferences:
-            design_desc = self._format_design_description(design_preferences)
-            components.append(f"\n\nDESIGN-DETAILS:\n{design_desc}")
-
-        # Style Keywords
-        if style_keywords:
-            keywords_str = ", ".join(style_keywords)
-            components.append(f"\n\nSTIL: {keywords_str}")
-
-        # Custom Additions
-        if custom_additions:
-            components.append(f"\n\n{custom_additions}")
-
-        # Brand Guidelines aus prompts/brand_guidelines.txt
-        brand_guidelines = self.load_prompt_template("brand_guidelines")
-        if brand_guidelines:
-            components.append(f"\n\nBRAND GUIDELINES:\n{brand_guidelines}")
-
-        final_prompt = "\n".join(components)
-
-        logger.info(f"[DALLETool] Prompt erstellt: {len(final_prompt)} Zeichen")
-        return final_prompt
-
-    def _format_fabric_description(self, fabric_data: Dict[str, Any]) -> str:
-        """Formatiere Stoffdaten für Prompt."""
-        parts = []
-
-        if "colors" in fabric_data:
-            colors = ", ".join(fabric_data["colors"])
-            parts.append(f"Farben: {colors}")
-
-        if "patterns" in fabric_data:
-            patterns = ", ".join(fabric_data["patterns"])
-            parts.append(f"Muster: {patterns}")
-
-        if "texture" in fabric_data:
-            parts.append(f"Textur: {fabric_data['texture']}")
-
-        if "fabric_code" in fabric_data:
-            parts.append(f"Stoff-Code: {fabric_data['fabric_code']}")
-
-        return "\n".join(parts)
-
-    def _format_design_description(self, design_prefs: Dict[str, Any]) -> str:
-        """Formatiere Design-Präferenzen für Prompt."""
-        parts = []
-
-        # Mapping für deutsche Begriffe
-        field_names = {
-            "revers_type": "Revers-Typ",
-            "shoulder_padding": "Schulter-Polsterung",
-            "inner_lining": "Futter",
-            "jacket_form": "Jackenform",
-            "garment_type": "Kleidungstyp",
-        }
-
-        for key, label in field_names.items():
-            if key in design_prefs and design_prefs[key]:
-                value = design_prefs[key]
-                parts.append(f"{label}: {value}")
-
-        return "\n".join(parts)
-
-    async def generate_image(
-        self,
-        request: DALLEImageRequest,
-        session_id: Optional[str] = None,
-        save_locally: bool = True,
-    ) -> DALLEImageResponse:
-        """
-        Generiere Bild mit DALL-E 3.
-
-        Args:
-            request: DALL-E Request mit Prompt
-            session_id: Session ID für Datei-Benennung
-            save_locally: Bild lokal speichern (zusätzlich zur URL)
-
-        Returns:
-            DALL-E Response mit image_url
+            Generated image response
         """
         if not self.enabled:
-            logger.warning("[DALLETool] DALL-E ist deaktiviert (ENABLE_DALLE=false)")
             return DALLEImageResponse(
-                image_url="",
+                image_url=None,
+                revised_prompt=request.prompt,
                 success=False,
-                error="DALL-E ist deaktiviert",
+                error="DALL-E is disabled (missing API key or ENABLE_DALLE=false)",
             )
 
         try:
-            logger.info(f"[DALLETool] Generiere Bild: {request.prompt[:100]}...")
+            logger.info(f"[DALLETool] Generating image: {request.prompt[:100]}...")
 
-            # DALL-E 3 API Call
             response = await self.client.images.generate(
                 model="dall-e-3",
                 prompt=request.prompt,
-                size=request.size,
-                quality=request.quality,
-                style=request.style,
-                n=1,  # DALL-E 3 unterstützt nur n=1
+                size=request.size or "1024x1024",
+                quality=request.quality or "standard",
+                n=1,
             )
 
             image_url = response.data[0].url
             revised_prompt = response.data[0].revised_prompt
 
-            logger.info(f"[DALLETool] Bild generiert: {image_url}")
-
-            # Optional: Bild lokal speichern
-            local_path = None
-            if save_locally and image_url:
-                local_path = await self._download_and_save_image(
-                    image_url, session_id
-                )
+            logger.info(f"[DALLETool] Image generated: {image_url}")
 
             return DALLEImageResponse(
                 image_url=image_url,
@@ -285,141 +85,274 @@ class DALLETool:
             )
 
         except Exception as e:
-            logger.error(f"[DALLETool] Fehler bei Bildgenerierung: {e}")
+            logger.error(f"[DALLETool] Error generating image: {e}", exc_info=True)
             return DALLEImageResponse(
-                image_url="",
+                image_url=None,
+                revised_prompt=request.prompt,
                 success=False,
                 error=str(e),
             )
 
-    async def _download_and_save_image(
-        self, image_url: str, session_id: Optional[str] = None
-    ) -> str:
+    async def generate_mood_board_with_fabrics(
+        self,
+        fabrics: List[Dict[str, Any]],
+        occasion: str,
+        style_keywords: Optional[List[str]] = None,
+        session_id: Optional[str] = None,
+    ) -> DALLEImageResponse:
         """
-        Lade Bild herunter und speichere es lokal.
+        Generate mood board with real fabric thumbnails as reference.
+
+        IMPORTANT: Creates composite image:
+        1. DALL-E generates mood board based on fabric descriptions + occasion
+        2. Real fabric photos are added as small thumbnails (10% size, bottom right/left)
 
         Args:
-            image_url: DALL-E Image URL
-            session_id: Session ID für Datei-Benennung
+            fabrics: List of fabric data dicts (from rag_context)
+            occasion: Occasion/setting (e.g., "Hochzeit", "Business")
+            style_keywords: Optional style keywords
+            session_id: Optional session ID for caching
 
         Returns:
-            Lokaler Dateipfad
+            Composite image with mood board + fabric thumbnails
         """
+        if not fabrics or len(fabrics) == 0:
+            logger.warning("[DALLETool] No fabrics provided for mood board")
+            return DALLEImageResponse(
+                image_url=None,
+                revised_prompt="No fabrics available",
+                success=False,
+                error="No fabrics provided",
+            )
+
+        # Build detailed prompt with fabric descriptions
+        prompt = self._build_mood_board_prompt(fabrics[:2], occasion, style_keywords)
+
+        # Generate mood board with DALL-E
+        dalle_response = await self.generate_image(
+            DALLEImageRequest(
+                prompt=prompt,
+                size="1024x1024",
+                quality="standard",
+            )
+        )
+
+        if not dalle_response.success or not dalle_response.image_url:
+            return dalle_response
+
+        # Download DALL-E image
         try:
-            # Download image
-            async with httpx.AsyncClient() as client:
-                response = await client.get(image_url)
-                response.raise_for_status()
-                image_data = response.content
+            mood_board_img = self._download_image(dalle_response.image_url)
+        except Exception as e:
+            logger.error(f"[DALLETool] Failed to download DALL-E image: {e}")
+            return dalle_response  # Return original without composite
 
-            # Generate filename
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            session_prefix = f"{session_id}_" if session_id else ""
-            filename = f"{session_prefix}{timestamp}.png"
+        # Create composite with fabric thumbnails
+        try:
+            composite_img = self._create_composite_with_fabric_thumbnails(
+                mood_board_img, fabrics[:2]
+            )
 
-            filepath = self.images_dir / filename
+            # Save composite image
+            filename = f"mood_board_composite_{session_id or 'temp'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            composite_path = self.images_dir / filename
+            composite_img.save(composite_path, format="PNG", quality=95)
 
-            # Save to disk
-            with open(filepath, "wb") as f:
-                f.write(image_data)
+            # Convert to web-accessible URL (assuming static file serving)
+            # TODO: Configure proper static URL mapping
+            composite_url = f"/static/generated_images/{filename}"
 
-            logger.info(f"[DALLETool] Bild gespeichert: {filepath}")
-            return str(filepath)
+            logger.info(f"[DALLETool] Composite image created: {composite_path}")
+
+            return DALLEImageResponse(
+                image_url=composite_url,
+                local_path=str(composite_path),
+                revised_prompt=dalle_response.revised_prompt,
+                success=True,
+            )
 
         except Exception as e:
-            logger.error(f"[DALLETool] Fehler beim Speichern: {e}")
-            return ""
+            logger.error(f"[DALLETool] Failed to create composite: {e}", exc_info=True)
+            # Return original DALL-E image as fallback
+            return dalle_response
 
-    async def generate_outfit_visualization(
+    def _build_mood_board_prompt(
         self,
-        fabric_data: Dict[str, Any],
-        design_preferences: Dict[str, Any],
-        style_keywords: Optional[list[str]] = None,
-        session_id: Optional[str] = None,
-    ) -> DALLEImageResponse:
+        fabrics: List[Dict[str, Any]],
+        occasion: str,
+        style_keywords: Optional[List[str]] = None,
+    ) -> str:
         """
-        High-level Methode: Generiere Outfit-Visualisierung.
-
-        Verwendet vom Design Henk Agent nach Sammlung aller Design-Details.
+        Build DALL-E prompt for mood board with fabric descriptions.
 
         Args:
-            fabric_data: Stoffdaten aus RAG
-            design_preferences: Design-Präferenzen vom User
-            style_keywords: Stil-Schlagwörter
-            session_id: Session ID
+            fabrics: Top 2 fabrics from RAG
+            occasion: Occasion/setting
+            style_keywords: Style keywords
 
         Returns:
-            DALL-E Response mit Outfit-Bild
+            Detailed DALL-E prompt
         """
-        prompt = self.build_prompt(
-            prompt_type="outfit_visualization",
-            fabric_data=fabric_data,
-            design_preferences=design_preferences,
-            style_keywords=style_keywords,
-        )
+        # Base scene based on occasion
+        occasion_scenes = {
+            "Hochzeit": "elegant wedding reception venue with soft natural lighting, romantic garden setting",
+            "Business": "modern executive office with floor-to-ceiling windows, professional corporate environment",
+            "Gala": "luxury ballroom with chandeliers, sophisticated evening event atmosphere",
+            "Casual": "contemporary urban lifestyle setting, natural daylight",
+        }
 
-        request = DALLEImageRequest(
-            prompt=prompt,
-            style="natural",  # Fotorealistisch
-            size="1024x1024",
-            quality="hd",  # High quality für finale Präsentation
-        )
+        scene = occasion_scenes.get(occasion, "elegant professional setting")
+        style = ", ".join(style_keywords) if style_keywords else "timeless elegant"
 
-        return await self.generate_image(request, session_id=session_id)
+        # Fabric descriptions
+        fabric_descriptions = []
+        for i, fabric in enumerate(fabrics[:2], 1):
+            color = fabric.get("color", "classic")
+            pattern = fabric.get("pattern", "solid")
+            composition = fabric.get("composition", "fine wool")
 
-    async def generate_mood_board(
-        self,
-        style_keywords: list[str],
-        colors: list[str],
-        occasion: Optional[str] = None,
-        session_id: Optional[str] = None,
-    ) -> DALLEImageResponse:
+            fabric_desc = f"{color} {pattern} fabric in {composition}"
+            fabric_descriptions.append(fabric_desc)
+
+        fabrics_text = " and ".join(fabric_descriptions)
+
+        # Build final prompt
+        prompt = f"""Create an elegant mood board for a bespoke men's suit in a {scene}.
+
+FABRIC REFERENCE: Show suits made from {fabrics_text}.
+
+STYLE: {style}, sophisticated, high-quality menswear photography.
+
+COMPOSITION: Professional fashion editorial style, clean layout, luxurious atmosphere.
+
+SETTING: {occasion} - create the appropriate ambiance and backdrop.
+
+NOTE: Leave bottom-right corner clear (for fabric swatches overlay)."""
+
+        logger.info(f"[DALLETool] Generated prompt: {prompt[:200]}...")
+        return prompt
+
+    def _download_image(self, url: str) -> Image.Image:
         """
-        High-level Methode: Generiere Mood Board.
-
-        Verwendet von HENK1 nach Bedarfsermittlung für Stil-Inspiration.
+        Download image from URL.
 
         Args:
-            style_keywords: Stil-Schlagwörter (elegant, casual, etc.)
-            colors: Farbpalette
-            occasion: Anlass (Hochzeit, Business, etc.)
-            session_id: Session ID
+            url: Image URL
 
         Returns:
-            DALL-E Response mit Mood Board
+            PIL Image
         """
-        fabric_data = {"colors": colors}
-        design_prefs = {}
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        return Image.open(io.BytesIO(response.content))
 
-        custom_additions = ""
-        if occasion:
-            custom_additions = f"Anlass: {occasion}"
+    def _create_composite_with_fabric_thumbnails(
+        self,
+        mood_board: Image.Image,
+        fabrics: List[Dict[str, Any]],
+    ) -> Image.Image:
+        """
+        Create composite image: mood board + fabric thumbnails.
 
-        prompt = self.build_prompt(
-            prompt_type="mood_board",
-            fabric_data=fabric_data,
-            design_preferences=design_prefs,
-            style_keywords=style_keywords,
-            custom_additions=custom_additions,
-        )
+        Args:
+            mood_board: DALL-E generated mood board
+            fabrics: Fabric data with image URLs (max 2)
 
-        request = DALLEImageRequest(
-            prompt=prompt,
-            style="vivid",  # Kreativ für Mood Boards
-            size="1024x1024",
-            quality="standard",
-        )
+        Returns:
+            Composite PIL Image
+        """
+        # Mood board dimensions
+        mb_width, mb_height = mood_board.size
 
-        return await self.generate_image(request, session_id=session_id)
+        # Thumbnail size (10% of mood board height)
+        thumb_height = int(mb_height * 0.10)
+        thumb_width = thumb_height  # Square thumbnails
+
+        # Download and resize fabric images
+        fabric_thumbnails = []
+        for fabric in fabrics[:2]:
+            image_urls = fabric.get("image_urls", [])
+            if not image_urls or not image_urls[0]:
+                continue
+
+            try:
+                fabric_img = self._download_image(image_urls[0])
+                # Resize to thumbnail
+                fabric_img.thumbnail((thumb_width, thumb_height), Image.Resampling.LANCZOS)
+                fabric_thumbnails.append({
+                    "image": fabric_img,
+                    "fabric_code": fabric.get("fabric_code", ""),
+                    "name": fabric.get("name", ""),
+                })
+            except Exception as e:
+                logger.warning(f"[DALLETool] Failed to download fabric image: {e}")
+                continue
+
+        if not fabric_thumbnails:
+            logger.info("[DALLETool] No fabric thumbnails available, returning original mood board")
+            return mood_board
+
+        # Create composite (paste thumbnails on mood board)
+        composite = mood_board.copy()
+        draw = ImageDraw.Draw(composite)
+
+        # Position thumbnails at bottom-right corner
+        padding = 20
+        x_offset = mb_width - thumb_width - padding
+        y_offset = mb_height - (thumb_height * len(fabric_thumbnails)) - (padding * len(fabric_thumbnails))
+
+        for i, thumb_data in enumerate(fabric_thumbnails):
+            thumb_img = thumb_data["image"]
+            fabric_code = thumb_data["fabric_code"]
+
+            # Calculate position
+            x = x_offset
+            y = y_offset + (i * (thumb_height + padding))
+
+            # Draw white background box
+            box_padding = 5
+            draw.rectangle(
+                [
+                    x - box_padding,
+                    y - box_padding,
+                    x + thumb_width + box_padding,
+                    y + thumb_height + box_padding + 20,  # Extra space for text
+                ],
+                fill="white",
+                outline="black",
+                width=2,
+            )
+
+            # Paste thumbnail
+            composite.paste(thumb_img, (x, y))
+
+            # Add fabric code text
+            try:
+                # Try to load a font, fallback to default
+                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
+            except:
+                font = ImageFont.load_default()
+
+            text_y = y + thumb_height + 2
+            draw.text((x, text_y), f"Ref: {fabric_code}", fill="black", font=font)
+
+        logger.info(f"[DALLETool] Added {len(fabric_thumbnails)} fabric thumbnails to mood board")
+        return composite
 
 
 # Singleton instance
-_dalle_tool_instance: Optional[DALLETool] = None
+_dalle_tool: Optional[DALLETool] = None
 
 
 def get_dalle_tool() -> DALLETool:
-    """Get or create DALLETool singleton instance."""
-    global _dalle_tool_instance
-    if _dalle_tool_instance is None:
-        _dalle_tool_instance = DALLETool()
-    return _dalle_tool_instance
+    """
+    Get or create singleton DALLE tool instance.
+
+    Returns:
+        DALLETool instance
+    """
+    global _dalle_tool
+    if _dalle_tool is None:
+        _dalle_tool = DALLETool()
+        logger.info("[DALLETool] Singleton instance created")
+    return _dalle_tool
