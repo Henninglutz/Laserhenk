@@ -481,6 +481,7 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
     logger.info(
         f"[ToolsDispatcher] Executing tool='{next_agent}' with params={action_params}"
     )
+    logger.info(f"[ToolsDispatcher] current_agent='{current_agent}' (will return here after tool execution)")
 
     messages = list(state.get("messages", []))
 
