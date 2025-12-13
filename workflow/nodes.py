@@ -658,6 +658,32 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> tu
     colors = params.get("colors", [])
     patterns = params.get("patterns", [])
 
+    # IMPORTANT: Extract colors from query if not explicitly provided
+    if not colors and query:
+        query_lower = query.lower()
+        # Map German color names to English (for database)
+        color_map = {
+            "blau": "blue",
+            "marine": "navy",
+            "navy": "navy",
+            "hellblau": "light blue",
+            "dunkelblau": "dark blue",
+            "grau": "grey",
+            "schwarz": "black",
+            "braun": "brown",
+            "beige": "beige",
+            "grün": "green",
+        }
+
+        extracted_colors = []
+        for german, english in color_map.items():
+            if german in query_lower:
+                extracted_colors.append(english)
+
+        if extracted_colors:
+            colors = extracted_colors
+            logger.info(f"[RAGTool] Extracted colors from query: {colors}")
+
     # If no specific criteria, create basic search
     criteria = FabricSearchCriteria(
         colors=colors if colors else [],
