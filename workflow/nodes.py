@@ -516,8 +516,10 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
                 })
                 state["session_state"] = session_state
 
-        elif next_agent == "dalle_outfit":
-            result, image_url = await _execute_dalle_outfit(action_params, state)
+        elif next_agent == "generate_outfit" or next_agent == "dalle_outfit":
+            # Generate photorealistic outfit visualization with selected fabric
+            await _capture_lead_if_needed(state, trigger="outfit_visualization")
+            result, image_url = await _execute_outfit_visualization(action_params, state)
             messages.append({
                 "role": "assistant",
                 "content": result,
@@ -758,8 +760,11 @@ Wie möchtest du weitermachen? 🎩"""
         }
         state["session_state"] = session_state
 
+        # Show only 2-3 fabrics for initial selection
+        initial_limit = min(3, len(recommendations))
+
         formatted = "**Passende Stoffe für deinen Anzug:**\n\n"
-        for i, rec in enumerate(recommendations[:10], 1):
+        for i, rec in enumerate(recommendations[:initial_limit], 1):
             fabric = rec.fabric
             formatted += f"**{i}. {fabric.name or 'Hochwertiger Stoff'}**\n"
             formatted += f"   🏷️ Code: {fabric.fabric_code}\n"
@@ -774,10 +779,10 @@ Wie möchtest du weitermachen? 🎩"""
 
             formatted += "\n"
 
-        if len(recommendations) > 10:
-            formatted += f"_...und {len(recommendations) - 10} weitere Stoffe verfügbar_\n\n"
+        if len(recommendations) > initial_limit:
+            formatted += f"_({len(recommendations) - initial_limit} weitere Optionen verfügbar auf Wunsch)_\n\n"
 
-        formatted += "**Moment, ich zeige dir die Top 2 Stoffe visuell! 🎨**"
+        formatted += "**Moment, ich zeige dir die Stoffe visuell! 🎨**"
 
         return formatted
 
@@ -913,15 +918,25 @@ Macht nichts – lass uns über die Stoffe sprechen! 🎩"""
         return message, None
 
 
-async def _execute_dalle_outfit(
+async def _execute_outfit_visualization(
     params: Dict[str, Any], state: HenkGraphState
 ) -> tuple[str, Optional[str]]:
     """
-    DALL-E Outfit Visualization Tool: Generiert fotorealistische Outfit-Darstellung.
+    DALL-E Outfit Visualization: Generates photorealistic suit visualization with selected fabric.
+
+    **NEW WORKFLOW:**
+    - User selects ONE fabric from 2-3 options
+    - DALL-E generates photorealistic suit/outfit wearing this fabric
+    - Background shows the occasion context (wedding, business, etc.)
+    - Foreground shows detailed suit with fabric texture
+    - Small fabric swatch reference in corner
 
     Args:
-        params: Generation-Parameter (fabric_data, design_preferences, style_keywords, session_id)
-        state: Graph State für Context
+        params: Generation parameters
+            - fabric_data: Selected fabric dict (name, color, pattern, composition, image_url)
+            - occasion: Occasion type (wedding, business, gala, etc.)
+            - style_keywords: Style descriptors
+            - session_id: Session ID for caching
 
     Returns:
         Tuple of (formatted_message, image_url)
@@ -929,53 +944,173 @@ async def _execute_dalle_outfit(
     from tools.dalle_tool import get_dalle_tool
 
     fabric_data = params.get("fabric_data", {})
-    design_preferences = params.get("design_preferences", {})
+    occasion = params.get("occasion", "elegant occasion")
     style_keywords = params.get("style_keywords", [])
     session_id = params.get("session_id")
 
+    if not fabric_data:
+        logger.warning("[OutfitVisualization] No fabric data provided")
+        return "Ich brauche erst eine Stoffauswahl, um das Outfit zu visualisieren.", None
+
+    fabric_name = fabric_data.get("name", "Hochwertiger Stoff")
+    fabric_code = fabric_data.get("fabric_code", "")
+    fabric_color = fabric_data.get("color", "classic")
+    fabric_pattern = fabric_data.get("pattern", "solid")
+    fabric_composition = fabric_data.get("composition", "fine wool")
+
     logger.info(
-        f"[DALLE_Outfit] Generating outfit visualization: "
-        f"fabrics={list(fabric_data.keys())}, design={list(design_preferences.keys())}"
+        f"[OutfitVisualization] Generating outfit with fabric: {fabric_name} ({fabric_code}), "
+        f"occasion: {occasion}"
     )
 
     try:
         dalle = get_dalle_tool()
-        response = await dalle.generate_outfit_visualization(
-            fabric_data=fabric_data,
-            design_preferences=design_preferences,
+
+        # Build photorealistic outfit prompt
+        prompt = _build_outfit_prompt(
+            fabric_color=fabric_color,
+            fabric_pattern=fabric_pattern,
+            fabric_composition=fabric_composition,
+            occasion=occasion,
             style_keywords=style_keywords,
-            session_id=session_id,
+        )
+
+        # Generate outfit image
+        from models.tools import DALLEImageRequest
+        response = await dalle.generate_image(
+            DALLEImageRequest(
+                prompt=prompt,
+                size="1024x1024",
+                quality="hd",  # Use HD quality for photorealistic output
+            )
         )
 
         if response.success and response.image_url:
-            logger.info(f"[DALLE_Outfit] Success: {response.image_url}")
+            logger.info(f"[OutfitVisualization] Success: {response.image_url}")
 
-            message = f"""✨ **Dein Outfit-Entwurf ist fertig!**
+            message = f"""✨ **Dein Anzug-Entwurf ist fertig!**
 
-So könnte dein maßgeschneiderter Anzug aussehen – basierend auf:
-- Deiner Stoffauswahl
-- Den Design-Details (Revers, Schulter, etc.)
-- Deinem persönlichen Stil
+So würde dein maßgeschneiderter Anzug mit **{fabric_name}** aussehen:
+
+📦 **Stoff-Details:**
+   • Farbe: {fabric_color}
+   • Muster: {fabric_pattern}
+   • Material: {fabric_composition}
+   • Ref: {fabric_code}
+
+🎯 **Anlass:** {occasion}
 
 **Gefällt dir die Richtung?**
 
-Wir können jederzeit Anpassungen vornehmen! 🎩"""
+Wir können Details anpassen oder einen anderen Stoff wählen! 🎩"""
 
             return message, response.image_url
 
         else:
-            logger.error(f"[DALLE_Outfit] Failed: {response.error}")
-            message = """Entschuldigung, beim Erstellen des Outfit-Entwurfs gab es ein Problem.
+            logger.error(f"[OutfitVisualization] Failed: {response.error}")
+            message = f"""Entschuldigung, beim Erstellen der Visualisierung gab es ein Problem.
 
-Macht nichts – lass uns die Details besprechen und ich beschreibe dir dein Traumoutfit! 🎩"""
+Aber lass uns trotzdem weitermachen – ich kann dir beschreiben, wie **{fabric_name}** in deinem Anzug aussehen würde! 🎩"""
             return message, None
 
     except Exception as e:
-        logger.error(f"[DALLE_Outfit] Exception: {e}", exc_info=True)
-        message = """Entschuldigung, der Outfit-Entwurf konnte gerade nicht generiert werden.
+        logger.error(f"[OutfitVisualization] Exception: {e}", exc_info=True)
+        message = f"""Entschuldigung, die Visualisierung konnte gerade nicht erstellt werden.
 
-Kein Problem – wir machen trotzdem weiter! Was möchtest du noch anpassen? 🎩"""
+Kein Problem – wir machen trotzdem weiter mit **{fabric_name}**! 🎩"""
         return message, None
+
+
+def _build_outfit_prompt(
+    fabric_color: str,
+    fabric_pattern: str,
+    fabric_composition: str,
+    occasion: str,
+    style_keywords: list[str],
+) -> str:
+    """
+    Build photorealistic outfit prompt for DALL-E.
+
+    Creates detailed prompt for generating realistic suit visualization
+    with fabric texture and occasion-appropriate background.
+
+    Args:
+        fabric_color: Fabric color (e.g., "Navy", "Grey", "Blue")
+        fabric_pattern: Fabric pattern (e.g., "Solid", "Pinstripe", "Herringbone")
+        fabric_composition: Fabric material (e.g., "100% Wool", "Wool/Silk blend")
+        occasion: Occasion type (e.g., "Hochzeit", "Business", "Gala")
+        style_keywords: Style descriptors (e.g., ["modern", "elegant"])
+
+    Returns:
+        Detailed DALL-E prompt for photorealistic outfit generation
+    """
+    # Map occasion to background setting
+    occasion_backgrounds = {
+        "Hochzeit": "elegant wedding venue with soft natural lighting, romantic garden or modern reception hall",
+        "wedding": "elegant wedding venue with soft natural lighting, romantic garden or modern reception hall",
+        "Business": "modern executive office with floor-to-ceiling windows, professional corporate environment",
+        "business": "modern executive office with floor-to-ceiling windows, professional corporate environment",
+        "Gala": "luxury ballroom with chandeliers and marble floors, sophisticated evening event atmosphere",
+        "gala": "luxury ballroom with chandeliers and marble floors, sophisticated evening event atmosphere",
+        "Formal": "upscale formal venue with elegant architecture and refined ambiance",
+        "formal": "upscale formal venue with elegant architecture and refined ambiance",
+        "Casual": "contemporary urban setting with natural daylight, modern lifestyle environment",
+        "casual": "contemporary urban setting with natural daylight, modern lifestyle environment",
+    }
+
+    background = occasion_backgrounds.get(occasion, "elegant professional setting with refined atmosphere")
+    style_desc = ", ".join(style_keywords) if style_keywords else "timeless elegant"
+
+    # Build fabric description
+    pattern_desc = ""
+    if fabric_pattern.lower() != "solid" and fabric_pattern.lower() != "plain":
+        pattern_desc = f" with {fabric_pattern.lower()} pattern"
+
+    fabric_desc = f"{fabric_color.lower()} {fabric_composition.lower()}{pattern_desc}"
+
+    # Create detailed prompt
+    prompt = f"""Create a photorealistic, professional menswear photography image showing a complete men's suit.
+
+SUIT DETAILS:
+- Fabric: {fabric_desc}
+- Style: {style_desc}, bespoke tailoring, impeccable fit
+- Cut: Modern tailored fit with structured shoulders
+- Composition: Two-piece suit (jacket and trousers)
+
+PRESENTATION:
+- Show full suit on professional mannequin or hanger in premium boutique setting
+- Focus on fabric texture and pattern details
+- Show natural fabric drape and construction quality
+- Professional lighting to highlight material quality
+
+BACKGROUND:
+- Setting: {background}
+- Ambiance: Sophisticated, high-end, {occasion.lower()} appropriate
+- Lighting: Natural, soft, professional photography lighting
+
+STYLE:
+- Professional fashion editorial photography
+- Clean, elegant composition
+- Focus on suit craftsmanship and fabric quality
+- {style_desc} aesthetic
+
+NOTE: Leave small bottom-right corner clear for fabric swatch reference overlay."""
+
+    logger.info(f"[OutfitPrompt] Generated: {prompt[:150]}...")
+    return prompt
+
+
+async def _execute_dalle_outfit(
+    params: Dict[str, Any], state: HenkGraphState
+) -> tuple[str, Optional[str]]:
+    """
+    DEPRECATED: Use _execute_outfit_visualization() instead.
+
+    Legacy DALL-E Outfit Visualization Tool.
+    Kept for backward compatibility with Design Henk.
+    """
+    logger.warning("[DALLE_Outfit] Using deprecated _execute_dalle_outfit, routing to _execute_outfit_visualization")
+    return await _execute_outfit_visualization(params, state)
 
 
 async def _execute_show_fabric_images(
@@ -1012,12 +1147,12 @@ async def _execute_show_fabric_images(
 Lass mich nochmal die Datenbank abfragen! Welche Farben interessieren dich? 🎩"""
             return message, None
 
-        # Get limit from params (default 5)
-        limit = params.get("limit", 5)
+        # Get limit from params (default 3 for initial selection)
+        limit = params.get("limit", 3)
 
-        # Get top N fabrics with images
+        # Get top N fabrics with images (2-3 for initial selection)
         fabrics_with_images = []
-        for fabric in fabrics[:10]:  # Check first 10 fabrics
+        for fabric in fabrics[:limit * 2]:  # Check double limit to find images
             image_urls = fabric.get("image_urls", [])
             local_paths = fabric.get("local_image_paths", [])
 
@@ -1057,7 +1192,7 @@ Aber ich kann dir die technischen Details zeigen – welcher Stoff interessiert 
         # Build message with fabric details
         occasion = params.get("occasion", "deinen Anlass")
 
-        message = f"""🎨 **Hier sind deine Top {len(fabrics_with_images)} Stoff-Empfehlungen!**
+        message = f"""🎨 **Hier sind {len(fabrics_with_images)} Stoff-Empfehlungen für {occasion}:**
 
 """
 
@@ -1069,9 +1204,11 @@ Aber ich kann dir die technischen Details zeigen – welcher Stoff interessiert 
 
 """
 
-        message += f"""Die Stoffe werden perfekt zu {occasion} passen!
+        message += f"""**Welcher Stoff gefällt dir am besten?**
 
-**Was denkst du?** Welcher gefällt dir besser? 🎩"""
+Sag mir einfach die Nummer (z.B. "Nummer 1"), dann zeige ich dir wie dein Anzug damit aussehen würde! 🎩
+
+_(Du kannst auch nach mehr Optionen fragen)_"""
 
         logger.info(f"[ShowFabricImages] Returning {len(fabrics_with_images)} fabric images")
         return message, fabrics_with_images

@@ -122,7 +122,7 @@ class Henk1Agent(BaseAgent):
                 # Extract occasion from conversation if available
                 occasion = self._extract_style_info(state).get("occasion", "deinen Anlass")
 
-                # Mark mood board as shown (we're showing fabric images instead)
+                # Mark mood board as shown (we're showing fabric images)
                 state.henk1_mood_board_shown = True
 
                 return AgentDecision(
@@ -131,25 +131,64 @@ class Henk1Agent(BaseAgent):
                     action="show_fabric_images",
                     action_params={
                         "occasion": occasion,
-                        "limit": 5,  # Show top 5 fabric images
+                        "limit": 3,  # Show 2-3 fabric images for initial selection
                     },
-                    should_continue=True,
+                    should_continue=False,  # Wait for user to select fabric
                 )
             else:
                 logger.warning("[HENK1] No fabrics in rag_context, skipping image display")
 
-        # If RAG has been queried and fabric images shown, mark complete
+        # If RAG queried and fabric images shown, wait for user to select fabric
         if state.henk1_rag_queried and state.henk1_mood_board_shown:
-            logger.info("[HENK1] RAG queried and fabric images shown, marking complete")
+            logger.info("[HENK1] Fabric images shown, waiting for user fabric selection")
+
+            # Check if user selected a fabric
+            user_input = ""
+            for msg in reversed(state.conversation_history):
+                if isinstance(msg, dict) and msg.get("role") == "user":
+                    user_input = msg.get("content", "")
+                    break
+
+            # Check for fabric selection (e.g., "Nummer 1", "der erste", "Stoff 2")
+            fabric_selected, fabric_index = self._detect_fabric_selection(user_input)
+
+            if fabric_selected:
+                logger.info(f"[HENK1] User selected fabric {fabric_index}")
+
+                # Get selected fabric from rag_context
+                rag_context = getattr(state, "rag_context", {})
+                fabrics = rag_context.get("fabrics", [])
+
+                if fabric_index < len(fabrics):
+                    selected_fabric = fabrics[fabric_index]
+
+                    # Extract style info for outfit generation
+                    style_info = self._extract_style_info(state)
+
+                    # Trigger outfit visualization with selected fabric
+                    return AgentDecision(
+                        next_agent="operator",
+                        message="Perfekt! Lass mich dir zeigen, wie dein Anzug damit aussehen würde...",
+                        action="generate_outfit",
+                        action_params={
+                            "fabric_data": selected_fabric,
+                            "occasion": style_info.get("occasion", "elegant occasion"),
+                            "style_keywords": style_info.get("style_keywords", []),
+                            "session_id": state.session_id,
+                        },
+                        should_continue=True,
+                    )
+
             # Mark customer as identified (for Operator routing)
             if not state.customer.customer_id:
                 state.customer.customer_id = f"TEMP_{state.session_id[:8]}"
 
+            # Wait for user to select fabric or ask another question
             return AgentDecision(
                 next_agent="operator",
-                message=None,  # Fabric images already shown
+                message=None,  # No automatic message, wait for user
                 action=None,
-                should_continue=True,
+                should_continue=False,  # Wait for user input
             )
 
         # NOTE: Old mood board generation (BEFORE RAG) has been removed
@@ -432,3 +471,60 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
 
         logger.info(f"[HENK1] Extracted style info: {style_info}")
         return style_info
+
+    def _detect_fabric_selection(self, user_input: str) -> tuple[bool, int]:
+        """
+        Detect if user selected a fabric and return (selected, fabric_index).
+
+        Args:
+            user_input: User's message
+
+        Returns:
+            Tuple of (fabric_selected: bool, fabric_index: int)
+            fabric_index is 0-based
+
+        Examples:
+            "Nummer 1" → (True, 0)
+            "der erste Stoff" → (True, 0)
+            "Stoff 2" → (True, 1)
+            "den zweiten bitte" → (True, 1)
+            "noch mehr Optionen" → (False, -1)
+        """
+        user_input_lower = user_input.lower()
+
+        # Direct number detection
+        number_keywords = {
+            "1": 0,
+            "2": 1,
+            "3": 2,
+            "erste": 0,
+            "erster": 0,
+            "ersten": 0,
+            "zweite": 1,
+            "zweiter": 1,
+            "zweiten": 1,
+            "dritte": 2,
+            "dritter": 2,
+            "dritten": 2,
+        }
+
+        for keyword, index in number_keywords.items():
+            if keyword in user_input_lower:
+                return True, index
+
+        # Check for "nummer X" pattern
+        import re
+        number_match = re.search(r'nummer\s*(\d+)', user_input_lower)
+        if number_match:
+            fabric_num = int(number_match.group(1))
+            if 1 <= fabric_num <= 3:
+                return True, fabric_num - 1
+
+        # Check for "stoff X" pattern
+        stoff_match = re.search(r'stoff\s*(\d+)', user_input_lower)
+        if stoff_match:
+            fabric_num = int(stoff_match.group(1))
+            if 1 <= fabric_num <= 3:
+                return True, fabric_num - 1
+
+        return False, -1
