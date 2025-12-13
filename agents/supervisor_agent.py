@@ -292,9 +292,29 @@ IMPORTANT: Always return a valid SupervisorDecision object with all required fie
 
             # Validate we got a SupervisorDecision
             if not isinstance(decision, SupervisorDecision):
-                logger.error(f"[SupervisorAgent] Decision is {type(decision).__name__}, not SupervisorDecision!")
-                logger.error(f"[SupervisorAgent] Decision value: {decision}")
-                raise TypeError(f"Expected SupervisorDecision, got {type(decision).__name__}")
+                logger.warning(f"[SupervisorAgent] Decision is {type(decision).__name__}, not SupervisorDecision!")
+                logger.warning(f"[SupervisorAgent] Decision value: {decision}")
+
+                # Try to parse if it's a string (JSON)
+                if isinstance(decision, str):
+                    try:
+                        import json
+                        decision_dict = json.loads(decision)
+                        decision = SupervisorDecision(**decision_dict)
+                        logger.info("[SupervisorAgent] Successfully parsed JSON string to SupervisorDecision")
+                    except Exception as parse_error:
+                        logger.error(f"[SupervisorAgent] Failed to parse JSON string: {parse_error}")
+                        raise TypeError(f"Expected SupervisorDecision, got string that failed to parse: {parse_error}")
+                # Try to parse if it's a dict
+                elif isinstance(decision, dict):
+                    try:
+                        decision = SupervisorDecision(**decision)
+                        logger.info("[SupervisorAgent] Successfully converted dict to SupervisorDecision")
+                    except Exception as parse_error:
+                        logger.error(f"[SupervisorAgent] Failed to convert dict: {parse_error}")
+                        raise TypeError(f"Expected SupervisorDecision, got dict that failed to convert: {parse_error}")
+                else:
+                    raise TypeError(f"Expected SupervisorDecision, got {type(decision).__name__}")
 
             logger.info(
                 f"[SupervisorAgent] Decision: {decision.next_destination} "
