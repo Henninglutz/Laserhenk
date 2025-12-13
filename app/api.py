@@ -118,6 +118,8 @@ def chat():
         reply = 'Danke, ich habe alles notiert.'
         image_url = None
         fabric_images = None
+
+        # Get ONLY the LATEST assistant message (to avoid duplicates)
         for msg in reversed(final_state.get('messages', [])):
             if msg.get('role') == 'assistant':
                 reply = msg.get('content', reply)
@@ -125,10 +127,10 @@ def chat():
                 metadata = msg.get('metadata', {})
                 if 'fabric_images' in metadata:
                     fabric_images = metadata['fabric_images']
-                    break
-                elif 'image_url' in metadata:
+                if 'image_url' in metadata:
                     image_url = metadata['image_url']
-                    break
+                # IMPORTANT: Break after first assistant message to avoid duplicates
+                break
 
         # Current stage
         stage = final_state.get('current_agent') or final_state.get('next_agent') or 'henk1'

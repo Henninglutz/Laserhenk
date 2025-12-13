@@ -148,6 +148,39 @@ class SupervisorAgent:
                         "Falling back to rule-based routing"
                     )
 
+        # Add system prompt to agent (if successfully initialized)
+        if self.pydantic_agent is not None:
+            @self.pydantic_agent.system_prompt
+            async def get_system_prompt(ctx) -> str:
+                """System prompt that instructs the agent to return SupervisorDecision."""
+                deps = ctx.deps or {}
+                system_prompt = deps.get("system_prompt", "")
+                return system_prompt if system_prompt else self._get_default_system_prompt()
+
+    def _get_default_system_prompt(self) -> str:
+        """Get default system prompt for supervisor."""
+        return """You are a routing supervisor for a bespoke suit consultation system.
+
+Your task is to analyze the user's message and decide which agent or tool should handle it next.
+
+Return a SupervisorDecision object with:
+- next_destination: The agent/tool to route to
+- reasoning: Brief explanation (1-2 sentences)
+- action_params: Optional parameters for the destination
+- confidence: 0.0-1.0 (how confident you are)
+
+Available destinations:
+- henk1: Initial consultation (occasion, budget, timing)
+- design_henk: Design preferences (cut, style, colors)
+- laserhenk: Measurements
+- rag_tool: Fabric/image search
+- comparison_tool: Compare options
+- pricing_tool: Price calculation
+- clarification: User intent unclear
+- end: End conversation
+
+IMPORTANT: Always return a valid SupervisorDecision object with all required fields."""
+
     async def decide_next_step(
         self,
         user_message: str,
