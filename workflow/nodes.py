@@ -12,7 +12,7 @@ Nodes:
 """
 
 import os
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import logging
 
 from agents.operator import OperatorAgent
