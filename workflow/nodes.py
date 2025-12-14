@@ -23,6 +23,7 @@ from agents.design_henk import DesignHenkAgent
 from agents.laserhenk import LaserHenkAgent
 from models.customer import Measurements, SessionState
 from workflow.graph_state import HenkGraphState
+from tools.fabric_preferences import build_fabric_search_criteria
 
 logger = logging.getLogger(__name__)
 
@@ -653,105 +654,25 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> tu
         fabric_images_list = [{"url": str, "fabric_code": str, "name": str}, ...] or None
     """
     from tools.rag_tool import RAGTool
-    from models.fabric import FabricSearchCriteria
 
     query = params.get("query", "")
     logger.info(f"[RAGTool] Executing fabric search with params={params}")
 
-    # Extract session state
-    session_state = state.get("session_state")
-    if isinstance(session_state, dict):
-        session_state = SessionState(**session_state)
-
-    # Build search criteria from parameters
-    # Extract colors, patterns from query if provided, or use defaults
-    colors = params.get("colors", [])
-    patterns = params.get("patterns", [])
-
-    # IMPORTANT: Extract colors from query if not explicitly provided
-    if not colors and query:
-        query_lower = query.lower()
-        # Map German color names to English (for database)
-        # IMPORTANT: Order matters! Check longer strings first (dunkelblau before blau)
-        color_map = {
-            "dunkelblau": "dark blue",
-            "hellblau": "light blue",
-            "blau": "blue",
-            "marine": "navy",
-            "navy": "navy",
-            "dunkelgrau": "dark grey",
-            "hellgrau": "light grey",
-            "grau": "grey",
-            "schwarz": "black",
-            "dunkelbraun": "dark brown",
-            "hellbraun": "light brown",
-            "braun": "brown",
-            "beige": "beige",
-            "dunkelgrün": "dark green",
-            "hellgrün": "light green",
-            "grün": "green",
-            "olive": "olive",
-        }
-
-        # Check if user is EXCLUDING certain colors (not grau, nicht beige, etc.)
-        excluded_colors = []
-        for german, english in color_map.items():
-            if f"nicht {german}" in query_lower or f"kein {german}" in query_lower or f"nicht {english}" in query_lower:
-                excluded_colors.append(english)
-                logger.info(f"[RAGTool] User excluded color: {english}")
-
-        extracted_colors = []
-        matched_positions = []  # Track which positions were already matched
-
-        for german, english in color_map.items():
-            # Only extract if NOT in negation context (nicht/kein)
-            if german in query_lower:
-                # Check context - is it negated?
-                if not (f"nicht {german}" in query_lower or f"kein {german}" in query_lower):
-                    # Find position of match
-                    pos = query_lower.find(german)
-
-                    # Check if this position overlaps with an already matched position
-                    overlaps = False
-                    for matched_start, matched_end in matched_positions:
-                        if not (pos + len(german) <= matched_start or pos >= matched_end):
-                            overlaps = True
-                            break
-
-                    if not overlaps:
-                        extracted_colors.append(english)
-                        matched_positions.append((pos, pos + len(german)))
-                        logger.info(f"[RAGTool] Matched color '{german}' → '{english}' at position {pos}")
-
-        if extracted_colors:
-            colors = extracted_colors
-            logger.info(f"[RAGTool] Extracted colors from query: {colors}")
-
-        # If user excluded colors but didn't specify new ones, clear stored colors
-        if excluded_colors and not extracted_colors:
-            logger.warning(f"[RAGTool] User excluded colors but didn't specify alternatives: {excluded_colors}")
-
-    # CHECK SESSION STATE for previously set color preferences
-    # If no colors found in current query, use stored preferences
-    if not colors and session_state and session_state.design_preferences:
-        stored_colors = session_state.design_preferences.preferred_colors
-        if stored_colors:
-            colors = stored_colors
-            logger.info(f"[RAGTool] Using stored color preferences from session: {colors}")
-
-    # STORE colors in session state for future queries (maintain context!)
-    if colors and session_state:
-        if not session_state.design_preferences.preferred_colors:
-            session_state.design_preferences.preferred_colors = colors
-            state["session_state"] = session_state
-            logger.info(f"[RAGTool] Stored color preferences in session: {colors}")
-
-    # If no specific criteria, create basic search
-    criteria = FabricSearchCriteria(
-        colors=colors if colors else [],
-        patterns=patterns if patterns else [],
-        limit=10,
+    criteria, session_state, excluded_colors, filters = build_fabric_search_criteria(
+        query, params, state.get("session_state")
     )
+    if session_state is not None:
+        state["session_state"] = session_state
+
+    if excluded_colors and not criteria.colors:
+        logger.warning(
+            f"[RAGTool] User excluded colors but did not specify alternatives: {excluded_colors}"
+        )
+
+    colors = criteria.colors
+    patterns = criteria.patterns
+    weight_max = criteria.weight_max
+    preferred_materials = criteria.preferred_materials
 
     rag = RAGTool()
     try:
@@ -770,7 +691,8 @@ Das kann daran liegen, dass die Datenbank noch nicht vollständig gefüllt ist.
 Wie möchtest du weitermachen? 🎩""", None)
 
         # Store RAG results in session state for later use (e.g., fabric image display)
-        session_state = state.get("session_state")
+        if session_state is None:
+            session_state = state.get("session_state")
         if isinstance(session_state, dict):
             session_state = SessionState(**session_state)
 
@@ -797,6 +719,16 @@ Wie möchtest du weitermachen? 🎩""", None)
         state["session_state"] = session_state
 
         formatted = "**Passende Stoffe für deinen Anzug:**\n\n"
+        if filters:
+            formatted += f"_Filter: {', '.join(filters)}._\n\n"
+        if weight_max:
+            formatted += (
+                f"_Gefiltert auf leichte Stoffe (≤ {weight_max}g/m² oder ungewichtet)._\n\n"
+            )
+        if preferred_materials:
+            formatted += (
+                f"_Material-Fokus: {', '.join(preferred_materials)}._\n\n"
+            )
         for i, rec in enumerate(recommendations[:5], 1):
             fabric = rec.fabric
             formatted += f"**{i}. {fabric.name or 'Hochwertiger Stoff'}**\n"

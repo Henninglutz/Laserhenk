@@ -132,6 +132,17 @@ class FabricSearchCriteria(BaseModel):
     budget_min: Optional[float] = Field(None, description="Min budget EUR")
     budget_max: Optional[float] = Field(None, description="Max budget EUR")
 
+    # Feel/weight preferences
+    weight_max: Optional[int] = Field(
+        None,
+        description="Maximalgewicht in g/m² (z. B. <260 für leichte Sommerstoffe)",
+        gt=0,
+    )
+    preferred_materials: Optional[list[str]] = Field(
+        None,
+        description="Bevorzugte Materialien (z. B. Leinen, Baumwolle)",
+    )
+
     # Stock requirement
     in_stock_only: bool = Field(default=True, description="Only show in-stock fabrics")
 

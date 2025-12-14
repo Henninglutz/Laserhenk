@@ -152,6 +152,14 @@ class RAGTool:
             if criteria.patterns:
                 query_parts.append(f"Muster: {', '.join(criteria.patterns)}")
 
+            if criteria.preferred_materials:
+                query_parts.append(
+                    f"Materialien: {', '.join(criteria.preferred_materials)}"
+                )
+
+            if criteria.weight_max:
+                query_parts.append(f"Gewicht <= {criteria.weight_max}g/m²")
+
             if criteria.season:
                 query_parts.append(f"Saison: {criteria.season}")
 
@@ -185,6 +193,22 @@ class RAGTool:
                 where_clauses.append(
                     "f.stock_status IN ('in_stock', 'low_stock', 'on_order')"
                 )
+
+            # Weight preference (e.g., leichte Stoffe < 260g)
+            if criteria.weight_max:
+                param_count += 1
+                where_clauses.append(f"f.weight IS NULL OR f.weight <= ${param_count}")
+                params.append(criteria.weight_max)
+
+            # Material hints (linen/cotton) to boost lightweight feel
+            if criteria.preferred_materials:
+                material_clauses = []
+                for material in criteria.preferred_materials:
+                    param_count += 1
+                    material_clauses.append(f"f.composition ILIKE ${param_count}")
+                    params.append(f"%{material}%")
+                if material_clauses:
+                    where_clauses.append("(" + " OR ".join(material_clauses) + ")")
 
             # IMPORTANT: Exclude shirts - only return suit fabrics
             # Shirts have fabric_code starting with 'SH' or category containing 'shirt'
@@ -293,6 +317,16 @@ class RAGTool:
                         for p in criteria.patterns
                     ):
                         match_reasons.append(f"Muster passt: {result['pattern']}")
+
+                if criteria.weight_max and result["weight"]:
+                    try:
+                        weight_val = int(result["weight"])
+                        if weight_val <= criteria.weight_max:
+                            match_reasons.append(
+                                f"Leichtes Gewicht: {weight_val}g/m²"
+                            )
+                    except (TypeError, ValueError):
+                        pass
 
                 # Create recommendation
                 recommendation = FabricRecommendation(
