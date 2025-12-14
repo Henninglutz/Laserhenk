@@ -711,15 +711,15 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> tu
     # CHECK SESSION STATE for previously set color preferences
     # If no colors found in current query, use stored preferences
     if not colors and session_state and session_state.design_preferences:
-        stored_colors = session_state.design_preferences.suit_colors
+        stored_colors = session_state.design_preferences.preferred_colors
         if stored_colors:
             colors = stored_colors
             logger.info(f"[RAGTool] Using stored color preferences from session: {colors}")
 
     # STORE colors in session state for future queries (maintain context!)
     if colors and session_state:
-        if not session_state.design_preferences.suit_colors:
-            session_state.design_preferences.suit_colors = colors
+        if not session_state.design_preferences.preferred_colors:
+            session_state.design_preferences.preferred_colors = colors
             state["session_state"] = session_state
             logger.info(f"[RAGTool] Stored color preferences in session: {colors}")
 
