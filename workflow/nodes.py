@@ -658,6 +658,11 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> tu
     query = params.get("query", "")
     logger.info(f"[RAGTool] Executing fabric search with params={params}")
 
+    # Extract session state
+    session_state = state.get("session_state")
+    if isinstance(session_state, dict):
+        session_state = SessionState(**session_state)
+
     # Build search criteria from parameters
     # Extract colors, patterns from query if provided, or use defaults
     colors = params.get("colors", [])
@@ -705,7 +710,7 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> tu
 
     # CHECK SESSION STATE for previously set color preferences
     # If no colors found in current query, use stored preferences
-    if not colors and session_state.design_preferences:
+    if not colors and session_state and session_state.design_preferences:
         stored_colors = session_state.design_preferences.suit_colors
         if stored_colors:
             colors = stored_colors
