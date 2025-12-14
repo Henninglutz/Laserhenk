@@ -197,7 +197,7 @@ class DesignHenkAgent(BaseAgent):
             fabric_data["season"] = payload.get("season")
 
         # From RAG context
-        elif state.rag_context and "fabrics" in state.rag_context:
+        elif state.rag_context and isinstance(state.rag_context, dict) and "fabrics" in state.rag_context:
             fabrics = state.rag_context["fabrics"]
             if fabrics and len(fabrics) > 0:
                 # Nehme ersten Stoff als Hauptstoff

@@ -115,7 +115,9 @@ class Henk1Agent(BaseAgent):
             logger.info("[HENK1] RAG queried, now showing fabric images")
 
             # Check if we have fabric data in rag_context
-            rag_context = getattr(state, "rag_context", {})
+            rag_context = getattr(state, "rag_context", None)
+            if rag_context is None:
+                rag_context = {}
             fabrics = rag_context.get("fabrics", [])
 
             if fabrics:

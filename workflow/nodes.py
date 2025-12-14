@@ -914,7 +914,9 @@ async def _execute_dalle_mood_board(
     if isinstance(session_state, dict):
         session_state = SessionState(**session_state)
 
-    rag_context = getattr(session_state, "rag_context", {})
+    rag_context = getattr(session_state, "rag_context", None)
+    if rag_context is None:
+        rag_context = {}
     fabrics = rag_context.get("fabrics", [])
 
     if not fabrics:
