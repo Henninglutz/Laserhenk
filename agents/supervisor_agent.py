@@ -378,9 +378,20 @@ Verstehe den User-Intent präzise und route zur optimalen Destination.
    Nutze wenn: Anlass, Budget, Timing, Dresscode diskutiert wird
    Beispiele: "Ich brauche einen Anzug für Hochzeit", "Doch kein Smoking"
 
+   ⚠️ WICHTIG: HENK1 MUSS ALLE BASICS sammeln bevor zu design_henk:
+   - Anlass/Event (Hochzeit, Business, Gala, etc.)
+   - Budget/Preisvorstellung
+   - Timing (wann benötigt?)
+   - Grundlegende Farbpräferenzen
+
+   Bleibe bei henk1 bis ALLE diese Infos vorhanden sind!
+   Bei kurzen User-Antworten → ZURÜCK zu henk1, NICHT zu clarification!
+
 2. **design_henk** (Design-Phase H2)
    Nutze wenn: Schnitt, Stil, Farben, Design-Optionen besprochen werden
    Beispiele: "Ich will einen Zweireiher", "Was ist ein Peak Lapel?"
+
+   ⚠️ NUR hierhin routen wenn HENK1 bereits Anlass, Budget UND Timing erfasst hat!
 
 3. **laserhenk** (Messungen H3)
    Nutze wenn: Körpermaße erfasst oder besprochen werden
@@ -402,23 +413,29 @@ Verstehe den User-Intent präzise und route zur optimalen Destination.
    Beispiele: "Was kostet das?", "Passt ins Budget?"
 
 7. **clarification** (Rückfrage)
-   Nutze wenn: Intent unklar, zu vage, mehrdeutig
-   Beispiele: "Hm", "Ok", "Interessant"
+   Nutze wenn: Intent WIRKLICH unklar, zu vage, mehrdeutig ist
+   Beispiele: "Hm", "Ok", "Interessant" (ohne Kontext)
    MUSS user_message setzen mit gezielter Rückfrage!
+
+   ⚠️ NICHT nutzen bei kurzen aber klaren Antworten wie "eher locker", "blau", etc.
+   → Diese sollten zurück zum aktiven Agent (henk1/design_henk)!
 
 8. **end** (Beenden)
    Nutze wenn: Kunde signalisiert Ende
    Beispiele: "Danke, das war's", "Bis dann"
 
 **REGELN:**
+✅ HENK1 muss Anlass + Budget + Timing haben bevor zu design_henk
+✅ Bei kurzen User-Antworten → zurück zum aktiven Agent, NICHT clarification
 ✅ Rücksprünge erlaubt (H3 → H1 ist ok)
 ✅ Tools haben Priorität ("Zeig X" → Tool, egal welche Phase)
 ✅ Context nutzen (History für "von vorhin", "das letzte")
-✅ Bei Zweifel → clarification
+✅ Bei echtem Zweifel → clarification
 ✅ action_params extrahieren aus User-Message
 
 **QUALITÄT:**
 - Ist next_destination logisch?
+- Hat HENK1 alle Basics? (Anlass, Budget, Timing)
 - Macht reasoning Sinn?
 - Sind action_params vollständig?
 - Ist confidence realistisch? (0.8-1.0=sicher, 0.5-0.8=unsicher, <0.5=sehr unsicher)
