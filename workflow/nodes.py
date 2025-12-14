@@ -672,17 +672,25 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> tu
     if not colors and query:
         query_lower = query.lower()
         # Map German color names to English (for database)
+        # IMPORTANT: Order matters! Check longer strings first (dunkelblau before blau)
         color_map = {
+            "dunkelblau": "dark blue",
+            "hellblau": "light blue",
             "blau": "blue",
             "marine": "navy",
             "navy": "navy",
-            "hellblau": "light blue",
-            "dunkelblau": "dark blue",
+            "dunkelgrau": "dark grey",
+            "hellgrau": "light grey",
             "grau": "grey",
             "schwarz": "black",
+            "dunkelbraun": "dark brown",
+            "hellbraun": "light brown",
             "braun": "brown",
             "beige": "beige",
+            "dunkelgrün": "dark green",
+            "hellgrün": "light green",
             "grün": "green",
+            "olive": "olive",
         }
 
         # Check if user is EXCLUDING certain colors (not grau, nicht beige, etc.)
@@ -693,12 +701,27 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> tu
                 logger.info(f"[RAGTool] User excluded color: {english}")
 
         extracted_colors = []
+        matched_positions = []  # Track which positions were already matched
+
         for german, english in color_map.items():
             # Only extract if NOT in negation context (nicht/kein)
             if german in query_lower:
                 # Check context - is it negated?
                 if not (f"nicht {german}" in query_lower or f"kein {german}" in query_lower):
-                    extracted_colors.append(english)
+                    # Find position of match
+                    pos = query_lower.find(german)
+
+                    # Check if this position overlaps with an already matched position
+                    overlaps = False
+                    for matched_start, matched_end in matched_positions:
+                        if not (pos + len(german) <= matched_start or pos >= matched_end):
+                            overlaps = True
+                            break
+
+                    if not overlaps:
+                        extracted_colors.append(english)
+                        matched_positions.append((pos, pos + len(german)))
+                        logger.info(f"[RAGTool] Matched color '{german}' → '{english}' at position {pos}")
 
         if extracted_colors:
             colors = extracted_colors
