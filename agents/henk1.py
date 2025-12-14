@@ -94,7 +94,12 @@ class Henk1Agent(BaseAgent):
     def __init__(self):
         """Initialize HENK1 Agent."""
         super().__init__("henk1")
-        self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        api_key = os.getenv("OPENAI_API_KEY")
+        # Offline-friendly initialization: only create the OpenAI client when an
+        # API key is available. In local/test environments without credentials we
+        # fall back to deterministic canned responses to keep the workflow
+        # running without external calls.
+        self.client = AsyncOpenAI(api_key=api_key) if api_key else None
 
     async def process(self, state: SessionState) -> AgentDecision:
         """
@@ -187,14 +192,18 @@ class Henk1Agent(BaseAgent):
         ):
             messages.append({"role": "user", "content": user_input})
 
-        # Call LLM
-        response = await self.client.chat.completions.create(
-            model="gpt-4-turbo-preview",
-            messages=messages,
-            temperature=0.7,
-        )
+        # Call LLM when available, otherwise use an offline-friendly fallback
+        # response so that tests can run without OPENAI_API_KEY.
+        if self.client:
+            response = await self.client.chat.completions.create(
+                model="gpt-4-turbo-preview",
+                messages=messages,
+                temperature=0.7,
+            )
 
-        llm_response = response.choices[0].message.content
+            llm_response = response.choices[0].message.content
+        else:
+            llm_response = self._build_offline_response(user_input, state)
 
         # Check if we should query RAG (simple keyword detection for now)
         should_query_rag = self._should_query_rag(user_input, state)
@@ -220,6 +229,31 @@ class Henk1Agent(BaseAgent):
                 action=None,
                 should_continue=False,  # Wait for user response
             )
+
+    def _build_offline_response(self, user_input: str, state: SessionState) -> str:
+        """Generate a deterministic response without calling the OpenAI API."""
+        context = self._extract_style_info(state)
+
+        questions = []
+        if not context.get("occasion"):
+            questions.append("Für welchen Anlass brauchst du den Anzug?")
+        if not context.get("budget"):
+            questions.append("Hast du einen groben Budgetrahmen im Kopf?")
+        if not context.get("timeline"):
+            questions.append("Bis wann soll der Anzug fertig sein?")
+        if not context.get("colors"):
+            questions.append("Welche Farben oder Farbfamilien sprechen dich an?")
+        if not context.get("style"):
+            questions.append("Eher klassisch, modern oder lässig?")
+
+        base = "Moin! Ich sammle schnell die wichtigsten Infos für deinen Maßanzug."
+
+        if questions:
+            follow_up = " " + " ".join(questions[:2])  # halte es kurz
+            return base + follow_up
+
+        # Wenn alles vorhanden ist, bestärke den nächsten Schritt
+        return base + " Ich stelle dir gleich passende Stoffe zusammen – klingt das gut?"
     def _get_system_prompt(self) -> str:
         """Get HENK1 system prompt for needs assessment."""
         return """Du bist HENK1, der freundliche Maßanzug-Berater bei LASERHENK.
