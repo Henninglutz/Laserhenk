@@ -658,6 +658,11 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> tu
     query = params.get("query", "")
     logger.info(f"[RAGTool] Executing fabric search with params={params}")
 
+    # Extract session state
+    session_state = state.get("session_state")
+    if isinstance(session_state, dict):
+        session_state = SessionState(**session_state)
+
     # Build search criteria from parameters
     # Extract colors, patterns from query if provided, or use defaults
     colors = params.get("colors", [])
@@ -667,17 +672,25 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> tu
     if not colors and query:
         query_lower = query.lower()
         # Map German color names to English (for database)
+        # IMPORTANT: Order matters! Check longer strings first (dunkelblau before blau)
         color_map = {
+            "dunkelblau": "dark blue",
+            "hellblau": "light blue",
             "blau": "blue",
             "marine": "navy",
             "navy": "navy",
-            "hellblau": "light blue",
-            "dunkelblau": "dark blue",
+            "dunkelgrau": "dark grey",
+            "hellgrau": "light grey",
             "grau": "grey",
             "schwarz": "black",
+            "dunkelbraun": "dark brown",
+            "hellbraun": "light brown",
             "braun": "brown",
             "beige": "beige",
+            "dunkelgrün": "dark green",
+            "hellgrün": "light green",
             "grün": "green",
+            "olive": "olive",
         }
 
         # Check if user is EXCLUDING certain colors (not grau, nicht beige, etc.)
@@ -688,12 +701,27 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> tu
                 logger.info(f"[RAGTool] User excluded color: {english}")
 
         extracted_colors = []
+        matched_positions = []  # Track which positions were already matched
+
         for german, english in color_map.items():
             # Only extract if NOT in negation context (nicht/kein)
             if german in query_lower:
                 # Check context - is it negated?
                 if not (f"nicht {german}" in query_lower or f"kein {german}" in query_lower):
-                    extracted_colors.append(english)
+                    # Find position of match
+                    pos = query_lower.find(german)
+
+                    # Check if this position overlaps with an already matched position
+                    overlaps = False
+                    for matched_start, matched_end in matched_positions:
+                        if not (pos + len(german) <= matched_start or pos >= matched_end):
+                            overlaps = True
+                            break
+
+                    if not overlaps:
+                        extracted_colors.append(english)
+                        matched_positions.append((pos, pos + len(german)))
+                        logger.info(f"[RAGTool] Matched color '{german}' → '{english}' at position {pos}")
 
         if extracted_colors:
             colors = extracted_colors
@@ -705,16 +733,16 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> tu
 
     # CHECK SESSION STATE for previously set color preferences
     # If no colors found in current query, use stored preferences
-    if not colors and session_state.design_preferences:
-        stored_colors = session_state.design_preferences.suit_colors
+    if not colors and session_state and session_state.design_preferences:
+        stored_colors = session_state.design_preferences.preferred_colors
         if stored_colors:
             colors = stored_colors
             logger.info(f"[RAGTool] Using stored color preferences from session: {colors}")
 
     # STORE colors in session state for future queries (maintain context!)
     if colors and session_state:
-        if not session_state.design_preferences.suit_colors:
-            session_state.design_preferences.suit_colors = colors
+        if not session_state.design_preferences.preferred_colors:
+            session_state.design_preferences.preferred_colors = colors
             state["session_state"] = session_state
             logger.info(f"[RAGTool] Stored color preferences in session: {colors}")
 
@@ -909,7 +937,9 @@ async def _execute_dalle_mood_board(
     if isinstance(session_state, dict):
         session_state = SessionState(**session_state)
 
-    rag_context = getattr(session_state, "rag_context", {})
+    rag_context = getattr(session_state, "rag_context", None)
+    if rag_context is None:
+        rag_context = {}
     fabrics = rag_context.get("fabrics", [])
 
     if not fabrics:

@@ -62,6 +62,9 @@ class DesignPreferences(BaseModel):
     approved_image: Optional[str] = Field(
         None, description="User-approved DALL-E generated outfit image URL"
     )
+    preferred_colors: Optional[list[str]] = Field(
+        None, description="User's preferred fabric colors for garments (suits, shirts, etc.)"
+    )
 
 
 class SessionState(BaseModel):
