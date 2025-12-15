@@ -217,6 +217,15 @@ class Henk1Agent(BaseAgent):
         )
 
         if intent.wants_fabrics:
+            if state.henk1_rag_queried:
+                return AgentDecision(
+                    next_agent=None,
+                    message=reply
+                    + "\n\nIch habe dir gerade passende Stoffideen geschickt – sag kurz, was dir davon gefällt oder welche Farbe du lieber hättest.",
+                    action=None,
+                    should_continue=False,
+                )
+
             print("=== HENK1: Customer ready for fabric recommendations, calling RAG")
 
             return AgentDecision(

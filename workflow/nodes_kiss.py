@@ -100,7 +100,25 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
     criteria, updated_state, _, _ = build_fabric_search_criteria(query, params, session_state)
     session_state = updated_state or session_state
 
-    recommendations = await RAGTool().search_fabrics(criteria)
+    try:
+        recommendations = await RAGTool().search_fabrics(criteria)
+    except Exception as exc:  # pragma: no cover - defensive fallback when DB is unavailable
+        logging.warning("[RAGTool] Fallback because DB not reachable", exc_info=exc)
+        fallback_fabrics = [
+            {"fabric_code": "NAVY_WOOL", "name": "Feiner Navy-Wolltwill", "color": "navy", "pattern": "uni"},
+            {"fabric_code": "MID_GREY_FLANNEL", "name": "Mittlerer Grau-Flanell", "color": "grau", "pattern": "melange"},
+            {"fabric_code": "BEIGE_LINEN", "name": "Leichter Beige-Leinenmix", "color": "beige", "pattern": "uni"},
+        ]
+        session_state.rag_context = {"fabrics": fallback_fabrics, "query": query, "source": "fallback"}
+        session_state.henk1_rag_queried = True
+        state["session_state"] = session_state
+
+        formatted = (
+            "Unsere Stoffdatenbank ist gerade nicht erreichbar. Hier sind drei beliebte Optionen: "
+            "Navy-Wolle, mittlerer Grau-Flanell oder ein beiger Leinen-Mix. Was spricht dich am meisten an?"
+        )
+        return ToolResult(text=formatted, metadata={})
+
     fabrics = [
         getattr(rec, "fabric", None).model_dump()
         if getattr(rec, "fabric", None) and hasattr(rec.fabric, "model_dump")
@@ -108,6 +126,7 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
         for rec in recommendations[:10]
     ]
     session_state.rag_context = {"fabrics": fabrics, "query": query}
+    session_state.henk1_rag_queried = True
 
     fabric_images = [
         {
