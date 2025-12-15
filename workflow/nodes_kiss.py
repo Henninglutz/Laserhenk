@@ -294,7 +294,7 @@ async def _run_agent_step(agent: Any, action: HandoffAction, state: HenkGraphSta
     session_state.current_agent = agent.agent_name
 
     messages = list(state.get("messages", []))
-    if decision.message:
+    if decision.message and agent.agent_name != "operator":
         messages.append({"role": "assistant", "content": decision.message, "sender": agent.agent_name})
 
     updates: Dict[str, Any] = {
