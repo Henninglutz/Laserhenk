@@ -18,6 +18,25 @@ _workflow = create_smart_workflow()
 _sessions: Dict[str, HenkGraphState] = {}
 
 
+def _message_to_dict(msg: dict) -> dict:
+    if isinstance(msg, dict):
+        return msg
+
+    role = getattr(msg, "role", None) or getattr(msg, "type", None) or "assistant"
+    content = getattr(msg, "content", "")
+    data = {"role": role, "content": content}
+
+    metadata = getattr(msg, "metadata", None) or getattr(msg, "additional_kwargs", None)
+    if metadata:
+        data["metadata"] = metadata
+
+    sender = getattr(msg, "sender", None) or getattr(msg, "name", None)
+    if sender:
+        data["sender"] = sender
+
+    return data
+
+
 def _get_or_create_session(session_id: str = None, user_id: str = None) -> tuple[str, HenkGraphState]:
     """
     Hole oder erstelle Session.
@@ -112,6 +131,8 @@ def chat():
         # Process with workflow (synchronous wrapper for async)
         import asyncio
         final_state = asyncio.run(_workflow.ainvoke(state))
+        messages = [_message_to_dict(m) for m in final_state.get('messages', [])]
+        final_state['messages'] = messages
         _sessions[sid] = final_state
 
         # Extract assistant reply, image_url, and fabric_images
@@ -120,7 +141,7 @@ def chat():
         fabric_images = None
 
         # Get ONLY the LATEST assistant message (to avoid duplicates)
-        for msg in reversed(final_state.get('messages', [])):
+        for msg in reversed(messages):
             if msg.get('role') == 'assistant':
                 reply = msg.get('content', reply)
                 # Check if message has image_url or fabric_images in metadata
@@ -140,7 +161,7 @@ def chat():
             'session_id': sid,
             'stage': stage,
             'authenticated': user_id is not None,
-            'messages': final_state.get('messages', []),
+            'messages': messages,
         }
 
         # Add image_url if present

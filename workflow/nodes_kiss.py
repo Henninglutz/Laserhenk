@@ -57,6 +57,18 @@ def _session_state(state: HenkGraphState) -> SessionState:
     return parsed
 
 
+def _latest_content(messages: list, role: str) -> str:
+    for msg in reversed(messages):
+        if isinstance(msg, dict):
+            if msg.get("role") == role:
+                return str(msg.get("content", "")).strip()
+        else:
+            msg_role = getattr(msg, "type", None) or getattr(msg, "role", None)
+            if msg_role == role:
+                return str(getattr(msg, "content", "")).strip()
+    return ""
+
+
 async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
     session_state = _session_state(state)
 
@@ -152,7 +164,7 @@ TOOL_REGISTRY: Dict[str, Callable[[dict, HenkGraphState], Any]] = {
 
 async def validate_node(state: HenkGraphState) -> HenkGraphState:
     messages = list(state.get("messages", []))
-    content = next((m.get("content", "").strip() for m in reversed(messages) if m.get("role") == "user"), "")
+    content = _latest_content(messages, "user")
 
     if len(content) < 3:
         messages.append({"role": "assistant", "content": "Bitte gib mir kurz Bescheid, wie ich helfen kann."})
