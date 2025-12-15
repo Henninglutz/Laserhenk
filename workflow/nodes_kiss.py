@@ -271,6 +271,7 @@ async def _run_tool_action(action: HandoffAction, state: HenkGraphState) -> Henk
     result: ToolResult = await tool(action.params, state)
     messages = list(state.get("messages", []))
     messages.append({"role": "assistant", "content": result.text, "metadata": result.metadata})
+    session_state = _session_state(state)
 
     next_step = (
         HandoffAction(kind="agent", name=action.return_to_agent, should_continue=action.should_continue).model_dump()
@@ -280,6 +281,7 @@ async def _run_tool_action(action: HandoffAction, state: HenkGraphState) -> Henk
 
     return {
         "messages": messages,
+        "session_state": session_state,
         "awaiting_user_input": not action.should_continue,
         "next_step": next_step,
         "user_input": None,  # type: ignore[typeddict-item]
