@@ -118,5 +118,10 @@ class SessionState(BaseModel):
         None, description="LASERHENK → HITL handoff data"
     )
 
+    # Lead capture tracking
+    henk1_contact_requested: bool = Field(
+        default=False, description="HENK1 hat bereits nach Kontaktdaten gefragt"
+    )
+
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
