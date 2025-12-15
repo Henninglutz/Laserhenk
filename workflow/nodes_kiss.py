@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable, Dict, Optional
 
 from pydantic import BaseModel, Field
@@ -100,24 +101,19 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
     criteria, updated_state, _, _ = build_fabric_search_criteria(query, params, session_state)
     session_state = updated_state or session_state
 
+    # Mark the intent to query RAG immediately to avoid repeated triggers if the DB fails
+    session_state.henk1_rag_queried = True
+    session_state.rag_context = {"query": query}
+    state["session_state"] = session_state
+
     try:
         recommendations = await RAGTool().search_fabrics(criteria)
-    except Exception as exc:  # pragma: no cover - defensive fallback when DB is unavailable
-        logging.warning("[RAGTool] Fallback because DB not reachable", exc_info=exc)
-        fallback_fabrics = [
-            {"fabric_code": "NAVY_WOOL", "name": "Feiner Navy-Wolltwill", "color": "navy", "pattern": "uni"},
-            {"fabric_code": "MID_GREY_FLANNEL", "name": "Mittlerer Grau-Flanell", "color": "grau", "pattern": "melange"},
-            {"fabric_code": "BEIGE_LINEN", "name": "Leichter Beige-Leinenmix", "color": "beige", "pattern": "uni"},
-        ]
-        session_state.rag_context = {"fabrics": fallback_fabrics, "query": query, "source": "fallback"}
-        session_state.henk1_rag_queried = True
-        state["session_state"] = session_state
-
-        formatted = (
-            "Unsere Stoffdatenbank ist gerade nicht erreichbar. Hier sind drei beliebte Optionen: "
-            "Navy-Wolle, mittlerer Grau-Flanell oder ein beiger Leinen-Mix. Was spricht dich am meisten an?"
+    except Exception as exc:  # pragma: no cover - surface the issue instead of hardcoded fallbacks
+        logging.error("[RAGTool] Stoffsuche fehlgeschlagen", exc_info=exc)
+        return ToolResult(
+            text="Die Stoffsuche war gerade nicht erreichbar. Ich prüfe das und melde mich gleich mit Vorschlägen – kannst du mir schon mal Farben oder Muster nennen, die du bevorzugst?",
+            metadata={},
         )
-        return ToolResult(text=formatted, metadata={})
 
     fabrics = [
         getattr(rec, "fabric", None).model_dump()
@@ -144,6 +140,13 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
         session_state.shown_fabric_images.extend(fabric_images)
 
     state["session_state"] = session_state
+
+    if not recommendations:
+        state["session_state"] = session_state
+        return ToolResult(
+            text="Ich konnte gerade keine Stoffe aus der Datenbank laden. Nenne mir kurz deine Lieblingsfarben oder ein Muster, dann versuche ich es erneut.",
+            metadata={},
+        )
 
     formatted = "**Passende Stoffe für dich:**\n\n" + "".join(
         f"{idx}. {getattr(rec.fabric, 'name', None) or 'Hochwertiger Stoff'} (Code: {getattr(rec.fabric, 'fabric_code', None)}) - "
