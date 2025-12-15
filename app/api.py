@@ -1,13 +1,14 @@
 """API Blueprint - Chat und Session Management."""
 
+import asyncio
 import uuid
 from typing import Dict
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
 from pydantic import ValidationError
 
-from app.middleware import jwt_required_optional, get_current_user_id
+from app.middleware import get_current_user_id, jwt_required_optional
 from workflow.graph_state import HenkGraphState, create_initial_state
 from workflow.workflow import create_smart_workflow
 
@@ -16,13 +17,24 @@ api_bp = Blueprint('api', __name__)
 # Global workflow und sessions
 _workflow = create_smart_workflow()
 _sessions: Dict[str, HenkGraphState] = {}
+_workflow_loop = asyncio.new_event_loop()
+asyncio.set_event_loop(_workflow_loop)
+
+
+def _normalize_role(role: str | None) -> str:
+    if role in {"ai", "assistant", "system"}:
+        return "assistant"
+    if role in {"human", "user"}:
+        return "user"
+    return "assistant" if role is None else role
 
 
 def _message_to_dict(msg: dict) -> dict:
     if isinstance(msg, dict):
-        return msg
+        role = _normalize_role(msg.get("role"))
+        return {**msg, "role": role}
 
-    role = getattr(msg, "role", None) or getattr(msg, "type", None) or "assistant"
+    role = _normalize_role(getattr(msg, "role", None) or getattr(msg, "type", None))
     content = getattr(msg, "content", "")
     data = {"role": role, "content": content}
 
@@ -128,9 +140,8 @@ def chat():
         state['messages'] = history
         state['user_input'] = message
 
-        # Process with workflow (synchronous wrapper for async)
-        import asyncio
-        final_state = asyncio.run(_workflow.ainvoke(state))
+        # Process with workflow on a persistent event loop to avoid teardown issues
+        final_state = _workflow_loop.run_until_complete(_workflow.ainvoke(state))
         messages = [_message_to_dict(m) for m in final_state.get('messages', [])]
         final_state['messages'] = messages
         _sessions[sid] = final_state
