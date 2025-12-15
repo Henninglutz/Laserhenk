@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Callable, Dict, Optional
 
 from pydantic import BaseModel, Field
 
-from agents.henk1 import Henk1Agent
 from agents.design_henk import DesignHenkAgent
+from agents.henk1 import Henk1Agent
 from agents.laserhenk import LaserHenkAgent
 from agents.operator import OperatorAgent
 from models.customer import SessionState
@@ -18,13 +17,11 @@ from models.handoff import (
     Henk1ToDesignHenkPayload,
     LaserHenkToHITLPayload,
 )
-from tools.dalle_tool import DALLETool
 from models.tools import DALLEImageRequest
+from tools.dalle_tool import DALLETool
 from tools.fabric_preferences import build_fabric_search_criteria
 from tools.rag_tool import RAGTool
 from workflow.graph_state import HenkGraphState
-
-logger = logging.getLogger(__name__)
 
 
 class HandoffAction(BaseModel):
@@ -53,7 +50,11 @@ AGENT_REGISTRY: Dict[str, Callable[[], Any]] = {
 
 def _session_state(state: HenkGraphState) -> SessionState:
     session_state = state.get("session_state")
-    return session_state if isinstance(session_state, SessionState) else SessionState(**(session_state or {}))
+    if isinstance(session_state, SessionState):
+        return session_state
+    parsed = SessionState(**(session_state or {}))
+    state["session_state"] = parsed
+    return parsed
 
 
 async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
@@ -67,37 +68,36 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
     session_state = updated_state or session_state
 
     recommendations = await RAGTool().search_fabrics(criteria)
-    fabrics = []
-    for rec in recommendations[:10]:
-        fabric = getattr(rec, "fabric", None)
-        fabrics.append(fabric.model_dump() if fabric and hasattr(fabric, "model_dump") else (fabric or {}))
+    fabrics = [
+        getattr(rec, "fabric", None).model_dump()
+        if getattr(rec, "fabric", None) and hasattr(rec.fabric, "model_dump")
+        else (getattr(rec, "fabric", None) or {})
+        for rec in recommendations[:10]
+    ]
     session_state.rag_context = {"fabrics": fabrics, "query": query}
 
-    fabric_images = []
-    for rec in recommendations[:2]:
-        fabric = rec.fabric
-        code = fabric.fabric_code.replace("/", "_") if fabric.fabric_code else "fabric"
-        fabric_images.append({
-            "url": f"/fabrics/images/{code}.jpg",
-            "fabric_code": fabric.fabric_code,
-            "name": fabric.name,
-            "color": fabric.color,
-            "pattern": fabric.pattern,
-        })
+    fabric_images = [
+        {
+            "url": f"/fabrics/images/{(rec.fabric.fabric_code or 'fabric').replace('/', '_')}.jpg",
+            "fabric_code": rec.fabric.fabric_code,
+            "name": rec.fabric.name,
+            "color": rec.fabric.color,
+            "pattern": rec.fabric.pattern,
+        }
+        for rec in recommendations[:2]
+        if getattr(rec, "fabric", None)
+    ]
 
     if hasattr(session_state, "shown_fabric_images"):
         session_state.shown_fabric_images.extend(fabric_images)
 
     state["session_state"] = session_state
 
-    formatted_lines = []
-    for idx, rec in enumerate(recommendations[:5], 1):
-        fabric = getattr(rec, "fabric", None)
-        formatted_lines.append(
-            f"{idx}. {getattr(fabric, 'name', None) or 'Hochwertiger Stoff'} (Code: {getattr(fabric, 'fabric_code', None)}) - "
-            f"Farbe: {getattr(fabric, 'color', None) or 'klassisch'}, Muster: {getattr(fabric, 'pattern', None) or 'uni'}\n"
-        )
-    formatted = "**Passende Stoffe für dich:**\n\n" + "".join(formatted_lines)
+    formatted = "**Passende Stoffe für dich:**\n\n" + "".join(
+        f"{idx}. {getattr(rec.fabric, 'name', None) or 'Hochwertiger Stoff'} (Code: {getattr(rec.fabric, 'fabric_code', None)}) - "
+        f"Farbe: {getattr(rec.fabric, 'color', None) or 'klassisch'}, Muster: {getattr(rec.fabric, 'pattern', None) or 'uni'}\n"
+        for idx, rec in enumerate(recommendations[:5], 1)
+    )
 
     metadata: Dict[str, Any] = {"fabric_images": fabric_images} if fabric_images else {}
     return ToolResult(text=formatted, metadata=metadata)
@@ -134,12 +134,12 @@ async def _mark_favorite_fabric(params: dict, state: HenkGraphState) -> ToolResu
         None,
     )
 
-    if fabric:
-        session_state.favorite_fabric = fabric
-        state["session_state"] = session_state
-        return ToolResult(text=f"Alles klar, Stoff {fabric_code} ist jetzt dein Favorit.", metadata={"favorite_fabric": fabric})
+    if not fabric:
+        return ToolResult(text="Ich habe diesen Stoff leider nicht gefunden.")
 
-    return ToolResult(text="Ich habe diesen Stoff leider nicht gefunden.")
+    session_state.favorite_fabric = fabric
+    state["session_state"] = session_state
+    return ToolResult(text=f"Alles klar, Stoff {fabric_code} ist jetzt dein Favorit.", metadata={"favorite_fabric": fabric})
 
 
 TOOL_REGISTRY: Dict[str, Callable[[dict, HenkGraphState], Any]] = {
@@ -174,57 +174,62 @@ async def route_node(state: HenkGraphState) -> HenkGraphState:
 
 
 def _validate_handoff(target: str, payload: dict) -> tuple[bool, Optional[str]]:
-    if target == "design_henk":
-        ok, err = HandoffValidator.validate_henk1_to_design(Henk1ToDesignHenkPayload(**payload))
-        return ok, err
-    if target == "laserhenk":
-        ok, err = HandoffValidator.validate_design_to_laser(DesignHenkToLaserHenkPayload(**payload))
-        return ok, err
-    if target == "hitl":
-        ok, err = HandoffValidator.validate_laser_to_hitl(LaserHenkToHITLPayload(**payload))
-        return ok, err
-    return False, "Unbekanntes Handoff-Ziel"
+    mapping = {
+        "design_henk": (Henk1ToDesignHenkPayload, HandoffValidator.validate_henk1_to_design),
+        "laserhenk": (DesignHenkToLaserHenkPayload, HandoffValidator.validate_design_to_laser),
+        "hitl": (LaserHenkToHITLPayload, HandoffValidator.validate_laser_to_hitl),
+    }
+
+    model_cls, validator = mapping.get(target, (None, None))
+    if not model_cls or not validator:
+        return False, "Unbekanntes Handoff-Ziel"
+
+    ok, err = validator(model_cls(**payload))
+    return ok, err
 
 
 async def run_step_node(state: HenkGraphState) -> HenkGraphState:
-    next_step_data = state.get("next_step")
-    if not next_step_data:
-        return {"awaiting_user_input": True}
+    action_data = state.get("next_step")
+    if not action_data:
+        return {"awaiting_user_input": True, "next_step": None}
 
-    action = HandoffAction.model_validate(next_step_data)
+    action = HandoffAction.model_validate(action_data)
 
     if action.kind == "tool":
-        tool = TOOL_REGISTRY.get(action.name)
-        if not tool:
-            return {"awaiting_user_input": True, "next_step": None}
-
-        result: ToolResult = await tool(action.params, state)
-        messages = list(state.get("messages", []))
-        messages.append({"role": "assistant", "content": result.text, "metadata": result.metadata})
-
-        state_updates: Dict[str, Any] = {
-            "messages": messages,
-            "awaiting_user_input": not action.should_continue,
-            "next_step": None,
-        }
-
-        if action.return_to_agent:
-            state_updates["next_step"] = HandoffAction(
-                kind="agent",
-                name=action.return_to_agent,
-                should_continue=action.should_continue,
-            ).model_dump()
-
-        state_updates["user_input"] = None  # type: ignore[typeddict-item]
-        return state_updates
+        return await _run_tool_action(action, state)
 
     agent_factory = AGENT_REGISTRY.get(action.name)
     if not agent_factory:
         return {"awaiting_user_input": True, "next_step": None}
 
-    agent = agent_factory()
-    session_state = _session_state(state)
+    return await _run_agent_step(agent_factory(), action, state)
 
+
+async def _run_tool_action(action: HandoffAction, state: HenkGraphState) -> HenkGraphState:
+    tool = TOOL_REGISTRY.get(action.name)
+    if not tool:
+        return {"awaiting_user_input": True, "next_step": None}
+
+    result: ToolResult = await tool(action.params, state)
+    messages = list(state.get("messages", []))
+    messages.append({"role": "assistant", "content": result.text, "metadata": result.metadata})
+
+    next_step = (
+        HandoffAction(kind="agent", name=action.return_to_agent, should_continue=action.should_continue).model_dump()
+        if action.return_to_agent
+        else None
+    )
+
+    return {
+        "messages": messages,
+        "awaiting_user_input": not action.should_continue,
+        "next_step": next_step,
+        "user_input": None,  # type: ignore[typeddict-item]
+    }
+
+
+async def _run_agent_step(agent: Any, action: HandoffAction, state: HenkGraphState) -> HenkGraphState:
+    session_state = _session_state(state)
     decision = await agent.process(session_state)
     session_state.current_agent = agent.agent_name
 
@@ -237,6 +242,7 @@ async def run_step_node(state: HenkGraphState) -> HenkGraphState:
         "session_state": session_state,
         "current_agent": agent.agent_name,
         "awaiting_user_input": not decision.should_continue,
+        "next_step": None,
     }
 
     if decision.action == "handoff":
@@ -245,20 +251,12 @@ async def run_step_node(state: HenkGraphState) -> HenkGraphState:
         handoff_payload = payload.get("payload") or {}
         ok, err = _validate_handoff(target, handoff_payload)
         if ok:
-            session_state_handoffs = getattr(session_state, "handoffs", {}) or {}
-            session_state_handoffs[target] = handoff_payload
-            session_state.handoffs = session_state_handoffs  # type: ignore[attr-defined]
-            updates["session_state"] = session_state
-            updates["next_step"] = HandoffAction(
-                kind="agent",
-                name=target,
-                should_continue=True,
-            ).model_dump()
+            session_state.handoffs[target] = handoff_payload  # type: ignore[index]
+            updates["next_step"] = HandoffAction(kind="agent", name=target, should_continue=True).model_dump()
             updates["awaiting_user_input"] = False
         else:
             messages.append({"role": "assistant", "content": f"Handoff fehlgeschlagen: {err}"})
             updates["awaiting_user_input"] = True
-            updates["next_step"] = None
         return updates
 
     if decision.action and decision.action in TOOL_REGISTRY:
@@ -280,8 +278,6 @@ async def run_step_node(state: HenkGraphState) -> HenkGraphState:
             should_continue=decision.should_continue,
         ).model_dump()
         updates["awaiting_user_input"] = False if decision.should_continue else True
-        return updates
 
-    updates["next_step"] = None
     return updates
 
