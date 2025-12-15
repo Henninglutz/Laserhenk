@@ -110,10 +110,7 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
         recommendations = await RAGTool().search_fabrics(criteria)
     except Exception as exc:  # pragma: no cover - surface the issue instead of hardcoded fallbacks
         logging.error("[RAGTool] Stoffsuche fehlgeschlagen", exc_info=exc)
-        return ToolResult(
-            text="Die Stoffsuche war gerade nicht erreichbar. Ich prüfe das und melde mich gleich mit Vorschlägen – kannst du mir schon mal Farben oder Muster nennen, die du bevorzugst?",
-            metadata={},
-        )
+        raise
 
     fabrics = [
         getattr(rec, "fabric", None).model_dump()
@@ -124,17 +121,29 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
     session_state.rag_context = {"fabrics": fabrics, "query": query}
     session_state.henk1_rag_queried = True
 
-    fabric_images = [
-        {
-            "url": f"/fabrics/images/{(rec.fabric.fabric_code or 'fabric').replace('/', '_')}.jpg",
-            "fabric_code": rec.fabric.fabric_code,
-            "name": rec.fabric.name,
-            "color": rec.fabric.color,
-            "pattern": rec.fabric.pattern,
-        }
-        for rec in recommendations[:2]
-        if getattr(rec, "fabric", None)
-    ]
+    fabric_images = []
+    for rec in recommendations[:5]:
+        fabric = getattr(rec, "fabric", None) or getattr(rec, "to_dict", lambda: {})()
+        if not fabric:
+            continue
+        fabric_dict = fabric.model_dump() if hasattr(fabric, "model_dump") else dict(fabric)
+        image_urls = fabric_dict.get("image_urls") or []
+        local_paths = fabric_dict.get("local_image_paths") or []
+        image_url = (image_urls[0] if image_urls else None) or (local_paths[0] if local_paths else None)
+        if not image_url:
+            continue
+        fabric_images.append(
+            {
+                "url": image_url,
+                "fabric_code": fabric_dict.get("fabric_code"),
+                "name": fabric_dict.get("name", "Hochwertiger Stoff"),
+                "color": fabric_dict.get("color"),
+                "pattern": fabric_dict.get("pattern"),
+                "composition": fabric_dict.get("composition"),
+            }
+        )
+        if len(fabric_images) >= 2:
+            break
 
     if hasattr(session_state, "shown_fabric_images"):
         session_state.shown_fabric_images.extend(fabric_images)
@@ -197,11 +206,61 @@ async def _mark_favorite_fabric(params: dict, state: HenkGraphState) -> ToolResu
     return ToolResult(text=f"Alles klar, Stoff {fabric_code} ist jetzt dein Favorit.", metadata={"favorite_fabric": fabric})
 
 
+async def _show_fabric_images(params: dict, state: HenkGraphState) -> ToolResult:
+    session_state = _session_state(state)
+    rag_context = getattr(session_state, "rag_context", {}) or {}
+    fabrics = rag_context.get("fabrics", [])
+
+    if not fabrics:
+        return ToolResult(
+            text="Ich habe gerade keine Stoffbilder finden können. Nenne mir kurz deine Wunschfarben, dann suche ich erneut.",
+            metadata={},
+        )
+
+    fabrics_with_images = []
+    for fabric in fabrics:
+        image_urls = fabric.get("image_urls") or []
+        local_paths = fabric.get("local_image_paths") or []
+        image_url = (image_urls[0] if image_urls else None) or (local_paths[0] if local_paths else None)
+        if not image_url:
+            continue
+        fabrics_with_images.append(
+            {
+                "url": image_url,
+                "fabric_code": fabric.get("fabric_code", ""),
+                "name": fabric.get("name", "Hochwertiger Stoff"),
+                "color": fabric.get("color", ""),
+                "pattern": fabric.get("pattern", ""),
+                "composition": fabric.get("composition", ""),
+            }
+        )
+        if len(fabrics_with_images) >= params.get("limit", 2):
+            break
+
+    if not fabrics_with_images:
+        return ToolResult(
+            text="Die Stoffbilder sind noch nicht verfügbar. Ich beschreibe dir gern die Stoffe – welche Farbe interessiert dich am meisten?",
+            metadata={},
+        )
+
+    message = "🎨 **Hier sind deine Stoff-Empfehlungen mit Bildern!**\n\n"
+    for idx, fabric in enumerate(fabrics_with_images, 1):
+        message += (
+            f"{idx}. {fabric['name']} (Ref: {fabric['fabric_code']})\n"
+            f"   Farbe: {fabric['color'] or 'klassisch'} | Muster: {fabric['pattern'] or 'uni'}\n"
+        )
+
+    session_state.shown_fabric_images.extend(fabrics_with_images)
+    state["session_state"] = session_state
+    return ToolResult(text=message, metadata={"fabric_images": fabrics_with_images})
+
+
 TOOL_REGISTRY: Dict[str, Callable[[dict, HenkGraphState], Any]] = {
     "rag_tool": _rag_tool,
     "dalle_mood_board": _dalle_tool,
     "dalle_tool": _dalle_tool,
     "mark_favorite_fabric": _mark_favorite_fabric,
+    "show_fabric_images": _show_fabric_images,
 }
 
 
@@ -268,9 +327,20 @@ async def _run_tool_action(action: HandoffAction, state: HenkGraphState) -> Henk
     if not tool:
         return {"awaiting_user_input": True, "next_step": None}
 
-    result: ToolResult = await tool(action.params, state)
+    try:
+        result: ToolResult = await tool(action.params, state)
+    except Exception as exc:  # pragma: no cover
+        logging.error("[ToolRunner] Tool failed", exc_info=exc)
+        result = ToolResult(text="Da ist etwas schiefgegangen bei der Ausführung. Versuchen wir es gleich nochmal.")
     messages = list(state.get("messages", []))
-    messages.append({"role": "assistant", "content": result.text, "metadata": result.metadata})
+    messages.append(
+        {
+            "role": "assistant",
+            "content": result.text,
+            "metadata": result.metadata,
+            "sender": action.name,
+        }
+    )
     session_state = _session_state(state)
 
     next_step = (

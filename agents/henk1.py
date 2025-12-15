@@ -137,14 +137,14 @@ class Henk1Agent(BaseAgent):
                 state.henk1_mood_board_shown = True
 
                 return AgentDecision(
-                    next_agent="operator",
+                    next_agent=None,
                     message=None,  # Tool will provide the message
                     action="show_fabric_images",
                     action_params={
                         "occasion": occasion,
                         "limit": 2,
                     },
-                    should_continue=True,
+                    should_continue=False,
                 )
             else:
                 logger.warning("[HENK1] No fabrics in rag_context, skipping image display")
@@ -217,6 +217,18 @@ class Henk1Agent(BaseAgent):
         )
 
         if intent.wants_fabrics:
+            gaps = self._missing_core_needs(state)
+            if gaps:
+                questions = " ".join(gaps)
+                return AgentDecision(
+                    next_agent=None,
+                    message=reply
+                    + "\n\nBevor ich dir Stoffe zeige, sag mir bitte noch: "
+                    + questions,
+                    action=None,
+                    should_continue=False,
+                )
+
             if state.henk1_rag_queried:
                 return AgentDecision(
                     next_agent=None,
@@ -242,6 +254,28 @@ class Henk1Agent(BaseAgent):
             action=None,
             should_continue=False,
         )
+
+    def _missing_core_needs(self, state: SessionState) -> list[str]:
+        """Identify missing Bedarfsermittlung-Infos before Stoffe gezeigt werden."""
+
+        text = " ".join(msg.get("content", "").lower() for msg in state.conversation_history if isinstance(msg, dict))
+        style_info = self._extract_style_info(state)
+
+        gaps: list[str] = []
+
+        if not style_info.get("occasion"):
+            gaps.append("für welchen Anlass der Anzug gedacht ist")
+        if not style_info.get("colors"):
+            gaps.append("welche Farbe(n) du willst")
+        if "€" not in text and "euro" not in text and not any(char.isdigit() for char in text):
+            gaps.append("dein Budget")
+        timing_keywords = ["bis", "wann", "datum", "termin", "monat", "woche"]
+        if not any(keyword in text for keyword in timing_keywords):
+            gaps.append("wann du den Anzug brauchst")
+        if not style_info.get("style_keywords"):
+            gaps.append("ob du es klassisch oder modern magst")
+
+        return gaps
     def _get_system_prompt(self) -> str:
         """Get HENK1 system prompt for needs assessment."""
         return """Du bist HENK1, der freundliche Maßanzug-Berater bei LASERHENK.

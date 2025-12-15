@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from app.middleware import get_current_user_id, jwt_required_optional
 from workflow.graph_state import HenkGraphState, create_initial_state
+from workflow.nodes_kiss import TOOL_REGISTRY
 from workflow.workflow import create_smart_workflow
 
 api_bp = Blueprint('api', __name__)
@@ -151,18 +152,24 @@ def chat():
         image_url = None
         fabric_images = None
 
-        # Get ONLY the LATEST assistant message (to avoid duplicates)
+        tool_senders = set(TOOL_REGISTRY.keys())
+
+        # Prefer the latest agent reply (not a tool), but still capture tool metadata
         for msg in reversed(messages):
-            if msg.get('role') == 'assistant':
-                reply = msg.get('content', reply)
-                # Check if message has image_url or fabric_images in metadata
-                metadata = msg.get('metadata', {})
-                if 'fabric_images' in metadata:
-                    fabric_images = metadata['fabric_images']
-                if 'image_url' in metadata:
-                    image_url = metadata['image_url']
-                # IMPORTANT: Break after first assistant message to avoid duplicates
-                break
+            if msg.get('role') != 'assistant':
+                continue
+
+            metadata = msg.get('metadata', {})
+            if 'fabric_images' in metadata and not fabric_images:
+                fabric_images = metadata['fabric_images']
+            if 'image_url' in metadata and not image_url:
+                image_url = metadata['image_url']
+
+            if msg.get('sender') in tool_senders:
+                continue
+
+            reply = msg.get('content', reply)
+            break
 
         # Current stage
         stage = final_state.get('current_agent') or final_state.get('next_agent') or 'henk1'
