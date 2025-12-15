@@ -19,6 +19,9 @@ Laserhenk/
 └── server_old.py         # Alte Version (Backup)
 ```
 
+> **Hinweis zu Entry Points:**
+> Für die produktive/aktuelle API wird der Flask-Server über `run_flask.py` gestartet. Die in den Tests referenzierten Funktionen `create_http_server`, `process_chat` und `run` kommen aus `server.py`, das lediglich als dünne Weiterleitung nach `server_old.py` dient. Beide Entry Points landen also beim selben Flask-Stack und denselben `/api/*`-Endpoints.
+
 ## 🔑 Secrets einrichten (`.env` Datei)
 
 Die `.env` Datei wurde bereits erstellt! Du musst nur die Secrets eintragen:

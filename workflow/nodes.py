@@ -148,6 +148,23 @@ async def smart_operator_node(state: HenkGraphState) -> HenkGraphState:
     # CRITICAL: If no user_input (after tool/agent execution), wait for new input
     # Don't route with empty message - this prevents infinite loops
     if not user_input or not user_input.strip():
+        # Wenn wir gerade aus einem Tool/Agent kommen und weitermachen sollen,
+        # nutze den Operator-Fallback basierend auf dem SessionState.
+        if not state.get("awaiting_user_input", False):
+            logger.info(
+                "[SmartOperator] No user_input but workflow is continuing; using operator fallback"
+            )
+            operator = OperatorAgent()
+            op_decision = await operator.process(session_state)
+            return {
+                "next_agent": op_decision.next_agent,
+                "current_agent": op_decision.next_agent,
+                "pending_action": op_decision.action_params,
+                "awaiting_user_input": not op_decision.should_continue,
+                "messages": state.get("messages", []),
+                "user_input": user_input,
+            }
+
         logger.info("[SmartOperator] No user_input, waiting for user response")
         messages = list(state.get("messages", []))
 
@@ -434,6 +451,7 @@ async def conversation_node(state: HenkGraphState) -> HenkGraphState:
             "awaiting_user_input": not decision.should_continue,
             "phase_complete": not decision.should_continue,
             "messages": messages,
+            "user_input": state.get("user_input"),
         }
 
         logger.info(

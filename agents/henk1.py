@@ -69,12 +69,20 @@ BEISPIEL-ABLAUF:
    → Übergabe an Design Henk
 """
 
+import json
 import logging
 import os
-from openai import AsyncOpenAI
-from agents.base import AgentDecision, BaseAgent
-from models.customer import SessionState
 from typing import Optional
+
+from openai import AsyncOpenAI
+
+from agents.base import AgentDecision, BaseAgent
+from agents.henk1_preferences import (
+    IntentAnalysis,
+    INTENT_EXTRACTION_PROMPT,
+    fallback_intent_analysis,
+)
+from models.customer import SessionState
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +102,8 @@ class Henk1Agent(BaseAgent):
     def __init__(self):
         """Initialize HENK1 Agent."""
         super().__init__("henk1")
-        self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        api_key = os.getenv("OPENAI_API_KEY")
+        self.client = AsyncOpenAI(api_key=api_key) if api_key else None
 
     async def process(self, state: SessionState) -> AgentDecision:
         """
@@ -187,39 +196,45 @@ class Henk1Agent(BaseAgent):
         ):
             messages.append({"role": "user", "content": user_input})
 
-        # Call LLM
-        response = await self.client.chat.completions.create(
-            model="gpt-4-turbo-preview",
-            messages=messages,
-            temperature=0.7,
+        if self.client:
+            response = await self.client.chat.completions.create(
+                model="gpt-4-turbo-preview",
+                messages=messages,
+                temperature=0.7,
+            )
+
+            llm_response = response.choices[0].message.content
+        else:
+            llm_response = self._offline_reply(user_input, state)
+
+        intent = await self._extract_intent(user_input, state)
+
+        self._maybe_capture_lead(state, intent)
+
+        contact_prompt = self._contact_request(state, intent)
+        reply = (
+            f"{llm_response}\n\n{contact_prompt}" if contact_prompt else llm_response
         )
 
-        llm_response = response.choices[0].message.content
-
-        # Check if we should query RAG (simple keyword detection for now)
-        should_query_rag = self._should_query_rag(user_input, state)
-
-        if should_query_rag:
+        if intent.wants_fabrics:
             print("=== HENK1: Customer ready for fabric recommendations, calling RAG")
 
-            # Extract search criteria from conversation
-            criteria = self._extract_search_criteria(user_input, state)
-
             return AgentDecision(
                 next_agent="operator",
-                message=llm_response,  # Show LLM response before RAG results
+                message=reply,  # Show LLM response before RAG results
                 action="query_rag",  # Trigger RAG tool
-                action_params=criteria,  # Pass extracted criteria
+                action_params=intent.search_criteria,
                 should_continue=True,
             )
-        else:
-            # Continue conversation
-            return AgentDecision(
-                next_agent="operator",
-                message=llm_response,
-                action=None,
-                should_continue=False,  # Wait for user response
-            )
+
+        continue_flow = intent.wants_fabrics or not self.client
+
+        return AgentDecision(
+            next_agent="operator",
+            message=reply,
+            action=None,
+            should_continue=continue_flow,
+        )
     def _get_system_prompt(self) -> str:
         """Get HENK1 system prompt for needs assessment."""
         return """Du bist HENK1, der freundliche Maßanzug-Berater bei LASERHENK.
@@ -232,6 +247,7 @@ Deine Aufgabe - BEDARFSERMITTLUNG (alle Infos sammeln!):
    3. TIMING: Wann wird der Anzug benötigt? (Deadline)
    4. STIL: Welchen Stil bevorzugt er? (klassisch, modern, locker, etc.)
    5. FARBE: Welche Farben gefallen ihm? (blau, grau, schwarz, etc.)
+   6. KONTAKT: Wenn klarer Kauf-/Terminwunsch → höflich nach Email und WhatsApp/Telefon fragen
 
 💬 GESPRÄCHSFÜHRUNG:
 - Sei herzlich, persönlich und kompetent
@@ -251,73 +267,94 @@ sage ihm dass du gleich passende Empfehlungen zusammenstellst.
 
 Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
 
-    def _should_query_rag(self, user_input: str, state: SessionState) -> bool:
-        """Determine if we should query RAG based on user input."""
-        user_input_lower = user_input.lower()
+    def _offline_reply(self, user_input: str, state: SessionState) -> str:
+        """Fallback-Antwort ohne LLM (z. B. in Tests)."""
 
-        # Keywords that indicate customer wants to see fabrics
-        fabric_keywords = [
-            "stoff", "stoffe", "zeig", "zeigen", "empfehlung", "empfehlungen",
-            "option", "optionen", "auswahl", "angebot", "material", "materialien",
-            "vorschlag", "vorschläge", "lass", "sehen", "haben",
+        info = self._extract_style_info(state)
+        questions = [
+            "Alles klar, ich helfe dir gern!",
+            "Wofür brauchst du den Anzug (z.B. Hochzeit, Business)?",
+            "Welche Farben magst du?",
+            "Bis wann soll er fertig sein?",
         ]
 
-        # Check if any keyword is in user input
-        has_fabric_request = any(keyword in user_input_lower for keyword in fabric_keywords)
+        if info.get("occasion"):
+            questions = [
+                "Top, das habe ich notiert!",
+                "Welche Farbe(n) gefallen dir?",
+                "Und bis wann brauchst du den Anzug?",
+            ]
 
-        # Check if we have enough context (at least 2 messages in conversation)
-        has_context = len(state.conversation_history) >= 2
+        return " ".join(questions)
 
-        return has_fabric_request and has_context
+    async def _extract_intent(self, user_input: str, state: SessionState) -> IntentAnalysis:
+        """Delegate Intent- und Kriterien-Erkennung an das LLM (mit Fallback)."""
+        has_api_key = bool(self.client)
 
-    def _extract_search_criteria(self, user_input: str, state: SessionState) -> dict:
-        """Extract search criteria from conversation context."""
-        user_input_lower = user_input.lower()
+        if not has_api_key:
+            return fallback_intent_analysis(user_input, state.conversation_history)
 
-        # Extract colors (simple keyword matching)
-        colors = []
-        color_keywords = {
-            "blau": "Blue", "navy": "Navy", "dunkelblau": "Navy",
-            "grau": "Grey", "dunkelgrau": "Dark Grey", "hellgrau": "Light Grey",
-            "schwarz": "Black",
-            "braun": "Brown", "beige": "Beige", "camel": "Camel",
-            "grün": "Green", "olive": "Olive",
-        }
+        try:
+            response = await self.client.chat.completions.create(
+                model="gpt-4.1-mini",
+                temperature=0.2,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": INTENT_EXTRACTION_PROMPT},
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            {
+                                "latest_user_message": user_input,
+                                "conversation_snippet": state.conversation_history[-8:],
+                            }
+                        ),
+                    },
+                ],
+            )
 
-        for keyword, color in color_keywords.items():
-            if keyword in user_input_lower:
-                colors.append(color)
+            raw = response.choices[0].message.content or "{}"
+            parsed = json.loads(raw)
 
-        # Extract patterns
-        patterns = []
-        pattern_keywords = {
-            "uni": "Solid", "einfarbig": "Solid",
-            "streifen": "Stripes", "gestreift": "Stripes",
-            "karo": "Check", "kariert": "Check",
-            "fischgrat": "Herringbone",
-        }
+            return IntentAnalysis(
+                wants_fabrics=bool(parsed.get("wants_fabrics")),
+                search_criteria={
+                    "query": user_input,
+                    "colors": parsed.get("colors", []) or [],
+                    "patterns": parsed.get("patterns", []) or [],
+                },
+                lead_ready=bool(parsed.get("lead_ready")),
+            )
+        except Exception as exc:  # pragma: no cover - robust fallback
+            logger.warning("[HENK1] LLM intent extraction failed, using fallback", exc_info=exc)
+            return fallback_intent_analysis(user_input, state.conversation_history)
 
-        for keyword, pattern in pattern_keywords.items():
-            if keyword in user_input_lower:
-                patterns.append(pattern)
+    def _maybe_capture_lead(self, state: SessionState, intent: IntentAnalysis) -> None:
+        """Setze ein CRM-Lead-Flag, sobald klarer Bedarf besteht."""
+        already_captured = bool(state.customer.crm_lead_id)
+        should_capture = intent.lead_ready or (state.henk1_rag_queried and state.henk1_mood_board_shown)
 
-        # If no specific criteria found, use conversation history
-        if not colors and not patterns:
-            # Check full conversation for context
-            for msg in state.conversation_history[-5:]:
-                content = msg.get("content", "").lower()
-                for keyword, color in color_keywords.items():
-                    if keyword in content and color not in colors:
-                        colors.append(color)
-                for keyword, pattern in pattern_keywords.items():
-                    if keyword in content and pattern not in patterns:
-                        patterns.append(pattern)
+        if should_capture and not already_captured:
+            state.customer.crm_lead_id = f"HENK1_LEAD_{state.session_id[:8]}"
+            logger.info("[HENK1] Lead provisional secured during needs assessment")
 
-        return {
-            "query": user_input,
-            "colors": colors,
-            "patterns": patterns,
-        }
+    def _contact_request(self, state: SessionState, intent: IntentAnalysis) -> Optional[str]:
+        """Frage nach Kontakt, wenn Lead klar ist und noch nichts vorliegt."""
+
+        if not intent.lead_ready:
+            return None
+
+        has_email_or_phone = bool(state.customer.email or state.customer.phone)
+        already_asked = state.henk1_contact_requested
+
+        if has_email_or_phone or already_asked:
+            return None
+
+        state.henk1_contact_requested = True
+        return (
+            "Damit ich dir direkt Stoffvorschläge schicken kann: "
+            "Welche Email und ggf. WhatsApp-/Telefonnummer passt für dich?"
+        )
 
     def _should_generate_mood_board(self, state: SessionState) -> bool:
         """
