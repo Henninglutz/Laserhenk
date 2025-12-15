@@ -57,15 +57,36 @@ def _session_state(state: HenkGraphState) -> SessionState:
     return parsed
 
 
+def _normalize_role(role: Optional[str]) -> str:
+    if role in {"human", "user"}:
+        return "user"
+    if role in {"ai", "assistant"}:
+        return "assistant"
+    return role or "assistant"
+
+
+def _serialize_message(msg: Any) -> dict:
+    if isinstance(msg, dict):
+        msg_role = _normalize_role(msg.get("role"))
+        return {"role": msg_role, "content": msg.get("content", ""), **{k: v for k, v in msg.items() if k not in {"role", "content"}}}
+
+    msg_role = _normalize_role(getattr(msg, "type", None) or getattr(msg, "role", None))
+    data = {"role": msg_role, "content": getattr(msg, "content", "")}
+    metadata = getattr(msg, "metadata", None) or getattr(msg, "additional_kwargs", None)
+    if metadata:
+        data["metadata"] = metadata
+    sender = getattr(msg, "sender", None) or getattr(msg, "name", None)
+    if sender:
+        data["sender"] = sender
+    return data
+
+
 def _latest_content(messages: list, role: str) -> str:
+    normalized_role = _normalize_role(role)
     for msg in reversed(messages):
-        if isinstance(msg, dict):
-            if msg.get("role") == role:
-                return str(msg.get("content", "")).strip()
-        else:
-            msg_role = getattr(msg, "type", None) or getattr(msg, "role", None)
-            if msg_role == role:
-                return str(getattr(msg, "content", "")).strip()
+        parsed = _serialize_message(msg)
+        if parsed.get("role") == normalized_role:
+            return str(parsed.get("content", "")).strip()
     return ""
 
 
@@ -174,14 +195,17 @@ async def validate_node(state: HenkGraphState) -> HenkGraphState:
 
 
 async def route_node(state: HenkGraphState) -> HenkGraphState:
+    session_state = _session_state(state)
+    session_state.conversation_history = [_serialize_message(m) for m in state.get("messages", [])]
+
     if state.get("awaiting_user_input"):
-        return {"next_step": None}
+        return {"next_step": None, "session_state": session_state}
 
     current_agent = state.get("current_agent") or "operator"
     return {
         "current_agent": current_agent,
         "next_step": HandoffAction(kind="agent", name=current_agent).model_dump(),
-        "session_state": _session_state(state),
+        "session_state": session_state,
     }
 
 

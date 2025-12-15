@@ -220,20 +220,18 @@ class Henk1Agent(BaseAgent):
             print("=== HENK1: Customer ready for fabric recommendations, calling RAG")
 
             return AgentDecision(
-                next_agent="operator",
+                next_agent="henk1",
                 message=reply,  # Show LLM response before RAG results
-                action="query_rag",  # Trigger RAG tool
+                action="rag_tool",  # Trigger RAG tool
                 action_params=intent.search_criteria,
                 should_continue=True,
             )
 
-        continue_flow = intent.wants_fabrics or not self.client
-
         return AgentDecision(
-            next_agent="operator",
+            next_agent=None,
             message=reply,
             action=None,
-            should_continue=continue_flow,
+            should_continue=False,
         )
     def _get_system_prompt(self) -> str:
         """Get HENK1 system prompt for needs assessment."""
