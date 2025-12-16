@@ -24,6 +24,7 @@ class Customer(BaseModel):
     name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    event_date: Optional[str] = None
     customer_type: CustomerType = CustomerType.NEW
     has_measurements: bool = False
     crm_lead_id: Optional[str] = Field(None, description="PIPEDRIVE CRM Lead ID")

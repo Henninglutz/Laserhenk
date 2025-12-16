@@ -1,9 +1,4 @@
-"""Phase assessment utilities for routing decisions.
-
-This module replaces the legacy OperatorAgent with a lightweight
-rule-based assessor that determines which phase is most appropriate
-based on the current :class:`SessionState` completeness.
-"""
+"""Lightweight phase assessor replacing the legacy operator routing."""
 
 from __future__ import annotations
 
@@ -30,21 +25,12 @@ class PhaseAssessment(BaseModel):
 class PhaseAssessor:
     """Evaluates session completeness across the main phases."""
 
-    HENK1_MANDATORY_FIELDS = ["occasion", "timing", "fabric_color"]
-
-    DESIGN_CORE_FIELDS = [
-        "revers_type",
-        "shoulder_padding",
-        "inner_lining",
-        "pocket_style",
-        "button_style",
-    ]
-
+    DESIGN_CORE_FIELDS = ["revers_type", "shoulder_padding", "waistband_type"]
     MEASUREMENT_CORE_FIELDS = [
+        "shoulder_width",
         "chest",
         "waist",
         "hip",
-        "shoulder_width",
         "sleeve_length",
         "body_length",
         "inseam",
@@ -57,7 +43,8 @@ class PhaseAssessor:
         design_missing = self._missing_design_fields(state)
         measurements_missing = self._missing_measurement_fields(state)
 
-        is_henk1_complete = not henk1_missing
+        # HENK1 is complete if contact + fabric color are present; timing is soft.
+        is_henk1_complete = not {"contact", "fabric_color"} & set(henk1_missing)
         is_design_complete = is_henk1_complete and not design_missing
         is_measurements_complete = is_design_complete and not measurements_missing
 
@@ -89,36 +76,33 @@ class PhaseAssessor:
         return assessment
 
     def _missing_henk1_fields(self, state: SessionState) -> list[str]:
-        occasion = self._get_occasion(state)
-        timing = self._get_timing(state)
-        fabric_color = self._get_fabric_color(state)
+        missing: list[str] = []
 
-        missing = []
-        if not occasion:
-            missing.append("occasion")
-        if not timing:
-            missing.append("timing")
+        if not (state.customer.email or state.customer.phone):
+            missing.append("contact")
+
+        fabric_color = self._get_fabric_color(state)
         if not fabric_color:
             missing.append("fabric_color")
+
+        if not self._get_timing(state):
+            missing.append("timing")
+
         return missing
 
     def _missing_design_fields(self, state: SessionState) -> list[str]:
-        missing = []
-
-        handoff = getattr(state, "handoffs", {}) or {}
-        design_payload = handoff.get("laserhenk") or getattr(state, "design_to_laser_payload", {}) or {}
-
+        missing: list[str] = []
         design_prefs = state.design_preferences
 
         for field in self.DESIGN_CORE_FIELDS:
-            if design_payload.get(field):
-                continue
             if getattr(design_prefs, field, None):
+                continue
+            handoff_val = self._get_design_handoff_value(state, field)
+            if handoff_val:
                 continue
             missing.append(field)
 
-        preferred_colors = getattr(design_prefs, "preferred_colors", None)
-        if preferred_colors is None or len(preferred_colors) == 0:
+        if not self._get_fabric_color(state):
             missing.append("fabric_color")
 
         return missing
@@ -134,44 +118,45 @@ class PhaseAssessor:
                 missing.append(field)
         return missing
 
-    def _get_occasion(self, state: SessionState) -> str | None:
-        customer = state.customer
+    def _get_design_handoff_value(self, state: SessionState, field: str) -> str | None:
         handoff = getattr(state, "handoffs", {}) or {}
-        henk_payload = handoff.get("design_henk") or getattr(state, "henk1_to_design_payload", {}) or {}
-
-        occasion = getattr(customer, "occasion", None) or getattr(customer, "event_type", None)
-        if occasion:
-            return str(occasion)
-
-        occasion = henk_payload.get("occasion")
-        if occasion:
-            return str(getattr(occasion, "value", occasion))
+        payload = handoff.get("laserhenk") or getattr(state, "design_to_laser_payload", {}) or {}
+        raw_val = payload.get(field)
+        if raw_val:
+            return str(getattr(raw_val, "value", raw_val))
         return None
 
     def _get_timing(self, state: SessionState) -> str | None:
-        customer = state.customer
         handoff = getattr(state, "handoffs", {}) or {}
-        henk_payload = handoff.get("design_henk") or getattr(state, "henk1_to_design_payload", {}) or {}
+        payload = handoff.get("design_henk") or getattr(state, "henk1_to_design_payload", {}) or {}
 
         return (
-            getattr(customer, "event_date", None)
-            or getattr(customer, "deadline", None)
-            or henk_payload.get("timing")
+            getattr(state.customer, "event_date", None)
+            or payload.get("timing")
+            or payload.get("deadline")
         )
 
     def _get_fabric_color(self, state: SessionState) -> str | None:
-        design_prefs = state.design_preferences
+        prefs = state.design_preferences
         handoff = getattr(state, "handoffs", {}) or {}
         henk_payload = handoff.get("design_henk") or getattr(state, "henk1_to_design_payload", {}) or {}
 
-        preferred_colors = getattr(design_prefs, "preferred_colors", None)
+        preferred_colors = getattr(prefs, "preferred_colors", None)
         if preferred_colors:
-            return ", ".join(preferred_colors)
+            return ", ".join(str(c) for c in preferred_colors)
 
-        colors = henk_payload.get("colors")
-        if colors:
-            if isinstance(colors, list):
-                return ", ".join(str(c) for c in colors)
-            return str(colors)
+        lining_color = getattr(prefs, "lining_color", None)
+        if lining_color:
+            return str(lining_color)
 
-        return getattr(design_prefs, "lining_color", None)
+        favorite_fabric = getattr(state, "favorite_fabric", None) or {}
+        if favorite_fabric.get("color"):
+            return str(favorite_fabric["color"])
+
+        payload_colors = henk_payload.get("colors") or henk_payload.get("color")
+        if payload_colors:
+            if isinstance(payload_colors, list):
+                return ", ".join(str(c) for c in payload_colors)
+            return str(payload_colors)
+
+        return None

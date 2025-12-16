@@ -174,14 +174,13 @@ async def smart_operator_node(state: HenkGraphState) -> HenkGraphState:
 
     logger.info(f"[SmartOperator] Analyzing: '{user_input[:60]}...'")
 
-    # Supervisor trifft Entscheidung (mit Offline-Fallback, damit Tests ohne API-Key laufen)
     supervisor = get_supervisor()
     typed_state = (
         session_state if isinstance(session_state, SessionState) else SessionState(**session_state)
     )
 
-    if not os.environ.get("OPENAI_API_KEY"):
-        logger.info("[SmartOperator] Offline routing fallback (no OPENAI_API_KEY)")
+    if supervisor.pydantic_agent is None:
+        logger.info("[SmartOperator] Offline routing fallback (no LLM agent available)")
         decision = supervisor.offline_route(user_input, typed_state)
     else:
         decision = await supervisor.decide_next_step(
