@@ -365,9 +365,11 @@ async def conversation_node(state: HenkGraphState) -> HenkGraphState:
                 "messages": messages,
             }
 
-        # Handle fabric image display (HENK1 - shows real fabric images from RAG)
-        if decision.action == "show_fabric_images":
-            logger.info(f"[Conversation] Agent {current_agent_name} requested fabric image display")
+        # Handle fabric display (dual tiers)
+        if decision.action in {"show_fabric_images", "show_fabric_pair"}:
+            logger.info(
+                f"[Conversation] Agent {current_agent_name} requested fabric display action={decision.action}"
+            )
 
             messages = list(state.get("messages", []))
             if decision.message and decision.message.strip():
@@ -380,11 +382,14 @@ async def conversation_node(state: HenkGraphState) -> HenkGraphState:
                     }
                 )
 
-            # Route to show_fabric_images tool
+            next_agent_name = (
+                "show_fabric_pair" if decision.action == "show_fabric_pair" else "show_fabric_images"
+            )
+
             return {
                 "session_state": updated_session_state,
                 "current_agent": current_agent_name,
-                "next_agent": "show_fabric_images",
+                "next_agent": next_agent_name,
                 "pending_action": decision.action_params or {},
                 "awaiting_user_input": False,
                 "phase_complete": False,
@@ -545,15 +550,16 @@ async def tools_dispatcher_node(state: HenkGraphState) -> HenkGraphState:
                 })
                 state["session_state"] = session_state
 
-        elif next_agent == "show_fabric_images":
-            result, fabric_images = await _execute_show_fabric_images(action_params, state)
-            # fabric_images is a list of dicts with url, fabric_code, name, etc.
+        elif next_agent in {"show_fabric_images", "show_fabric_pair"}:
+            if next_agent == "show_fabric_pair":
+                result, fabric_images = await _execute_show_fabric_pair(action_params, state)
+            else:
+                result, fabric_images = await _execute_show_fabric_images(action_params, state)
+
             metadata = {}
             if fabric_images:
-                # Store multiple fabric images in metadata
                 metadata["fabric_images"] = fabric_images
-                # Also store first image as primary image_url for backward compatibility
-                metadata["image_url"] = fabric_images[0]["url"]
+                metadata["image_url"] = fabric_images[0].get("url") or fabric_images[0].get("image_url")
 
             messages.append({
                 "role": "assistant",
@@ -646,7 +652,7 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> tu
         Tuple of (formatted_message, fabric_images_list)
         fabric_images_list = [{"url": str, "fabric_code": str, "name": str}, ...] or None
     """
-    from tools.rag_tool import RAGTool
+    from tools.rag_tool import RAGTool, select_dual_fabrics
 
     query = params.get("query", "")
     logger.info(f"[RAGTool] Executing fabric search with params={params}")
@@ -709,6 +715,7 @@ Wie möchtest du weitermachen? 🎩""", None)
             "colors": colors,
             "patterns": patterns,
         }
+        session_state.rag_context["fabric_suggestions"] = select_dual_fabrics(recommendations)
         state["session_state"] = session_state
 
         formatted = "**Passende Stoffe für deinen Anzug:**\n\n"
@@ -1106,6 +1113,55 @@ Aber ich kann dir die technischen Details zeigen – welcher Stoff interessiert 
 
 Lass uns trotzdem weitermachen – ich beschreibe dir die Stoffe! 🎩"""
         return message, None
+
+
+async def _execute_show_fabric_pair(
+    params: Dict[str, Any], state: HenkGraphState
+) -> tuple[str, Optional[list[dict]]]:
+    """Show exactly two fabrics: one mid and one luxury."""
+
+    session_state = state.get("session_state")
+    if isinstance(session_state, dict):
+        session_state = SessionState(**session_state)
+
+    rag_context = getattr(session_state, "rag_context", {}) or {}
+    suggestions = params.get("fabric_suggestions") or rag_context.get("fabric_suggestions") or []
+
+    if not suggestions:
+        logger.warning("[ShowFabricPair] No fabric suggestions available")
+        return (
+            "Mir fehlen gerade die Stoffempfehlungen. Lass uns die Suche kurz neu anstoßen! Welche Farben reizen dich?",
+            None,
+        )
+
+    cards: list[dict] = []
+    occasion = params.get("occasion", "deinen Anlass")
+    for suggestion in suggestions[:2]:
+        fabric = suggestion.get("fabric", {}) or {}
+        description = suggestion.get("description") or []
+        cards.append(
+            {
+                "tier": suggestion.get("tier"),
+                "title": suggestion.get("title"),
+                "description": description,
+                "fabric": fabric,
+                "image_url": fabric.get("image_url"),
+            }
+        )
+
+    message_lines = ["🎨 **Zwei perfekt kuratierte Stoffe für dich:**\n"]
+    for card in cards:
+        fabric = card.get("fabric", {})
+        message_lines.append(
+            f"**{card.get('tier', '').upper()} – {card.get('title')}** (Ref: {fabric.get('reference')})"
+        )
+        for bullet in card.get("description", [])[:3]:
+            message_lines.append(f"• {bullet}")
+        message_lines.append("")
+
+    message_lines.append(f"Beide Optionen passen zu {occasion}. Welche Variante spricht dich an?")
+
+    return "\n".join(message_lines), cards
 
 
 async def _execute_pricing_tool(params: Dict[str, Any], state: HenkGraphState) -> str:

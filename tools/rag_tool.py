@@ -1,7 +1,10 @@
 """RAG Tool - PostgreSQL Database Interface."""
 
+import json
 import logging
 import os
+import re
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -17,6 +20,12 @@ logger = logging.getLogger(__name__)
 
 # Pre-index local fabric images for quick lookup
 _FABRIC_IMAGE_DIR = Path(__file__).resolve().parent.parent / "storage" / "fabrics" / "images"
+_FABRIC_CATALOG_PATH = (
+    Path(__file__).resolve().parent.parent / "drive_mirror" / "henk" / "fabrics" / "fabric_catalog.json"
+)
+_PRICE_BOOK_PATH = (
+    Path(__file__).resolve().parent.parent / "drive_mirror" / "henk" / "fabrics" / "price_book_by_tier.json"
+)
 _FABRIC_IMAGE_INDEX = {}
 if _FABRIC_IMAGE_DIR.exists():  # pragma: no branch - defensive guard
     for file in _FABRIC_IMAGE_DIR.iterdir():
@@ -54,6 +63,151 @@ def _find_local_image(fabric_code: Optional[str]) -> list[str]:
             return [f"/fabrics/images/{filename}"]
 
     return []
+
+
+def _normalize_price_tier(raw_tier: Optional[str]) -> str:
+    if not raw_tier:
+        return "mid"
+
+    tier_lower = raw_tier.lower()
+    if "lux" in tier_lower:
+        return "luxury"
+    return "mid"
+
+
+def _parse_weight_from_text(text: str) -> Optional[int]:
+    match = re.search(r"(\d{2,3})\s*(?:g/?m2|g/?m|gr/ml|gr|g)", text, re.IGNORECASE)
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:  # pragma: no cover - defensive
+            return None
+    return None
+
+
+@lru_cache(maxsize=1)
+def _load_fabric_catalog() -> dict[str, dict]:
+    """Load and normalize fabric catalog as source of truth."""
+
+    if not _FABRIC_CATALOG_PATH.exists():
+        logger.warning("[RAGTool] Fabric catalog not found, returning empty index")
+        return {}
+
+    catalog_raw = json.loads(_FABRIC_CATALOG_PATH.read_text())
+    fabrics = catalog_raw.get("fabrics", [])
+
+    catalog_index: dict[str, dict] = {}
+    for fabric in fabrics:
+        reference = str(fabric.get("reference", "")).strip()
+        if not reference:
+            continue
+
+        tier = _normalize_price_tier(fabric.get("tier"))
+        context = fabric.get("context", "")
+        material = None
+        weight = None
+
+        # Extract material and weight heuristically from context string
+        if context:
+            material_match = re.search(r"(\d+%[^,/]+)", context)
+            if material_match:
+                material = material_match.group(1).strip()
+            weight = _parse_weight_from_text(context) or weight
+
+        normalized = {
+            "reference": reference,
+            "name": fabric.get("name") or fabric.get("context", ""),
+            "price_tier": tier,
+            "material": material or "Hochwertige Wollmischung",
+            "weight_gsm": weight,
+            "image_url": (_find_local_image(reference) or [None])[0],
+            "colors": [],
+            "patterns": [],
+        }
+
+        # Avoid duplicates – first wins
+        if reference not in catalog_index:
+            catalog_index[reference] = normalized
+        else:
+            logger.debug("[RAGTool] Duplicate fabric reference skipped: %s", reference)
+
+    return catalog_index
+
+
+def _normalize_recommendation(rec: FabricRecommendation) -> dict:
+    """Create normalized fabric object aligned with catalog schema."""
+
+    catalog_index = _load_fabric_catalog()
+    reference = rec.fabric.fabric_code
+    normalized = catalog_index.get(reference, {}).copy()
+
+    material = rec.fabric.composition or normalized.get("material")
+    weight = rec.fabric.weight or normalized.get("weight_gsm")
+    weight_value = None
+    try:
+        weight_value = int(weight) if weight is not None else None
+    except (TypeError, ValueError):
+        weight_value = None
+
+    if reference not in catalog_index:
+        normalized.update(
+            {
+                "reference": reference,
+                "name": rec.fabric.name or f"Stoff {reference}",
+                "price_tier": _normalize_price_tier(rec.fabric.price_category),
+                "material": material or "Hochwertige Wollmischung",
+                "weight_gsm": weight_value,
+                "image_url": (rec.fabric.image_urls or _find_local_image(reference) or [None])[0],
+                "colors": [],
+                "patterns": [],
+            }
+        )
+    else:
+        normalized.update(
+            {
+                "name": rec.fabric.name or normalized.get("name"),
+                "material": material or normalized.get("material"),
+                "weight_gsm": weight_value or normalized.get("weight_gsm"),
+                "image_url": (rec.fabric.image_urls or [normalized.get("image_url")])[0],
+            }
+        )
+
+    normalized["price_tier"] = _normalize_price_tier(normalized.get("price_tier"))
+    normalized["_similarity"] = rec.similarity_score
+
+    return normalized
+
+
+def select_dual_fabrics(recommendations: list[FabricRecommendation]) -> list[dict]:
+    """Ensure we always return one mid and one luxury fabric suggestion."""
+
+    normalized = [_normalize_recommendation(rec) for rec in recommendations]
+    mid_candidates = [f for f in normalized if f.get("price_tier") == "mid"]
+    luxury_candidates = [f for f in normalized if f.get("price_tier") == "luxury"]
+
+    def _price_score(item: dict) -> float:
+        tier_score = 2 if item.get("price_tier") == "luxury" else 1
+        return tier_score + (item.get("_similarity", 0) * 0.1)
+
+    mid = mid_candidates[0] if mid_candidates else None
+    luxury = luxury_candidates[0] if luxury_candidates else None
+
+    if not mid:
+        sorted_items = sorted(normalized, key=_price_score, reverse=True)
+        mid = sorted_items[0] if sorted_items else None
+    if not luxury:
+        sorted_items = sorted(normalized, key=_price_score, reverse=True)
+        luxury = next((item for item in sorted_items if item is not mid), mid)
+        if luxury:
+            luxury["price_tier"] = "luxury"
+
+    suggestions: list[dict] = []
+    if mid:
+        suggestions.append({"tier": "mid", "fabric": mid, "title": ""})
+    if luxury:
+        suggestions.append({"tier": "luxury", "fabric": luxury, "title": ""})
+
+    return suggestions
 
 
 class RAGTool:

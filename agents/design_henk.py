@@ -195,6 +195,8 @@ class DesignHenkAgent(BaseAgent):
             fabric_data["colors"] = [c.value for c in payload.get("colors", [])]
             fabric_data["patterns"] = [p.value for p in payload.get("patterns", [])]
             fabric_data["season"] = payload.get("season")
+            if payload.get("fabric_references"):
+                fabric_data["fabric_references"] = payload.get("fabric_references")
 
         # From RAG context
         elif state.rag_context and isinstance(state.rag_context, dict) and "fabrics" in state.rag_context:
@@ -206,6 +208,11 @@ class DesignHenkAgent(BaseAgent):
                 fabric_data["patterns"] = main_fabric.get("pattern_types", [])
                 fabric_data["fabric_code"] = main_fabric.get("fabric_code")
                 fabric_data["texture"] = main_fabric.get("texture")
+        elif state.rag_context and isinstance(state.rag_context, dict):
+            suggestions = state.rag_context.get("fabric_suggestions", [])
+            references = [s.get("fabric", {}).get("reference") for s in suggestions if s.get("fabric")]
+            if references:
+                fabric_data["fabric_references"] = references
 
         logger.info(f"[DesignHenkAgent] Extracted fabric data: {fabric_data}")
         return fabric_data
