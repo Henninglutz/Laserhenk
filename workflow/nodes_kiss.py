@@ -150,6 +150,11 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
     if hasattr(session_state, "shown_fabric_images"):
         session_state.shown_fabric_images.extend(fabric_images)
 
+    # Mark that fabrics have been shown to prevent repeated RAG calls
+    if fabric_images:
+        session_state.henk1_fabrics_shown = True
+        logging.info(f"[RAG] ✅ Set henk1_fabrics_shown = True ({len(fabric_images)} images)")
+
     state["session_state"] = session_state
 
     if not recommendations:
