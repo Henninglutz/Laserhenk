@@ -154,12 +154,11 @@ class Henk1Agent(BaseAgent):
         # If RAG has been queried and fabric images shown, mark complete and wait for user
         if state.henk1_rag_queried and state.henk1_mood_board_shown:
             logger.info("[HENK1] RAG queried and fabric images shown, HENK1 complete - waiting for user response")
-            # Mark customer as identified (for Operator routing)
             if not state.customer.customer_id:
                 state.customer.customer_id = f"TEMP_{state.session_id[:8]}"
 
             return AgentDecision(
-                next_agent="operator",
+                next_agent=None,
                 message=None,  # Fabric images already shown, no additional message needed
                 action=None,
                 should_continue=False,  # WAIT for user response to fabric images

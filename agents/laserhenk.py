@@ -30,11 +30,11 @@ class LaserHenkAgent(BaseAgent):
         # Check if customer has existing measurements
         if state.customer.has_measurements:
             return AgentDecision(
-                next_agent="operator",
+                next_agent=None,
                 message="Using existing measurements",
                 action="retrieve_measurements",
                 action_params={"customer_id": state.customer.customer_id},
-                should_continue=True,
+                should_continue=False,
             )
 
         # Option 1: SAIA 3D measurement (wenn verfügbar)
@@ -54,10 +54,10 @@ class LaserHenkAgent(BaseAgent):
                 should_continue=True,
             )
 
-        # Measurements complete → route to operator
+        # Measurements complete → hand back to supervisor
         return AgentDecision(
-            next_agent="operator",
+            next_agent=None,
             message="Measurements complete",
             action="complete_measurement_phase",
-            should_continue=True,
+            should_continue=False,
         )
