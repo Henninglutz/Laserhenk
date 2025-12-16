@@ -375,18 +375,24 @@ def _validate_handoff(target: str, payload: dict) -> tuple[bool, Optional[str]]:
 
 async def run_step_node(state: HenkGraphState) -> HenkGraphState:
     action_data = state.get("next_step")
+    logging.info(f"[RunStep] action_data: {action_data}")
     if not action_data:
+        logging.warning("[RunStep] No action_data, returning awaiting_user_input=True")
         return {"awaiting_user_input": True, "next_step": None}
 
     action = HandoffAction.model_validate(action_data)
+    logging.info(f"[RunStep] Executing {action.kind}: {action.name}")
 
     if action.kind == "tool":
+        logging.info(f"[RunStep] Running tool: {action.name} with params: {action.params}")
         return await _run_tool_action(action, state)
 
     agent_factory = AGENT_REGISTRY.get(action.name)
     if not agent_factory:
+        logging.warning(f"[RunStep] Agent {action.name} not found in registry")
         return {"awaiting_user_input": True, "next_step": None}
 
+    logging.info(f"[RunStep] Running agent: {action.name}")
     return await _run_agent_step(agent_factory(), action, state)
 
 
@@ -431,6 +437,8 @@ async def _run_agent_step(agent: Any, action: HandoffAction, state: HenkGraphSta
     decision = await agent.process(session_state)
     session_state.current_agent = agent.agent_name
 
+    logging.info(f"[AgentStep] {agent.agent_name} decision: action={decision.action}, next_agent={decision.next_agent}, should_continue={decision.should_continue}")
+
     messages = list(state.get("messages", []))
     if decision.message:
         messages.append({"role": "assistant", "content": decision.message, "sender": agent.agent_name})
@@ -455,9 +463,11 @@ async def _run_agent_step(agent: Any, action: HandoffAction, state: HenkGraphSta
         else:
             messages.append({"role": "assistant", "content": f"Handoff fehlgeschlagen: {err}"})
             updates["awaiting_user_input"] = True
+        logging.info(f"[AgentStep] Handoff to {target}: ok={ok}")
         return updates
 
     if decision.action and decision.action in TOOL_REGISTRY:
+        logging.info(f"[AgentStep] Tool action detected: {decision.action}, creating next_step for tool execution")
         updates["next_step"] = HandoffAction(
             kind="tool",
             name=decision.action,
@@ -466,9 +476,11 @@ async def _run_agent_step(agent: Any, action: HandoffAction, state: HenkGraphSta
             return_to_agent=decision.next_agent or agent.agent_name,
         ).model_dump()
         updates["awaiting_user_input"] = False
+        logging.info(f"[AgentStep] next_step set: {updates['next_step']}")
         return updates
 
     if decision.next_agent:
+        logging.info(f"[AgentStep] Next agent: {decision.next_agent}, should_continue={decision.should_continue}")
         updates["next_step"] = HandoffAction(
             kind="agent",
             name=decision.next_agent,
@@ -477,5 +489,6 @@ async def _run_agent_step(agent: Any, action: HandoffAction, state: HenkGraphSta
         ).model_dump()
         updates["awaiting_user_input"] = False if decision.should_continue else True
 
+    logging.info(f"[AgentStep] Final updates: awaiting_user_input={updates['awaiting_user_input']}, next_step={updates.get('next_step')}")
     return updates
 
