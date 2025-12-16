@@ -277,7 +277,15 @@ class SupervisorAgent:
         customer_data = state.customer.model_dump()
         dynamic_context = [
             "⚠️ CRITICAL: You MUST return ONLY valid JSON. NO explanatory text before or after the JSON object.",
-            "Required JSON format: {\"next_destination\": \"henk1|design_henk|rag_tool|pricing_tool|comparison_tool|laserhenk|clarification|end\", \"reasoning\": \"brief explanation\", \"confidence\": 0.9}",
+            "",
+            "REQUIRED JSON STRUCTURE:",
+            "{",
+            '  "next_destination": "henk1",  // MUST be ONE OF: henk1, design_henk, rag_tool, pricing_tool, comparison_tool, laserhenk, clarification, end',
+            '  "reasoning": "Brief explanation of routing decision",',
+            '  "confidence": 0.9  // Float between 0.0 and 1.0',
+            "}",
+            "",
+            "IMPORTANT: next_destination must be a SINGLE value, not multiple values separated by |",
             "",
             "Du bist der Supervisor. Entscheide den nächsten Schritt (Agent oder Tool).",
             "HENK1 Essentials: Anlass, Timing (event_date auch weich) und Stoff-Farbe sind Pflicht. Budget ist optional.",
