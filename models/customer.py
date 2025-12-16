@@ -106,6 +106,10 @@ class SessionState(BaseModel):
         default_factory=list,
         description="History of fabric images shown to user (url, fabric_code, name, timestamp)",
     )
+    fabric_presentation_history: list[dict] = Field(
+        default_factory=list,
+        description="Chronologische Historie kuratierter Stoff-Duos (mid + luxury)",
+    )
     favorite_fabric: Optional[dict] = Field(
         None,
         description="User's selected favorite fabric (fabric_code, name, color, image_url)",

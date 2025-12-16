@@ -69,6 +69,16 @@ class Henk1ToDesignHenkPayload(BaseModel):
     setting: Optional[str] = Field(
         None, description="Setting/Kontext (z.B. 'see', 'kirche', 'standesamt')"
     )
+    fabric_references: list[str] = Field(
+        default_factory=list,
+        description="Kuratiertes Duo an Stoff-Referenzen (mid + luxury)",
+        max_length=2,
+    )
+    preferred_fabric_tier: Optional[str] = Field(
+        None,
+        description="Favorisierte Preisstufe des Nutzers (mid oder luxury)",
+        pattern="^(mid|luxury)$",
+    )
 
     @field_validator("budget_max")
     @classmethod

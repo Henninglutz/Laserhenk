@@ -72,6 +72,7 @@ BEISPIEL-ABLAUF:
 import json
 import logging
 import os
+from datetime import datetime
 from typing import Optional
 
 from openai import AsyncOpenAI
@@ -121,32 +122,33 @@ class Henk1Agent(BaseAgent):
         print(f"=== HENK1 PROCESS: customer_id = {state.customer.customer_id}")
         print(f"=== HENK1 PROCESS: conversation_history length = {len(state.conversation_history)}")
 
-        # If RAG has been queried, show fabric images (if not shown yet)
+        # If RAG has been queried, show curated fabric pair (mid + luxury)
         if state.henk1_rag_queried and not state.henk1_mood_board_shown:
-            logger.info("[HENK1] RAG queried, now showing fabric images")
+            logger.info("[HENK1] RAG queried, now showing curated fabric pair")
 
-            # Check if we have fabric data in rag_context
-            rag_context = getattr(state, "rag_context", None)
-            if rag_context is None:
-                rag_context = {}
-            fabrics = rag_context.get("fabrics", [])
+            rag_context = getattr(state, "rag_context", None) or {}
+            suggestions = rag_context.get("fabric_suggestions") or []
 
             logger.info("[HENK1] Fabrics in rag_context: %d", len(fabrics))
 
             if fabrics:
                 # Extract occasion from conversation if available
                 occasion = self._extract_style_info(state).get("occasion", "deinen Anlass")
+            if suggestions:
+                style_info = self._extract_style_info(state)
+                prepared = self._prepare_fabric_presentations(
+                    suggestions, style_info, state
+                )
 
-                # Mark mood board as shown (we're showing fabric images instead)
                 state.henk1_mood_board_shown = True
 
                 return AgentDecision(
                     next_agent=None,
-                    message=None,  # Tool will provide the message
-                    action="show_fabric_images",
+                    message=None,
+                    action="show_fabric_pair",
                     action_params={
-                        "occasion": occasion,
-                        "limit": 2,
+                        "fabric_suggestions": prepared,
+                        "occasion": style_info.get("occasion", "deinen Anlass"),
                     },
                     should_continue=False,
                 )
@@ -162,6 +164,7 @@ class Henk1Agent(BaseAgent):
                     action=None,
                     should_continue=False,
                 )
+                logger.warning("[HENK1] No fabrics in rag_context, skipping presentation")
 
         # If RAG has been queried and fabric images shown, mark complete and wait for user
         if state.henk1_rag_queried and state.henk1_mood_board_shown:
@@ -701,3 +704,82 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
 
         logger.info(f"[HENK1] Extracted style info: {style_info}")
         return style_info
+
+    def _build_fabric_title(self, tier: str, occasion: Optional[str], styles: list[str]) -> str:
+        occasion_text = occasion or "deinen Anlass"
+        style_hint = styles[0] if styles else "modern"
+        if tier == "luxury":
+            return f"Luxus-Statement für {occasion_text}"
+        return f"Allrounder ({style_hint}) für {occasion_text}"
+
+    def _prepare_fabric_presentations(
+        self, suggestions: list[dict], style_info: dict, state: SessionState
+    ) -> list[dict]:
+        """Normalize and persist fabric presentation details."""
+
+        prepared: list[dict] = []
+        timestamp = datetime.now().isoformat()
+        styles = style_info.get("style_keywords", []) or []
+        occasion = style_info.get("occasion")
+
+        for suggestion in suggestions[:2]:
+            fabric = suggestion.get("fabric", {}) or {}
+            tier = suggestion.get("tier", "mid")
+            reference = fabric.get("reference") or fabric.get("fabric_code") or "unknown"
+            material = fabric.get("material") or fabric.get("composition") or "Edle Wollmischung"
+            weight = fabric.get("weight_gsm") or fabric.get("weight")
+            try:
+                weight_int = int(weight) if weight is not None else None
+            except (TypeError, ValueError):
+                weight_int = None
+
+            title = suggestion.get("title") or self._build_fabric_title(
+                tier, occasion, styles
+            )
+
+            entry = {
+                "tier": tier,
+                "title": title,
+                "fabric": {
+                    **fabric,
+                    "reference": reference,
+                    "price_tier": tier,
+                    "material": material,
+                    "weight_gsm": weight_int,
+                },
+                "description": [
+                    material,
+                    f"Gewicht: {weight_int} g/m²" if weight_int else "Allround-Gewicht",
+                    f"Ref: {reference}",
+                ],
+            }
+
+            prepared.append(entry)
+
+            history_entry = {
+                "reference": reference,
+                "tier": tier,
+                "image_url": fabric.get("image_url"),
+                "title": title,
+                "material": material,
+                "weight_gsm": weight_int,
+                "timestamp": timestamp,
+            }
+            state.shown_fabric_images.append(history_entry)
+
+        if prepared:
+            state.fabric_presentation_history.append(
+                {
+                    "timestamp": timestamp,
+                    "occasion": occasion,
+                    "fabric_suggestions": prepared,
+                }
+            )
+
+            references = [p["fabric"].get("reference") for p in prepared if p.get("fabric")]
+            existing_payload = state.henk1_to_design_payload or {}
+            merged_payload = {**existing_payload, "fabric_references": references}
+            state.henk1_to_design_payload = merged_payload
+            state.handoffs["design_henk"] = merged_payload
+
+        return prepared
