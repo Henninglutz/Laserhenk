@@ -85,6 +85,9 @@ class SessionState(BaseModel):
     )
     rag_context: Optional[dict] = Field(None, description="Context from RAG database")
     next_action: Optional[str] = None
+    customer_budget_status: Optional[str] = Field(
+        None, description="Budget status classification (none, range, fixed, unknown)"
+    )
 
     # RAG query tracking per agent
     henk1_rag_queried: bool = Field(default=False, description="HENK1 has queried RAG")
@@ -106,13 +109,31 @@ class SessionState(BaseModel):
         default_factory=list,
         description="History of fabric images shown to user (url, fabric_code, name, timestamp)",
     )
+    henk1_fabrics_shown: bool = Field(
+        default=False, description="Flag ob HENK1 bereits Stoffliste gezeigt hat"
+    )
     fabric_presentation_history: list[dict] = Field(
         default_factory=list,
         description="Chronologische Historie kuratierter Stoff-Duos (mid + luxury)",
     )
+    henk1_contact_declined: bool = Field(
+        default=False, description="Kunde möchte aktuell keine Kontaktanfrage"
+    )
     favorite_fabric: Optional[dict] = Field(
         None,
         description="User's selected favorite fabric (fabric_code, name, color, image_url)",
+    )
+    henk1_suit_choice_prompted: bool = Field(
+        default=False, description="HENK1 hat bereits nach 2/3-Teiler & Weste gefragt"
+    )
+    suit_parts: Optional[str] = Field(
+        default=None, description="'2' für Zweiteiler oder '3' für Dreiteiler"
+    )
+    wants_vest: Optional[bool] = Field(
+        default=None, description="Ob der Kunde eine Weste möchte"
+    )
+    henk1_cut_confirmed: bool = Field(
+        default=False, description="Schnitt (2/3-Teiler + Weste) ist bestätigt"
     )
 
     handoffs: dict[str, dict] = Field(
