@@ -135,7 +135,11 @@ class SupervisorAgent:
                 decision = self._rule_based_routing(user_message, state, conversation_history)
         except Exception as exc:  # pragma: no cover - safety fallback
             logger.error(f"[SupervisorAgent] LLM routing failed: {exc}", exc_info=True)
-            decision = self._offline_route(user_message, state, assessment)
+            decision = SupervisorDecision(
+                next_destination="henk1",
+                reasoning="Fallback routing after unexpected error",
+                user_message="Sag mir kurz Anlass, Timing und Farbvorlieben.",
+            )
 
         decision = self._apply_hard_gates(decision, assessment)
 
@@ -153,6 +157,15 @@ class SupervisorAgent:
         text = (user_message or "").lower()
         if not text:
             return None
+
+        selection_keywords = ["rechtes foto", "linkes foto", "rechts", "links", "zweite", "erste", "foto"]
+        if state.shown_fabric_images and any(keyword in text for keyword in selection_keywords):
+            return SupervisorDecision(
+                next_destination="henk1",
+                reasoning="Detected fabric selection, routing back to henk1/design flow",
+                user_message=user_message,
+                confidence=0.95,
+            )
 
         color_hint = None
         if state.design_preferences.preferred_colors:
@@ -312,13 +325,23 @@ class SupervisorAgent:
 
         if isinstance(candidate, str):
             raw = candidate.strip()
+            if raw.startswith("```"):
+                raw = raw.strip("`").strip()
+            if raw.startswith("json"):
+                raw = raw[4:].strip()
+
             if not raw:
                 raise ValueError("Empty decision payload from supervisor LLM")
 
             try:
                 parsed = json.loads(raw)
             except json.JSONDecodeError as exc:
-                raise ValueError(f"Non-JSON decision payload: {raw[:120]}") from exc
+                snippet = raw[:160]
+                logger.warning(
+                    "[SupervisorAgent] Failed to parse decision JSON, snippet=%s",
+                    snippet,
+                )
+                raise ValueError(f"Non-JSON decision payload: {snippet}") from exc
 
             if not isinstance(parsed, dict):
                 raise ValueError(f"Decision JSON is not an object/dict: {type(parsed)}")

@@ -43,7 +43,7 @@ STATE ATTRIBUTES:
 -----------------
 - `state.conversation_history` - Vollständige Konversation
 - `state.henk1_rag_queried` - Flag ob RAG bereits abgefragt wurde
-- `state.henk1_mood_board_shown` - Flag ob Mood Board bereits gezeigt wurde
+- `state.henk1_fabrics_shown` - Flag ob Stoffliste (Top2+Alternativen) gezeigt wurde
 - `state.henk1_to_design_payload` - Payload für Design Henk (Budget, Stil, Stoffe)
 
 BEISPIEL-ABLAUF:
@@ -122,34 +122,70 @@ class Henk1Agent(BaseAgent):
         print(f"=== HENK1 PROCESS: customer_id = {state.customer.customer_id}")
         print(f"=== HENK1 PROCESS: conversation_history length = {len(state.conversation_history)}")
 
+        user_input = ""
+        for msg in reversed(state.conversation_history):
+            if isinstance(msg, dict) and msg.get("role") == "user":
+                user_input = msg.get("content", "")
+                break
+
+        fabric_choice = self._detect_fabric_choice(user_input)
+        if fabric_choice is not None and state.shown_fabric_images:
+            logger.info("[HENK1] Detected fabric choice: %s", fabric_choice)
+            selected_index = min(
+                max(fabric_choice, 0), len(state.shown_fabric_images) - 1
+            )
+            state.favorite_fabric = state.shown_fabric_images[selected_index]
+            state.henk1_rag_queried = True
+            state.henk1_fabrics_shown = True
+
+            follow_up = (
+                "Super, ich notiere den Stoff. Soll es ein 2- oder 3-Teiler werden?"
+                " Weste ja/nein?"
+            )
+            return AgentDecision(
+                next_agent="design_henk",
+                message=follow_up,
+                action=None,
+                should_continue=False,
+            )
+
+        if state.favorite_fabric:
+            logger.info("[HENK1] Favorite fabric already set, skipping repeat")
+            message = (
+                "Alles klar, lass uns jetzt den Schnitt klären. Lieber 2- oder 3-Teiler?"
+                " Brauchst du eine Weste?"
+            )
+            return AgentDecision(
+                next_agent="design_henk",
+                message=message,
+                action=None,
+                should_continue=False,
+            )
+
         # If RAG has been queried, show curated fabric pair (mid + luxury)
-        if state.henk1_rag_queried and not state.henk1_mood_board_shown:
+        if state.henk1_rag_queried and not state.henk1_fabrics_shown:
             logger.info("[HENK1] RAG queried, now showing curated fabric pair")
 
             rag_context = getattr(state, "rag_context", None) or {}
-            suggestions = rag_context.get("fabric_suggestions") or []
+            suggestions = (
+                rag_context.get("fabrics")
+                or rag_context.get("fabric_suggestions")
+                or []
+            )
 
-            logger.info("[HENK1] Fabrics in rag_context: %d", len(fabrics))
-
-            if fabrics:
-                # Extract occasion from conversation if available
-                occasion = self._extract_style_info(state).get("occasion", "deinen Anlass")
             if suggestions:
                 style_info = self._extract_style_info(state)
                 prepared = self._prepare_fabric_presentations(
                     suggestions, style_info, state
                 )
 
-                state.henk1_mood_board_shown = True
+                state.henk1_fabrics_shown = True
 
                 return AgentDecision(
                     next_agent=None,
-                    message=None,
+                    message=prepared.get("message"),
                     action="show_fabric_pair",
-                    action_params={
-                        "fabric_suggestions": prepared,
-                        "occasion": style_info.get("occasion", "deinen Anlass"),
-                    },
+                    action_params=prepared,
                     should_continue=False,
                 )
             else:
@@ -164,11 +200,12 @@ class Henk1Agent(BaseAgent):
                     action=None,
                     should_continue=False,
                 )
-                logger.warning("[HENK1] No fabrics in rag_context, skipping presentation")
 
         # If RAG has been queried and fabric images shown, mark complete and wait for user
-        if state.henk1_rag_queried and state.henk1_mood_board_shown:
-            logger.info("[HENK1] RAG queried and fabric images shown, HENK1 complete - waiting for user response")
+        if state.henk1_rag_queried and state.henk1_fabrics_shown:
+            logger.info(
+                "[HENK1] RAG queried and fabric images shown, HENK1 complete - waiting for user response"
+            )
             if not state.customer.customer_id:
                 state.customer.customer_id = f"TEMP_{state.session_id[:8]}"
 
@@ -249,7 +286,9 @@ class Henk1Agent(BaseAgent):
 
             self._persist_handoff_payload(state, needs_snapshot)
 
-            if state.henk1_rag_queried:
+            is_new_search = self._is_new_fabric_search(user_input)
+
+            if state.henk1_rag_queried and not is_new_search:
                 return AgentDecision(
                     next_agent=None,
                     message=reply
@@ -259,6 +298,8 @@ class Henk1Agent(BaseAgent):
                 )
 
             print("=== HENK1: Customer ready for fabric recommendations, calling RAG")
+
+            state.henk1_rag_queried = True
 
             return AgentDecision(
                 next_agent="henk1",
@@ -287,6 +328,9 @@ class Henk1Agent(BaseAgent):
             gaps.append("wann du den Anzug brauchst (Termin oder Zeitraum)")
         if not needs.get("style_keywords"):
             gaps.append("ob du es klassisch oder modern magst")
+        budget_status = needs.get("budget_status")
+        if not needs.get("budget_eur") and budget_status not in {"none"}:
+            gaps.append("ob du ein Budget im Kopf hast (kannst auch 'kein Budget' sagen)")
 
         return gaps
 
@@ -310,8 +354,10 @@ class Henk1Agent(BaseAgent):
 
         style_info = self._extract_style_info(state)
 
-        budget_value = self._extract_budget(conversation_text)
+        budget_value, budget_status = self._extract_budget(conversation_text)
         timing_hint = self._extract_timing_hint(conversation_text, state)
+
+        state.customer_budget_status = budget_status
 
         return {
             "occasion": style_info.get("occasion"),
@@ -319,23 +365,37 @@ class Henk1Agent(BaseAgent):
             "style_keywords": style_info.get("style_keywords", []),
             "patterns": style_info.get("patterns", []),
             "budget_eur": budget_value,
+            "budget_status": budget_status,
             "timing_hint": timing_hint,
             "notes": latest_user,
         }
 
-    def _extract_budget(self, conversation_text: str) -> Optional[float]:
-        """Parse the first numeric budget hint from the conversation text."""
+    def _extract_budget(self, conversation_text: str) -> tuple[Optional[float], str]:
+        """Parse numeric budget and classify budget status."""
 
         import re
 
+        lowered = conversation_text.lower()
+        no_budget_keywords = [
+            "kein budget",
+            "keine preisvorstellung",
+            "ohne budget",
+            "egal",
+        ]
+
+        if any(keyword in lowered for keyword in no_budget_keywords):
+            return None, "none"
+
+        status = "unknown"
         match = re.search(r"(\d+[\.,]?\d*)", conversation_text)
         if not match:
-            return None
+            return None, status
 
         try:
-            return float(match.group(1).replace(",", "."))
+            value = float(match.group(1).replace(",", "."))
+            return value, "fixed"
         except ValueError:
-            return None
+            return None, status
 
     def _extract_timing_hint(
         self, conversation_text: str, state: SessionState
@@ -538,7 +598,9 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
     def _maybe_capture_lead(self, state: SessionState, intent: IntentAnalysis) -> None:
         """Setze ein CRM-Lead-Flag, sobald klarer Bedarf besteht."""
         already_captured = bool(state.customer.crm_lead_id)
-        should_capture = intent.lead_ready or (state.henk1_rag_queried and state.henk1_mood_board_shown)
+        should_capture = intent.lead_ready or (
+            state.henk1_rag_queried and state.henk1_fabrics_shown
+        )
 
         if should_capture and not already_captured:
             state.customer.crm_lead_id = f"HENK1_LEAD_{state.session_id[:8]}"
@@ -714,72 +776,205 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
 
     def _prepare_fabric_presentations(
         self, suggestions: list[dict], style_info: dict, state: SessionState
-    ) -> list[dict]:
+    ) -> dict:
         """Normalize and persist fabric presentation details."""
 
-        prepared: list[dict] = []
         timestamp = datetime.now().isoformat()
         styles = style_info.get("style_keywords", []) or []
         occasion = style_info.get("occasion")
 
-        for suggestion in suggestions[:2]:
-            fabric = suggestion.get("fabric", {}) or {}
-            tier = suggestion.get("tier", "mid")
-            reference = fabric.get("reference") or fabric.get("fabric_code") or "unknown"
-            material = fabric.get("material") or fabric.get("composition") or "Edle Wollmischung"
+        normalized: list[dict] = []
+        for suggestion in suggestions:
+            fabric = suggestion.get("fabric", suggestion) or {}
+            tier = suggestion.get("tier") or fabric.get("price_tier") or "mid"
+            reference = (
+                fabric.get("reference")
+                or fabric.get("fabric_code")
+                or fabric.get("code")
+                or "unknown"
+            )
+            material = (
+                fabric.get("material")
+                or fabric.get("composition")
+                or fabric.get("material_composition")
+                or "Edle Wollmischung"
+            )
             weight = fabric.get("weight_gsm") or fabric.get("weight")
             try:
                 weight_int = int(weight) if weight is not None else None
             except (TypeError, ValueError):
                 weight_int = None
 
-            title = suggestion.get("title") or self._build_fabric_title(
-                tier, occasion, styles
+            entry = {
+                "price_tier": tier.lower() if isinstance(tier, str) else "mid",
+                "reference": reference,
+                "material": material,
+                "weight_gsm": weight_int,
+                "name": fabric.get("name") or fabric.get("color_name") or "Stoff",
+                "color": fabric.get("color"),
+                "pattern": fabric.get("pattern"),
+                "image_url": fabric.get("image_url")
+                or fabric.get("image_filename")
+                or fabric.get("image"),
+                "raw": fabric,
+            }
+            normalized.append(entry)
+
+        def _pick_with_image(items: list[dict], tier: str) -> Optional[dict]:
+            for item in items:
+                if item.get("price_tier") == tier and item.get("image_url"):
+                    return item
+            for item in items:
+                if item.get("image_url"):
+                    return item
+            return items[0] if items else None
+
+        mid_choice = _pick_with_image(normalized, "mid")
+        luxury_choice = _pick_with_image(
+            [n for n in normalized if n is not mid_choice], "luxury"
+        )
+
+        top_fabrics = [f for f in [mid_choice, luxury_choice] if f]
+
+        def _similarity_score(candidate: dict, anchor: dict) -> float:
+            score = 0.0
+            if anchor.get("color") and candidate.get("color") == anchor.get("color"):
+                score += 1.5
+            if anchor.get("pattern") and candidate.get("pattern") == anchor.get("pattern"):
+                score += 1.2
+            if anchor.get("weight_gsm") and candidate.get("weight_gsm"):
+                diff = abs(anchor["weight_gsm"] - candidate["weight_gsm"])
+                if diff <= 30:
+                    score += 1.0
+                elif diff <= 50:
+                    score += 0.6
+            if candidate.get("raw", {}).get("collection") and anchor.get("raw", {}).get(
+                "collection"
+            ):
+                if (
+                    candidate["raw"].get("collection")
+                    == anchor["raw"].get("collection")
+                ):
+                    score += 1.0
+            score += candidate.get("raw", {}).get("_similarity", 0) * 0.1
+            return score
+
+        remaining = [f for f in normalized if f not in top_fabrics]
+        anchor = top_fabrics[0] if top_fabrics else None
+        if anchor:
+            remaining = sorted(
+                remaining,
+                key=lambda item: _similarity_score(item, anchor),
+                reverse=True,
             )
 
+        alternatives = remaining[:3]
+
+        displayed_top: list[dict] = []
+        for fabric in top_fabrics:
+            tier = fabric.get("price_tier", "mid")
+            title = self._build_fabric_title(tier, occasion, styles)
             entry = {
                 "tier": tier,
                 "title": title,
                 "fabric": {
-                    **fabric,
-                    "reference": reference,
+                    **fabric.get("raw", {}),
+                    "reference": fabric.get("reference"),
                     "price_tier": tier,
-                    "material": material,
-                    "weight_gsm": weight_int,
+                    "material": fabric.get("material"),
+                    "weight_gsm": fabric.get("weight_gsm"),
+                    "image_url": fabric.get("image_url"),
                 },
                 "description": [
-                    material,
-                    f"Gewicht: {weight_int} g/m²" if weight_int else "Allround-Gewicht",
-                    f"Ref: {reference}",
+                    fabric.get("material"),
+                    f"Gewicht: {fabric.get('weight_gsm')} g/m²"
+                    if fabric.get("weight_gsm")
+                    else "Allround-Gewicht",
+                    f"Ref: {fabric.get('reference')}",
                 ],
             }
+            displayed_top.append(entry)
 
-            prepared.append(entry)
+        state.shown_fabric_images.extend(
+            [
+                {
+                    "reference": fabric.get("reference"),
+                    "tier": fabric.get("price_tier"),
+                    "image_url": fabric.get("image_url"),
+                    "title": self._build_fabric_title(
+                        fabric.get("price_tier", "mid"), occasion, styles
+                    ),
+                    "material": fabric.get("material"),
+                    "weight_gsm": fabric.get("weight_gsm"),
+                    "timestamp": timestamp,
+                }
+                for fabric in top_fabrics
+            ]
+        )
 
-            history_entry = {
-                "reference": reference,
-                "tier": tier,
-                "image_url": fabric.get("image_url"),
-                "title": title,
-                "material": material,
-                "weight_gsm": weight_int,
-                "timestamp": timestamp,
-            }
-            state.shown_fabric_images.append(history_entry)
-
-        if prepared:
+        if displayed_top:
             state.fabric_presentation_history.append(
                 {
                     "timestamp": timestamp,
                     "occasion": occasion,
-                    "fabric_suggestions": prepared,
+                    "fabric_suggestions": displayed_top,
                 }
             )
 
-            references = [p["fabric"].get("reference") for p in prepared if p.get("fabric")]
+            references = [
+                p["fabric"].get("reference") for p in displayed_top if p.get("fabric")
+            ]
             existing_payload = state.henk1_to_design_payload or {}
             merged_payload = {**existing_payload, "fabric_references": references}
             state.henk1_to_design_payload = merged_payload
             state.handoffs["design_henk"] = merged_payload
 
-        return prepared
+        top_block_lines = ["2 Top-Stoffe – Mid & Luxury"]
+        for fabric in displayed_top:
+            fab = fabric.get("fabric", {})
+            top_block_lines.append(
+                f"- {fabric.get('title')}: Ref {fab.get('reference')} | "
+                f"{fab.get('material')} | {fab.get('weight_gsm') or 'Allround'} g/m² | FOTO: {fab.get('image_url')}"
+            )
+
+        alt_block_lines = ["3 ähnliche Alternativen (ohne Foto)"]
+        for alt in alternatives:
+            alt_block_lines.append(
+                f"- Ref {alt.get('reference')} | {alt.get('material')} | {alt.get('weight_gsm') or 'Allround'} g/m²"
+            )
+
+        message = "\n".join(top_block_lines + [""] + alt_block_lines)
+
+        return {
+            "fabric_suggestions": displayed_top,
+            "alternatives": alternatives,
+            "occasion": style_info.get("occasion", "deinen Anlass"),
+            "message": message,
+        }
+
+    def _detect_fabric_choice(self, user_input: str) -> Optional[int]:
+        text = (user_input or "").lower()
+        if not text:
+            return None
+
+        right_keywords = ["rechts", "zweite", "rechtsen", "rechtsen?", "2", "zweiter", "zweiten"]
+        left_keywords = ["links", "erste", "1", "ersten", "linke"]
+
+        if any(key in text for key in right_keywords):
+            return 1
+        if any(key in text for key in left_keywords):
+            return 0
+
+        return None
+
+    def _is_new_fabric_search(self, user_input: str) -> bool:
+        text = (user_input or "").lower()
+        triggers = [
+            "andere stoffe",
+            "mehr auswahl",
+            "andere farbe",
+            "zeig mehr",
+            "nochmal",
+            "andere muster",
+        ]
+        return any(trigger in text for trigger in triggers)

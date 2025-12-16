@@ -85,6 +85,9 @@ class SessionState(BaseModel):
     )
     rag_context: Optional[dict] = Field(None, description="Context from RAG database")
     next_action: Optional[str] = None
+    customer_budget_status: Optional[str] = Field(
+        None, description="Budget status classification (none, range, fixed, unknown)"
+    )
 
     # RAG query tracking per agent
     henk1_rag_queried: bool = Field(default=False, description="HENK1 has queried RAG")
@@ -105,6 +108,9 @@ class SessionState(BaseModel):
     shown_fabric_images: list[dict] = Field(
         default_factory=list,
         description="History of fabric images shown to user (url, fabric_code, name, timestamp)",
+    )
+    henk1_fabrics_shown: bool = Field(
+        default=False, description="Flag ob HENK1 bereits Stoffliste gezeigt hat"
     )
     fabric_presentation_history: list[dict] = Field(
         default_factory=list,
