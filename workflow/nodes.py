@@ -16,7 +16,6 @@ from typing import Dict, Any, Optional
 import logging
 from datetime import datetime
 
-from agents.operator import OperatorAgent
 from agents.supervisor_agent import SupervisorAgent, SupervisorDecision
 from agents.henk1 import Henk1Agent
 from agents.design_henk import DesignHenkAgent
@@ -148,23 +147,6 @@ async def smart_operator_node(state: HenkGraphState) -> HenkGraphState:
     # CRITICAL: If no user_input (after tool/agent execution), wait for new input
     # Don't route with empty message - this prevents infinite loops
     if not user_input or not user_input.strip():
-        # Wenn wir gerade aus einem Tool/Agent kommen und weitermachen sollen,
-        # nutze den Operator-Fallback basierend auf dem SessionState.
-        if not state.get("awaiting_user_input", False):
-            logger.info(
-                "[SmartOperator] No user_input but workflow is continuing; using operator fallback"
-            )
-            operator = OperatorAgent()
-            op_decision = await operator.process(session_state)
-            return {
-                "next_agent": op_decision.next_agent,
-                "current_agent": op_decision.next_agent,
-                "pending_action": op_decision.action_params,
-                "awaiting_user_input": not op_decision.should_continue,
-                "messages": state.get("messages", []),
-                "user_input": user_input,
-            }
-
         logger.info("[SmartOperator] No user_input, waiting for user response")
         messages = list(state.get("messages", []))
 
@@ -172,45 +154,35 @@ async def smart_operator_node(state: HenkGraphState) -> HenkGraphState:
         recent_assistant = [msg for msg in messages[-3:] if msg.get("role") == "assistant"]
 
         if recent_assistant:
-            # We have responses to show, just wait for user
             logger.info("[SmartOperator] Recent responses available, ending turn for user input")
             return {
                 "next_agent": "end",
                 "awaiting_user_input": True,
             }
-        else:
-            # No responses, something went wrong - ask clarification
-            logger.warning("[SmartOperator] No user_input and no recent responses")
-            messages.append({
-                "role": "assistant",
-                "content": "Wie kann ich dir weiterhelfen?",
-                "sender": "supervisor",
-            })
-            return {
-                "next_agent": "end",
-                "messages": messages,
-                "awaiting_user_input": True,
-            }
+
+        logger.warning("[SmartOperator] No user_input and no recent responses")
+        messages.append({
+            "role": "assistant",
+            "content": "Wie kann ich dir weiterhelfen?",
+            "sender": "supervisor",
+        })
+        return {
+            "next_agent": "end",
+            "messages": messages,
+            "awaiting_user_input": True,
+        }
 
     logger.info(f"[SmartOperator] Analyzing: '{user_input[:60]}...'")
 
     # Supervisor trifft Entscheidung (mit Offline-Fallback, damit Tests ohne API-Key laufen)
+    supervisor = get_supervisor()
     if not os.environ.get("OPENAI_API_KEY"):
         logger.info("[SmartOperator] Offline routing fallback (no OPENAI_API_KEY)")
-        operator = OperatorAgent()
-        op_decision = await operator.process(session_state)
-        decision = SupervisorDecision(
-            next_destination=op_decision.next_agent or "end",
-            reasoning="Rule-based fallback routing",
-            action_params=op_decision.action_params or {},
-            user_message=op_decision.message,
-            confidence=1.0,
-        )
+        decision = supervisor._rule_based_routing(user_input, session_state, conversation_history)
     else:
-        supervisor = get_supervisor()
         decision = await supervisor.decide_next_step(
             user_input,
-            session_state.model_dump() if isinstance(session_state, SessionState) else session_state,
+            session_state if isinstance(session_state, SessionState) else SessionState(**session_state),
             conversation_history,
         )
 

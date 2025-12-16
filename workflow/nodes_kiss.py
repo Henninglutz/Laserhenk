@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from agents.design_henk import DesignHenkAgent
 from agents.henk1 import Henk1Agent
 from agents.laserhenk import LaserHenkAgent
-from agents.operator import OperatorAgent
+from agents.supervisor_agent import SupervisorAgent, SupervisorDecision
 from models.customer import SessionState
 from models.handoff import (
     DesignHenkToLaserHenkPayload,
@@ -45,8 +45,10 @@ AGENT_REGISTRY: Dict[str, Callable[[], Any]] = {
     "henk1": Henk1Agent,
     "design_henk": DesignHenkAgent,
     "laserhenk": LaserHenkAgent,
-    "operator": OperatorAgent,
 }
+
+
+SUPERVISOR = SupervisorAgent()
 
 
 def _session_state(state: HenkGraphState) -> SessionState:
@@ -283,11 +285,76 @@ async def route_node(state: HenkGraphState) -> HenkGraphState:
     if state.get("awaiting_user_input"):
         return {"next_step": None, "session_state": session_state}
 
-    current_agent = state.get("current_agent") or "operator"
+    user_message = _latest_content(state.get("messages", []), "user") or state.get("user_input", "")
+
+    decision: SupervisorDecision = await SUPERVISOR.decide_next_step(
+        user_message=user_message,
+        state=session_state,
+        conversation_history=session_state.conversation_history,
+    )
+
+    metadata = dict(state.get("metadata", {}))
+    metadata.update(
+        {
+            "supervisor_reasoning": decision.reasoning,
+            "confidence": decision.confidence,
+            "next_destination": decision.next_destination,
+        }
+    )
+
+    if decision.next_destination in TOOL_REGISTRY:
+        return {
+            "session_state": session_state,
+            "current_agent": session_state.current_agent or "supervisor",
+            "next_step": HandoffAction(
+                kind="tool",
+                name=decision.next_destination,
+                params=decision.action_params or {},
+                should_continue=False,
+                return_to_agent=session_state.current_agent,
+                reasoning=decision.reasoning,
+                confidence=decision.confidence,
+            ).model_dump(),
+            "metadata": metadata,
+            "awaiting_user_input": False,
+        }
+
+    if decision.next_destination == "clarification":
+        messages = list(state.get("messages", []))
+        if decision.user_message:
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": decision.user_message,
+                    "sender": "supervisor",
+                    "metadata": {"reasoning": decision.reasoning, "confidence": decision.confidence},
+                }
+            )
+        return {
+            "messages": messages,
+            "session_state": session_state,
+            "current_agent": "supervisor",
+            "awaiting_user_input": True,
+            "next_step": None,
+            "metadata": metadata,
+        }
+
+    if decision.next_destination == "end":
+        return {
+            "session_state": session_state,
+            "current_agent": "supervisor",
+            "awaiting_user_input": True,
+            "next_step": None,
+            "metadata": metadata,
+        }
+
+    session_state.current_agent = decision.next_destination
+
     return {
-        "current_agent": current_agent,
-        "next_step": HandoffAction(kind="agent", name=current_agent).model_dump(),
+        "current_agent": decision.next_destination,
+        "next_step": HandoffAction(kind="agent", name=decision.next_destination).model_dump(),
         "session_state": session_state,
+        "metadata": metadata,
     }
 
 
@@ -365,7 +432,7 @@ async def _run_agent_step(agent: Any, action: HandoffAction, state: HenkGraphSta
     session_state.current_agent = agent.agent_name
 
     messages = list(state.get("messages", []))
-    if decision.message and agent.agent_name != "operator":
+    if decision.message:
         messages.append({"role": "assistant", "content": decision.message, "sender": agent.agent_name})
 
     updates: Dict[str, Any] = {

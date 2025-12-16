@@ -119,10 +119,10 @@ class DesignHenkAgent(BaseAgent):
             state.design_preferences.waistband_type = "bundfalte"
 
             return AgentDecision(
-                next_agent="operator",
+                next_agent=None,
                 message="Design preferences collected (mock data)",
                 action=None,
-                should_continue=True,
+                should_continue=False,
             )
 
         # Generate mood image with DALLE
@@ -143,7 +143,7 @@ class DesignHenkAgent(BaseAgent):
             style_keywords = self._extract_style_keywords(state)
 
             return AgentDecision(
-                next_agent="operator",
+                next_agent=None,
                 message="Generiere Ihr Outfit-Moodbild...",
                 action="generate_image",
                 action_params={
@@ -163,18 +163,18 @@ class DesignHenkAgent(BaseAgent):
             state.customer.crm_lead_id = f"MOCK_CRM_{state.session_id[:8]}"
 
             return AgentDecision(
-                next_agent="operator",
+                next_agent=None,
                 message="Lead secured in CRM (mock)",
                 action=None,
-                should_continue=True,
+                should_continue=False,
             )
 
-        # Design phase complete → route to operator
+        # Design phase complete → hand back to supervisor
         return AgentDecision(
-            next_agent="operator",
+            next_agent=None,
             message="Design phase complete, lead secured",
             action="complete_design_phase",
-            should_continue=True,
+            should_continue=False,
         )
 
     def _extract_fabric_data(self, state: SessionState) -> dict:

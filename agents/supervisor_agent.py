@@ -1,21 +1,21 @@
 """
 Supervisor Agent: Intelligenter Workflow-Orchestrator
 
-Der Supervisor ist das "Gehirn" des Routing-Systems. Er versteht User-Intent
-und entscheidet flexibel, welcher Agent oder welches Tool als nächstes aktiviert wird.
-
-Key Features:
-- LLM-basierte Intent-Erkennung
-- Context-aware Routing (berücksichtigt Phase, History, Customer-Daten)
-- Flexible Sprünge (Rücksprung von H3 zu H1 möglich)
-- Tool-Priorisierung (User sagt "zeig mir Stoffe" → sofort RAG Tool)
+Der Supervisor ist der zentrale Router. Er entscheidet anhand von
+User-Intent, SessionState und History, welches Ziel (Agent oder Tool)
+als nächstes ausgeführt wird.
 """
 
-from pydantic import BaseModel, Field
-from typing import Literal, Optional, Dict, Any, List
-import logging
+from __future__ import annotations
 
+import logging
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, Field
+
+from backend.agents.operator_phase_assessor import PhaseAssessment, PhaseAssessor
 from agents.prompt_loader import prompt_registry
+from models.customer import SessionState
 
 logger = logging.getLogger(__name__)
 
@@ -26,19 +26,10 @@ except ModuleNotFoundError:  # pragma: no cover - exercised via offline path
 
 
 class SupervisorDecision(BaseModel):
-    """
-    Routing-Entscheidung des Supervisors.
-
-    Attributes:
-        next_destination: Wohin soll geroutet werden? (Agent/Tool/Clarification/End)
-        reasoning: Begründung für diese Entscheidung (für Debugging/Logging)
-        action_params: Optionale Parameter (z.B. Suchfilter für RAG Tool)
-        user_message: Nachricht an User (nur bei clarification)
-        confidence: Confidence Score 0.0-1.0 (wie sicher ist die Entscheidung?)
-    """
+    """Routing-Entscheidung des Supervisors."""
 
     next_destination: Literal[
-        "henk1",  # H1: Event-Klärung (Anlass, Budget, Timing)
+        "henk1",  # H1: Event-Klärung (Anlass, Timing, Stoff-Farbe)
         "design_henk",  # H2: Design-Phase (Schnitt, Stil, Farben)
         "laserhenk",  # H3: Messungen (Körpermaße erfassen)
         "rag_tool",  # Stoff-/Bild-Suche via RAG
@@ -52,7 +43,7 @@ class SupervisorDecision(BaseModel):
         default="Routing based on user message analysis",
         description="Begründung für Routing-Entscheidung (1-2 Sätze)",
         min_length=10,
-        max_length=500,  # Increased from 200 to allow longer explanations
+        max_length=500,
     )
 
     action_params: Optional[Dict[str, Any]] = Field(
@@ -75,38 +66,11 @@ class SupervisorDecision(BaseModel):
 
 
 class SupervisorAgent:
-    """
-    Intelligenter Supervisor für flexible Workflow-Orchestrierung.
-
-    Der Supervisor nutzt ein LLM um User-Intent zu verstehen und zum
-    optimalen Agent/Tool zu routen. Im Gegensatz zu rule-based routing
-    kann er:
-    - Natürliche Sprache verstehen
-    - Context aus Conversation History nutzen
-    - Flexibel zwischen Phasen springen
-    - Tools on-demand aktivieren
-
-    Usage:
-        supervisor = SupervisorAgent()
-        decision = await supervisor.decide_next_step(
-            user_message="Zeig mir Wollstoffe",
-            session_state={...},
-            conversation_history=[...]
-        )
-        # decision.next_destination = "rag_tool"
-        # decision.action_params = {"fabric_type": "wool"}
-    """
+    """Intelligenter Supervisor für flexible Workflow-Orchestrierung."""
 
     def __init__(self, model: str = "openai:gpt-4o-mini"):
-        """
-        Initialisiert Supervisor mit LLM.
-
-        Args:
-            model: LLM Model String (default: gpt-4o-mini für Kosten-Effizienz)
-                  gpt-4o-mini ist ausreichend für Routing-Entscheidungen
-                  und deutlich günstiger als gpt-4
-        """
         self.model = model
+        self.phase_assessor = PhaseAssessor()
 
         if PydanticAgent is None:
             self.pydantic_agent = None
@@ -114,110 +78,59 @@ class SupervisorAgent:
                 "[SupervisorAgent] pydantic_ai not installed. Falling back to rule-based routing"
             )
         else:
-            # Try both pydantic-ai API versions
-            # v1.0+ uses Generic typing: Agent[ResultType]
-            # v0.0.x uses result_type parameter
             try:
-                # Try v1.0+ Generic API first
-                # PydanticAgent[SupervisorDecision] specifies the structured output type
                 try:
-                    from typing import get_type_hints
-                    # Use Generic type annotation for v1.0+
-                    self.pydantic_agent = PydanticAgent[SupervisorDecision](model, retries=2)
-                    logger.info(f"[SupervisorAgent] Initialized with model={model} (pydantic-ai v1.0+ Generic)")
-                except (TypeError, AttributeError) as e_generic:
-                    # Generic syntax not supported, try plain constructor
-                    logger.debug(f"[SupervisorAgent] Generic syntax failed: {e_generic}")
-                    self.pydantic_agent = PydanticAgent(model, retries=2)
-                    logger.info(f"[SupervisorAgent] Initialized with model={model} (pydantic-ai v1.0+ plain)")
-            except Exception as e1:
-                # v1.0+ failed, try old API (v0.0.x)
-                try:
-                    logger.debug(f"[SupervisorAgent] New API failed: {e1}, trying old API")
-                    self.pydantic_agent = PydanticAgent(
-                        model,
-                        result_type=SupervisorDecision,
-                        retries=2
+                    self.pydantic_agent = PydanticAgent[SupervisorDecision](
+                        model, retries=2
                     )
-                    logger.info(f"[SupervisorAgent] Initialized with model={model} (pydantic-ai v0.0.x)")
-                except Exception as e2:
-                    # Both APIs failed
+                    logger.info(
+                        f"[SupervisorAgent] Initialized with model={model} (pydantic-ai v1.0+ Generic)"
+                    )
+                except (TypeError, AttributeError):
+                    self.pydantic_agent = PydanticAgent(model, retries=2)
+                    logger.info(
+                        f"[SupervisorAgent] Initialized with model={model} (pydantic-ai v1.0+ plain)"
+                    )
+            except Exception as e1:
+                try:
+                    self.pydantic_agent = PydanticAgent(
+                        model, result_type=SupervisorDecision, retries=2
+                    )
+                    logger.info(
+                        f"[SupervisorAgent] Initialized with model={model} (pydantic-ai v0.0.x)"
+                    )
+                except Exception as e2:  # pragma: no cover - fallback path
                     self.pydantic_agent = None
                     logger.warning(
-                        f"[SupervisorAgent] Failed to initialize PydanticAgent with both APIs. "
+                        f"[SupervisorAgent] Failed to initialize PydanticAgent. "
                         f"New API error: {e1}, Old API error: {e2}. "
                         "Falling back to rule-based routing"
                     )
 
-        # Add system prompt to agent (if successfully initialized)
         if self.pydantic_agent is not None:
             @self.pydantic_agent.system_prompt
             async def get_system_prompt(ctx) -> str:
-                """System prompt that instructs the agent to return SupervisorDecision."""
                 deps = ctx.deps or {}
                 system_prompt = deps.get("system_prompt", "")
                 return system_prompt if system_prompt else self._get_default_system_prompt()
 
-    def _get_default_system_prompt(self) -> str:
-        """Get default system prompt for supervisor."""
-        return """You are a routing supervisor for a bespoke suit consultation system.
-
-Your task is to analyze the user's message and decide which agent or tool should handle it next.
-
-Return a SupervisorDecision object with:
-- next_destination: The agent/tool to route to
-- reasoning: Brief explanation (1-2 sentences)
-- action_params: Optional parameters for the destination
-- confidence: 0.0-1.0 (how confident you are)
-
-Available destinations:
-- henk1: Initial consultation (occasion, budget, timing)
-- design_henk: Design preferences (cut, style, colors)
-- laserhenk: Measurements
-- rag_tool: Fabric/image search
-- comparison_tool: Compare options
-- pricing_tool: Price calculation
-- clarification: User intent unclear
-- end: End conversation
-
-IMPORTANT: Always return a valid SupervisorDecision object with all required fields."""
-
     async def decide_next_step(
         self,
         user_message: str,
-        session_state: Dict[str, Any],
+        state: SessionState,
         conversation_history: List[Dict[str, Any]],
     ) -> SupervisorDecision:
-        """
-        Trifft LLM-basierte Routing-Entscheidung.
+        assessment = self.phase_assessor.assess(state)
 
-        Analysiert User-Intent basierend auf:
-        - Aktuellem User-Message
-        - Session State (Phase, Customer-Daten, etc.)
-        - Conversation History (für Context wie "von vorhin", "das letzte")
+        pre_routed = self._pre_route(user_message, state)
+        if pre_routed:
+            logger.info(
+                "[SupervisorAgent] Pre-routing to %s (confidence=%.2f)",
+                pre_routed.next_destination,
+                pre_routed.confidence,
+            )
+            return pre_routed
 
-        Args:
-            user_message: Aktuelle Nachricht vom User
-            session_state: Session State mit customer_data, current_phase, etc.
-            conversation_history: Liste der bisherigen Messages
-
-        Returns:
-            SupervisorDecision mit next_destination und reasoning
-
-        Raises:
-            Keine - Bei Fehler wird clarification Decision zurückgegeben
-
-        Example:
-            >>> decision = await supervisor.decide_next_step(
-            ...     "Zeig mir Nadelstreifen",
-            ...     {"current_phase": "H2", "customer_data": {...}},
-            ...     [...]
-            ... )
-            >>> decision.next_destination
-            'rag_tool'
-            >>> decision.action_params
-            {'pattern': 'pinstripe', 'query': 'Nadelstreifen'}
-        """
         if self.pydantic_agent is None:
             logger.info("[SupervisorAgent] Using clarification fallback (no LLM available)")
             return SupervisorDecision(
@@ -227,112 +140,80 @@ IMPORTANT: Always return a valid SupervisorDecision object with all required fie
                 confidence=0.0,
             )
 
-        system_prompt = self._build_supervisor_prompt(session_state)
+        system_prompt = self._build_supervisor_prompt(state, assessment)
 
         try:
-            # Try calling run() with result_type parameter (v1.0+ alternative syntax)
             try:
                 result = await self.pydantic_agent.run(
                     user_message,
-                    result_type=SupervisorDecision,  # v1.0+ may accept this at run() time
+                    result_type=SupervisorDecision,
                     message_history=self._format_history(conversation_history),
                     deps={
                         "system_prompt": system_prompt,
-                        "current_phase": session_state.get("current_phase", "H0"),
-                        "customer_data": session_state.get("customer_data", {}),
+                        "current_phase": getattr(state, "current_agent", None) or "H0",
+                        "customer_data": state.customer.model_dump(),
                         "available_destinations": self._get_available_destinations(),
                     },
                 )
             except TypeError:
-                # result_type not accepted at run() time, try without
                 result = await self.pydantic_agent.run(
                     user_message,
                     message_history=self._format_history(conversation_history),
                     deps={
                         "system_prompt": system_prompt,
-                        "current_phase": session_state.get("current_phase", "H0"),
-                        "customer_data": session_state.get("customer_data", {}),
+                        "current_phase": getattr(state, "current_agent", None) or "H0",
+                        "customer_data": state.customer.model_dump(),
                         "available_destinations": self._get_available_destinations(),
                     },
                 )
 
-            # Handle both pydantic-ai API versions
-            # Log result structure for debugging
-            try:
-                result_type = type(result).__name__
-                result_attrs = [a for a in dir(result) if not a.startswith('_')][:15]
-                logger.info(f"[SupervisorAgent] Result type: {result_type}")
-                logger.info(f"[SupervisorAgent] Result attrs: {result_attrs}")
-            except Exception as log_err:
-                logger.warning(f"[SupervisorAgent] Failed to log result: {log_err}")
-
-            # Extract decision from result
-            decision = None
-
-            if hasattr(result, 'data'):
-                decision = result.data  # v0.0.x pattern
-                logger.info("[SupervisorAgent] Using result.data (v0.0.x)")
-            elif hasattr(result, 'output'):
-                decision = result.output  # Common v1.0+ pattern
-                logger.info("[SupervisorAgent] Using result.output (v1.0+)")
+            decision: Optional[SupervisorDecision] = None
+            if hasattr(result, "data"):
+                decision = result.data
+            elif hasattr(result, "output"):
+                decision = result.output
             elif isinstance(result, SupervisorDecision):
-                decision = result  # Result IS the decision
-                logger.info("[SupervisorAgent] Result is SupervisorDecision directly")
-            else:
-                # Try other common attribute names
-                for attr_name in ['result', 'value', 'response', 'content']:
+                decision = result
+
+            if decision is None:
+                for attr_name in ["result", "value", "response", "content"]:
                     if hasattr(result, attr_name):
-                        decision = getattr(result, attr_name)
-                        logger.info(f"[SupervisorAgent] Using result.{attr_name}")
-                        break
+                        candidate = getattr(result, attr_name)
+                        if isinstance(candidate, SupervisorDecision):
+                            decision = candidate
+                            break
+                        if isinstance(candidate, dict):
+                            decision = SupervisorDecision(**candidate)
+                            break
+                        if isinstance(candidate, str):
+                            import json
 
-                if decision is None:
-                    logger.error(f"[SupervisorAgent] Could not extract decision from result type {type(result)}")
-                    raise ValueError(f"Unknown result structure: {type(result)}")
+                            decision = SupervisorDecision(**json.loads(candidate))
+                            break
 
-            # Validate we got a SupervisorDecision
-            if not isinstance(decision, SupervisorDecision):
-                logger.warning(f"[SupervisorAgent] Decision is {type(decision).__name__}, not SupervisorDecision!")
-                logger.warning(f"[SupervisorAgent] Decision value: {decision}")
+            if decision is None:
+                raise ValueError(f"Unknown result structure: {type(result)}")
 
-                # Try to parse if it's a string (JSON)
-                if isinstance(decision, str):
-                    try:
-                        import json
-                        decision_dict = json.loads(decision)
-                        decision = SupervisorDecision(**decision_dict)
-                        logger.info("[SupervisorAgent] Successfully parsed JSON string to SupervisorDecision")
-                    except Exception as parse_error:
-                        logger.error(f"[SupervisorAgent] Failed to parse JSON string: {parse_error}")
-                        raise TypeError(f"Expected SupervisorDecision, got string that failed to parse: {parse_error}")
-                # Try to parse if it's a dict
-                elif isinstance(decision, dict):
-                    try:
-                        decision = SupervisorDecision(**decision)
-                        logger.info("[SupervisorAgent] Successfully converted dict to SupervisorDecision")
-                    except Exception as parse_error:
-                        logger.error(f"[SupervisorAgent] Failed to convert dict: {parse_error}")
-                        raise TypeError(f"Expected SupervisorDecision, got dict that failed to convert: {parse_error}")
-                else:
-                    raise TypeError(f"Expected SupervisorDecision, got {type(decision).__name__}")
+            decision = self._apply_hard_gates(decision, assessment)
 
             logger.info(
-                f"[SupervisorAgent] Decision: {decision.next_destination} "
-                f"(confidence={decision.confidence:.2f}) | "
-                f"Reason: {decision.reasoning}"
+                "[SupervisorAgent] Decision: %s (confidence=%.2f) | Reason: %s",
+                decision.next_destination,
+                decision.confidence,
+                decision.reasoning,
             )
 
             return decision
 
-        except Exception as e:
+        except Exception as e:  # pragma: no cover - safety
             logger.error(f"[SupervisorAgent] LLM call failed: {e}", exc_info=True)
 
-            # If structured output failed (TypeError), use rule-based routing instead
             if isinstance(e, TypeError) and "Expected SupervisorDecision" in str(e):
-                logger.warning("[SupervisorAgent] Structured output not working, using rule-based routing")
-                return self._rule_based_routing(user_message, session_state, conversation_history)
+                logger.warning(
+                    "[SupervisorAgent] Structured output not working, using rule-based routing"
+                )
+                return self._rule_based_routing(user_message, state, conversation_history)
 
-            # Fallback: Clarification bei anderen Fehler
             return SupervisorDecision(
                 next_destination="clarification",
                 reasoning="LLM error occurred, requesting clarification",
@@ -340,108 +221,85 @@ IMPORTANT: Always return a valid SupervisorDecision object with all required fie
                 confidence=0.0,
             )
 
-    def _build_supervisor_prompt(self, session_state: Dict[str, Any]) -> str:
-        """
-        Baut context-aware System Prompt für Supervisor.
+    def _pre_route(self, user_message: str, state: SessionState) -> Optional[SupervisorDecision]:
+        """Rule-based fast path for obvious tool intents."""
 
-        Der Prompt enthält:
-        - Aktuellen Phase-Context
-        - Erfasste Customer-Daten
-        - Verfügbare Destinations mit Beschreibung
-        - Routing-Regeln
+        text = (user_message or "").lower()
+        if not text:
+            return None
 
-        Args:
-            session_state: Session State für Context
+        color_hint = None
+        if state.design_preferences.preferred_colors:
+            color_hint = ", ".join(state.design_preferences.preferred_colors)
 
-        Returns:
-            Vollständiger System Prompt
-        """
-        current_phase = session_state.get("current_phase", "H0")
-        customer_data = session_state.get("customer_data", {})
+        fabric_keywords = [
+            "stoff",
+            "stoffe",
+            "fabric",
+            "muster",
+            "farbe",
+            "farben",
+            "bild",
+            "bilder",
+            "foto",
+        ]
+        pricing_keywords = ["preis", "kosten", "teuer", "günstig"]
+        comparison_keywords = ["vergleich", "unterschied", "vs", "gegenüber"]
+        measurement_keywords = ["maß", "messen", "messung", "größen", "size"]
+
+        def _matches(keywords: list[str]) -> bool:
+            return any(keyword in text for keyword in keywords)
+
+        if _matches(fabric_keywords):
+            return SupervisorDecision(
+                next_destination="rag_tool",
+                reasoning="Detected fabric/image intent via keywords",
+                action_params={"query": user_message, "color": color_hint},
+                confidence=0.92,
+            )
+
+        if _matches(pricing_keywords):
+            return SupervisorDecision(
+                next_destination="pricing_tool",
+                reasoning="Detected pricing intent via keywords",
+                action_params={"query": user_message},
+                confidence=0.9,
+            )
+
+        if _matches(comparison_keywords):
+            return SupervisorDecision(
+                next_destination="comparison_tool",
+                reasoning="Detected comparison intent via keywords",
+                action_params={"query": user_message},
+                confidence=0.9,
+            )
+
+        if _matches(measurement_keywords):
+            return SupervisorDecision(
+                next_destination="laserhenk",
+                reasoning="Detected measurement intent via keywords",
+                confidence=0.88,
+            )
+
+        return None
+
+    def _build_supervisor_prompt(
+        self, session_state: SessionState, assessment: PhaseAssessment
+    ) -> str:
+        current_phase = getattr(session_state, "current_agent", None) or "H0"
+        customer_data = session_state.customer.model_dump()
         completeness = self._assess_completeness(customer_data)
 
-        core_prompt = prompt_registry.get_prompt("core")
+        dynamic_context = f"Current phase: {current_phase}\n"
+        dynamic_context += f"Customer completeness: {completeness}\n"
+        dynamic_context += f"Missing fields: {', '.join(assessment.missing_fields) or 'keine'}\n"
+        dynamic_context += f"Recommended phase: {assessment.recommended_phase}\n"
 
-        dynamic_context = f"""Du bist der SUPERVISOR eines hochmodernen Bespoke-Schneider-Systems namens HENK.
+        optional_fields = [f"{k}={v}" for k, v in customer_data.items() if v]
+        optional_context = " | ".join(optional_fields) or "keine"  # avoid empty string
+        dynamic_context += f"Known customer data: {optional_context}"
 
-**KONTEXT:**
-Phase: {current_phase}
-Erfasste Daten: {list(customer_data.keys()) if customer_data else "Keine"}
-Datenvollständigkeit: {completeness}
-
-**AUFGABE:**
-Verstehe den User-Intent präzise und route zur optimalen Destination.
-
-**DESTINATIONS:**
-
-1. **henk1** (Event-Klärung H1)
-   Nutze wenn: Anlass, Budget, Timing, Dresscode diskutiert wird
-   Beispiele: "Ich brauche einen Anzug für Hochzeit", "Doch kein Smoking"
-
-   ⚠️ WICHTIG: HENK1 MUSS ALLE BASICS sammeln bevor zu design_henk:
-   - Anlass/Event (Hochzeit, Business, Gala, etc.)
-   - Budget/Preisvorstellung
-   - Timing (wann benötigt?)
-   - Grundlegende Farbpräferenzen
-
-   Bleibe bei henk1 bis ALLE diese Infos vorhanden sind!
-   Bei kurzen User-Antworten → ZURÜCK zu henk1, NICHT zu clarification!
-
-2. **design_henk** (Design-Phase H2)
-   Nutze wenn: Schnitt, Stil, Farben, Design-Optionen besprochen werden
-   Beispiele: "Ich will einen Zweireiher", "Was ist ein Peak Lapel?"
-
-   ⚠️ NUR hierhin routen wenn HENK1 bereits Anlass, Budget UND Timing erfasst hat!
-
-3. **laserhenk** (Messungen H3)
-   Nutze wenn: Körpermaße erfasst oder besprochen werden
-   Beispiele: "Wie messe ich meine Schulter?", "Maß scheint falsch"
-
-4. **rag_tool** (Stoff-/Bild-Suche)
-   Nutze wenn: Stoffe, Muster, Bilder angefordert werden
-   Beispiele: "Zeig mir Wollstoffe", "Mehr Bilder von Nadelstreifen"
-   WICHTIG: Auch nutzbar aus anderen Phasen! (sehr flexibel)
-   action_params: {{"fabric_type": "...", "pattern": "...", "query": "..."}}
-
-5. **comparison_tool** (Vergleiche)
-   Nutze wenn: Optionen/Stoffe/Designs verglichen werden sollen
-   Beispiele: "Was ist der Unterschied?", "Vergleich A und B"
-   action_params: {{"items": ["id1", "id2"], "comparison_type": "..."}}
-
-6. **pricing_tool** (Preiskalkulation)
-   Nutze wenn: Preis, Kosten, Budget angefragt wird
-   Beispiele: "Was kostet das?", "Passt ins Budget?"
-
-7. **clarification** (Rückfrage)
-   Nutze wenn: Intent WIRKLICH unklar, zu vage, mehrdeutig ist
-   Beispiele: "Hm", "Ok", "Interessant" (ohne Kontext)
-   MUSS user_message setzen mit gezielter Rückfrage!
-
-   ⚠️ NICHT nutzen bei kurzen aber klaren Antworten wie "eher locker", "blau", etc.
-   → Diese sollten zurück zum aktiven Agent (henk1/design_henk)!
-
-8. **end** (Beenden)
-   Nutze wenn: Kunde signalisiert Ende
-   Beispiele: "Danke, das war's", "Bis dann"
-
-**REGELN:**
-✅ HENK1 muss Anlass + Budget + Timing haben bevor zu design_henk
-✅ Bei kurzen User-Antworten → zurück zum aktiven Agent, NICHT clarification
-✅ Rücksprünge erlaubt (H3 → H1 ist ok)
-✅ Tools haben Priorität ("Zeig X" → Tool, egal welche Phase)
-✅ Context nutzen (History für "von vorhin", "das letzte")
-✅ Bei echtem Zweifel → clarification
-✅ action_params extrahieren aus User-Message
-
-**QUALITÄT:**
-- Ist next_destination logisch?
-- Hat HENK1 alle Basics? (Anlass, Budget, Timing)
-- Macht reasoning Sinn?
-- Sind action_params vollständig?
-- Ist confidence realistisch? (0.8-1.0=sicher, 0.5-0.8=unsicher, <0.5=sehr unsicher)
-
-Antworte mit SupervisorDecision Objekt!"""
-
+        core_prompt = self._get_default_system_prompt()
         return f"{core_prompt}\n\n---\n\n{dynamic_context}"
 
     def get_prompt_usage(self) -> Dict[str, Dict[str, Optional[str]]]:
@@ -449,18 +307,6 @@ Antworte mit SupervisorDecision Objekt!"""
         return prompt_registry.get_usage_report()
 
     def _assess_completeness(self, customer_data: Dict[str, Any]) -> str:
-        """
-        Bewertet Vollständigkeit der Customer-Daten.
-
-        Gibt qualitative Einschätzung basierend auf Anzahl erfasster Felder.
-        Hilft dem Supervisor zu verstehen, wie viel bereits bekannt ist.
-
-        Args:
-            customer_data: Dictionary mit Customer-Daten
-
-        Returns:
-            String wie "Leer", "Minimal (2 Felder)", "Umfangreich (8 Felder)"
-        """
         if not customer_data:
             return "Leer (0 Felder)"
 
@@ -473,172 +319,85 @@ Antworte mit SupervisorDecision Objekt!"""
         else:
             return f"Umfangreich ({field_count} Felder)"
 
-    def _get_available_destinations(self) -> List[str]:
-        """
-        Liefert Liste aller verfügbaren Destinations.
+    def _get_default_system_prompt(self) -> str:
+        return """You are a routing supervisor for a bespoke suit consultation system.
 
-        In unserem Hybrid-Modell sind alle Destinations immer verfügbar,
-        um maximale Flexibilität zu gewährleisten.
+Your task is to analyze the user's message and decide which agent or tool should handle it next.
 
-        Returns:
-            Liste aller Destination-Strings
-        """
-        return [
-            "henk1",
-            "design_henk",
-            "laserhenk",
-            "rag_tool",
-            "comparison_tool",
-            "pricing_tool",
-            "clarification",
-            "end",
-        ]
+Return a SupervisorDecision object with:
+- next_destination: The agent/tool to route to
+- reasoning: Brief explanation (1-2 sentences)
+- action_params: Optional parameters for the destination
+- confidence: 0.0-1.0 (how confident you are)
+
+Available destinations:
+- henk1: Initial consultation (occasion, timing, fabric color)
+- design_henk: Design preferences (cut, style, colors)
+- laserhenk: Measurements
+- rag_tool: Fabric/image search
+- comparison_tool: Compare options
+- pricing_tool: Price calculation
+- clarification: User intent unclear
+- end: End conversation
+
+RULES:
+✅ HENK1 must have occasion + timing + fabric color before design_henk
+✅ Tools can be triggered from any phase if user explicitly asks
+✅ Use clarification only when intent is unclear
+✅ Be concise in reasoning
+
+IMPORTANT: Always return a valid SupervisorDecision object with all required fields."""
 
     def _rule_based_routing(
         self,
         user_message: str,
-        session_state: Dict[str, Any],
+        session_state: SessionState,
         conversation_history: List[Dict[str, Any]],
     ) -> SupervisorDecision:
-        """
-        Simple rule-based routing fallback.
+        _ = user_message, conversation_history  # unused
+        assessment = self.phase_assessor.assess(session_state)
 
-        Used when LLM-based routing fails (e.g., structured output issues).
-
-        CRITICAL FIX: Checks completion status to prevent infinite loops!
-        - If HENK1 already queried RAG and has response, don't route back to henk1
-        - If Design HENK already complete, move to next phase
-        - Generate appropriate response message instead of looping
-
-        Args:
-            user_message: User's message
-            session_state: Current session state
-            conversation_history: Message history
-
-        Returns:
-            SupervisorDecision based on simple rules
-        """
-        message_lower = user_message.lower()
-        current_phase = session_state.get("current_phase", "H0")
-
-        # Extract completion flags from session_state
-        henk1_complete = session_state.get("henk1_rag_queried", False)
-        design_complete = session_state.get("design_rag_queried", False)
-        has_henk1_payload = session_state.get("henk1_to_design_payload") is not None
-
-        logger.info(f"[RuleBasedRouting] henk1_complete={henk1_complete}, design_complete={design_complete}, has_payload={has_henk1_payload}")
-
-        # Check for fabric/material queries - ALWAYS prioritize these
-        fabric_keywords = ["stoff", "stoffe", "material", "wolle", "leinen", "baumwolle",
-                          "seide", "fabric", "nadelstreifen", "muster", "zeig"]
-        if any(keyword in message_lower for keyword in fabric_keywords):
+        if not assessment.is_henk1_complete:
             return SupervisorDecision(
-                next_destination="rag_tool",
-                reasoning="User query contains fabric-related keywords",
-                confidence=0.7,
+                next_destination="henk1",
+                reasoning="Rule-based routing to complete HENK1 essentials",
+                confidence=0.65,
             )
 
-        # Check for design queries
-        design_keywords = ["design", "stil", "farbe", "schnitt", "aussehen",
-                          "modern", "klassisch", "style", "revers", "schulter"]
-        if any(keyword in message_lower for keyword in design_keywords):
+        if not assessment.is_design_complete:
             return SupervisorDecision(
                 next_destination="design_henk",
-                reasoning="User query contains design-related keywords",
-                confidence=0.7,
+                reasoning="Rule-based routing to complete design fields",
+                confidence=0.65,
             )
 
-        # Check for measurement queries
-        measure_keywords = ["maß", "masse", "größe", "messen", "körpermaße",
-                           "measurement", "size", "schulterbreite", "brustumfang"]
-        if any(keyword in message_lower for keyword in measure_keywords):
+        if not assessment.is_measurements_complete:
             return SupervisorDecision(
                 next_destination="laserhenk",
-                reasoning="User query contains measurement-related keywords",
-                confidence=0.7,
+                reasoning="Rule-based routing to capture measurements",
+                confidence=0.65,
             )
 
-        # Check for pricing queries
-        price_keywords = ["preis", "kosten", "price", "cost", "budget"]
-        if any(keyword in message_lower for keyword in price_keywords):
-            return SupervisorDecision(
-                next_destination="pricing_tool",
-                reasoning="User query contains pricing-related keywords",
-                confidence=0.7,
-            )
-
-        # Check for end/goodbye
-        end_keywords = ["danke", "tschüss", "bye", "ende", "das war", "fertig"]
-        if any(keyword in message_lower for keyword in end_keywords):
-            return SupervisorDecision(
-                next_destination="end",
-                reasoning="User signaled conversation end",
-                confidence=0.8,
-            )
-
-        # CRITICAL FIX: Check completion status to prevent infinite loop!
-        # If HENK1 already completed (queried RAG), don't route back to henk1
-        if henk1_complete:
-            logger.info("[RuleBasedRouting] HENK1 already complete, routing to design_henk or end")
-
-            # Check if there's a recent assistant response we can use
-            recent_responses = [msg for msg in conversation_history[-5:]
-                              if msg.get("role") == "assistant" and msg.get("sender") in ["henk1", "rag_tool"]]
-
-            if recent_responses:
-                # HENK1 already responded, move to next phase or end
-                if design_complete or has_henk1_payload:
-                    # Both complete, suggest end
-                    return SupervisorDecision(
-                        next_destination="end",
-                        reasoning="HENK1 and Design phases complete, suggesting end of conversation",
-                        user_message="Gibt es noch etwas, das ich für dich klären kann?",
-                        confidence=0.7,
-                    )
-                else:
-                    # Move to design phase
-                    return SupervisorDecision(
-                        next_destination="design_henk",
-                        reasoning="HENK1 complete, moving to design phase",
-                        confidence=0.7,
-                    )
-            else:
-                # No recent response, request clarification instead of looping
-                return SupervisorDecision(
-                    next_destination="clarification",
-                    reasoning="HENK1 complete but no response available, requesting clarification",
-                    user_message="Wie kann ich dir weiterhelfen? Möchtest du mehr über Stoffe, Design oder Maßanfertigung erfahren?",
-                    confidence=0.6,
-                )
-
-        # Default: Route to HENK1 only if NOT already complete
         return SupervisorDecision(
-            next_destination="henk1",
-            reasoning="Default routing to HENK1 for customer intake (first visit)",
-            confidence=0.6,
+            next_destination="end",
+            reasoning="All phases complete, ending session",
+            confidence=0.8,
         )
 
-    def _format_history(self, history: List[Dict[str, Any]]) -> List[Dict[str, str]]:
-        """
-        Formatiert Conversation History für PydanticAI.
+    def _apply_hard_gates(
+        self, decision: SupervisorDecision, assessment: PhaseAssessment
+    ) -> SupervisorDecision:
+        if decision.next_destination == "design_henk" and not assessment.is_henk1_complete:
+            decision.next_destination = "henk1"
+            decision.reasoning += " | HENK1 essentials incomplete, rerouting"
 
-        Konvertiert von unserem Message-Format zu PydanticAI's erwartetem Format.
-        Nimmt nur die letzten 10 Messages um Token-Limit nicht zu sprengen.
+        return decision
 
-        Args:
-            history: Liste von Message-Dicts mit role, content, sender
-
-        Returns:
-            Liste von Dicts mit role und content (PydanticAI Format)
-        """
+    def _format_history(self, history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         formatted = []
-
-        for msg in history[-10:]:  # Nur letzte 10 Messages
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-
-            # Nur user und assistant Messages (system Messages filtern)
-            if role in ["user", "assistant"] and content:
+        for msg in history[-20:]:
+            role = msg.get("role") or msg.get("type")
+            content = msg.get("content") or ""
+            if role and content:
                 formatted.append({"role": role, "content": content})
-
         return formatted

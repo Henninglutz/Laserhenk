@@ -59,7 +59,7 @@ def create_initial_graph_state(session_id: str) -> HenkGraphState:
     return HenkGraphState(
         session_state=initial_session,
         messages=[],
-        current_agent="operator",
+        current_agent="supervisor",
         next_agent=None,
         pending_action=None,
         action_params=None,
