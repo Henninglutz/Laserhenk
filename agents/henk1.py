@@ -142,6 +142,7 @@ class Henk1Agent(BaseAgent):
                 "Super, ich notiere den Stoff. Soll es ein 2- oder 3-Teiler werden?"
                 " Weste ja/nein?"
             )
+            state.henk1_suit_choice_prompted = True
             return AgentDecision(
                 next_agent="design_henk",
                 message=follow_up,
@@ -151,10 +152,35 @@ class Henk1Agent(BaseAgent):
 
         if state.favorite_fabric:
             logger.info("[HENK1] Favorite fabric already set, skipping repeat")
-            message = (
-                "Alles klar, lass uns jetzt den Schnitt klären. Lieber 2- oder 3-Teiler?"
-                " Brauchst du eine Weste?"
-            )
+            user_choice = self._extract_suit_choice(user_input)
+
+            if user_choice:
+                payload = state.henk1_to_design_payload or {}
+                payload = {**payload, **user_choice}
+                state.henk1_to_design_payload = payload
+                state.handoffs["design_henk"] = payload
+                message = (
+                    "Perfekt, ich notiere: {variant}{vest}. "
+                    "Weiter geht's mit Details zu Schnitt & Futter."
+                ).format(
+                    variant="2-Teiler"
+                    if user_choice.get("suit_variant") == "two_piece"
+                    else "3-Teiler",
+                    vest=" ohne Weste"
+                    if user_choice.get("wants_vest") is False
+                    else " mit Weste",
+                )
+            else:
+                if state.henk1_suit_choice_prompted:
+                    message = (
+                        "Sag mir kurz, ob du einen 2- oder 3-Teiler willst und ob eine Weste dabei sein soll."
+                    )
+                else:
+                    message = (
+                        "Alles klar, lass uns jetzt den Schnitt klären. Lieber 2- oder 3-Teiler?"
+                        " Brauchst du eine Weste?"
+                    )
+                    state.henk1_suit_choice_prompted = True
             return AgentDecision(
                 next_agent="design_henk",
                 message=message,
@@ -978,3 +1004,29 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
             "andere muster",
         ]
         return any(trigger in text for trigger in triggers)
+
+    def _extract_suit_choice(self, user_input: str) -> Optional[dict]:
+        """Parse simple suit variant (2/3-teiler) and vest preference."""
+
+        text = (user_input or "").lower()
+        if not text:
+            return None
+
+        variant = None
+        wants_vest = None
+
+        if "zweiteiler" in text or "2-teiler" in text or "2 teiler" in text or text.strip() == "2":
+            variant = "two_piece"
+        elif "dreiteiler" in text or "3-teiler" in text or "3 teiler" in text or text.strip() == "3":
+            variant = "three_piece"
+
+        if "weste" in text:
+            if any(kw in text for kw in ["kein", "nicht", "nein", "ohne"]):
+                wants_vest = False
+            elif any(kw in text for kw in ["ja", "mit", "gern", "bitte", "klar"]):
+                wants_vest = True
+
+        if variant or wants_vest is not None:
+            return {"suit_variant": variant, "wants_vest": wants_vest}
+
+        return None

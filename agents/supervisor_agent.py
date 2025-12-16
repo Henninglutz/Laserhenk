@@ -226,6 +226,17 @@ class SupervisorAgent:
 
         return None
 
+    def _fallback_decision(self, reason: str) -> SupervisorDecision:
+        """Return a safe routing decision back to HENK1 without raising."""
+
+        self._last_extract_path = "fallback"
+        return SupervisorDecision(
+            next_destination="henk1",
+            reasoning=reason,
+            user_message="Sag mir kurz Anlass, Timing und Farbvorlieben.",
+            confidence=0.5,
+        )
+
     def _build_supervisor_prompt(self, state: SessionState, assessment: PhaseAssessment) -> str:
         customer_data = state.customer.model_dump()
         dynamic_context = [
@@ -331,7 +342,7 @@ class SupervisorAgent:
                 raw = raw[4:].strip()
 
             if not raw:
-                raise ValueError("Empty decision payload from supervisor LLM")
+                return self._fallback_decision("Empty decision payload from supervisor LLM")
 
             try:
                 parsed = json.loads(raw)
@@ -341,14 +352,18 @@ class SupervisorAgent:
                     "[SupervisorAgent] Failed to parse decision JSON, snippet=%s",
                     snippet,
                 )
-                raise ValueError(f"Non-JSON decision payload: {snippet}") from exc
+                return self._fallback_decision(
+                    f"Non-JSON decision payload, falling back: {snippet}"
+                )
 
             if not isinstance(parsed, dict):
-                raise ValueError(f"Decision JSON is not an object/dict: {type(parsed)}")
+                return self._fallback_decision(
+                    f"Decision JSON is not an object/dict: {type(parsed)}"
+                )
 
             return _build_decision(parsed, "string_container_json")
 
-        raise ValueError(f"Unknown result structure: {type(result)}")
+        return self._fallback_decision(f"Unknown result structure: {type(result)}")
 
     def _rule_based_routing(
         self, user_message: str, state: SessionState, conversation_history: List[dict]

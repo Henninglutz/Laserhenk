@@ -120,6 +120,9 @@ class SessionState(BaseModel):
         None,
         description="User's selected favorite fabric (fabric_code, name, color, image_url)",
     )
+    henk1_suit_choice_prompted: bool = Field(
+        default=False, description="HENK1 hat bereits nach 2/3-Teiler & Weste gefragt"
+    )
 
     handoffs: dict[str, dict] = Field(
         default_factory=dict, description="Structured agent handoffs"
