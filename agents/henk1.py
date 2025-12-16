@@ -131,6 +131,9 @@ class Henk1Agent(BaseAgent):
 
         suit_choice = self._apply_suit_choice_from_input(state, user_input)
 
+        if self._detect_contact_decline(user_input):
+            state.henk1_contact_declined = True
+
         fabric_choice = self._detect_fabric_choice(user_input)
         if fabric_choice is not None and state.shown_fabric_images:
             logger.info("[HENK1] Detected fabric choice: %s", fabric_choice)
@@ -661,6 +664,12 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
     def _contact_request(self, state: SessionState, intent: IntentAnalysis) -> Optional[str]:
         """Frage nach Kontakt, wenn Lead klar ist und noch nichts vorliegt."""
 
+        if state.henk1_contact_declined:
+            return None
+
+        if intent.wants_fabrics:
+            return None
+
         if not intent.lead_ready:
             return None
 
@@ -675,6 +684,21 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
             "Damit ich dir direkt Stoffvorschläge schicken kann: "
             "Welche Email und ggf. WhatsApp-/Telefonnummer passt für dich?"
         )
+
+    def _detect_contact_decline(self, user_input: str) -> bool:
+        """Erkenne, wenn der Nutzer keine Kontaktdaten teilen will und bleibe im Chat."""
+
+        text = (user_input or "").lower()
+        if not text:
+            return False
+
+        decline_markers = [
+            "kein e-mail", "keine e-mail", "keine email", "ohne email", "ohne mail",
+            "keine nummer", "kein whatsapp", "kein telefon", "nur hier", "im chat",
+            "nicht per mail", "zeige mir hier", "hier die stoffe", "nicht per email",
+        ]
+
+        return any(marker in text for marker in decline_markers)
 
     def _should_generate_mood_board(self, state: SessionState) -> bool:
         """
@@ -835,6 +859,8 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
         styles = style_info.get("style_keywords", []) or []
         occasion = style_info.get("occasion")
 
+        preferred_colors = [c.lower() for c in style_info.get("colors", []) or []]
+
         normalized: list[dict] = []
         for suggestion in suggestions:
             fabric = suggestion.get("fabric", suggestion) or {}
@@ -876,6 +902,31 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
                 if local_images:
                     entry["image_url"] = local_images[0]
             normalized.append(entry)
+
+        def _color_score(item: dict) -> float:
+            if not preferred_colors:
+                return 0.0
+
+            haystack = " ".join(
+                str(part).lower()
+                for part in [item.get("color"), item.get("name"), item.get("reference")]
+                if part
+            )
+            score = 0.0
+            for pref in preferred_colors:
+                if pref in haystack:
+                    score += 1.5
+            return score
+
+        normalized = sorted(
+            normalized,
+            key=lambda item: (
+                _color_score(item),
+                1 if item.get("image_url") else 0,
+                item.get("raw", {}).get("_similarity", 0),
+            ),
+            reverse=True,
+        )
 
         def _pick_with_image(items: list[dict], tier: str) -> Optional[dict]:
             for item in items:

@@ -116,6 +116,9 @@ class SessionState(BaseModel):
         default_factory=list,
         description="Chronologische Historie kuratierter Stoff-Duos (mid + luxury)",
     )
+    henk1_contact_declined: bool = Field(
+        default=False, description="Kunde möchte aktuell keine Kontaktanfrage"
+    )
     favorite_fabric: Optional[dict] = Field(
         None,
         description="User's selected favorite fabric (fabric_code, name, color, image_url)",
