@@ -314,9 +314,17 @@ class Henk1Agent(BaseAgent):
         )
 
         needs_snapshot = self._needs_snapshot(state)
+        gaps = self._missing_core_needs(needs_snapshot)
+
+        if (
+            not intent.wants_fabrics
+            and not gaps
+            and not state.henk1_rag_queried
+            and not state.henk1_fabrics_shown
+        ):
+            intent.wants_fabrics = True
 
         if intent.wants_fabrics:
-            gaps = self._missing_core_needs(needs_snapshot)
             if gaps:
                 questions = " ".join(gaps)
                 return AgentDecision(
@@ -884,6 +892,12 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
         )
 
         top_fabrics = [f for f in [mid_choice, luxury_choice] if f]
+
+        for fabric in top_fabrics:
+            if not fabric.get("image_url") and fabric.get("reference"):
+                local_images = _find_local_image(fabric.get("reference"))
+                if local_images:
+                    fabric["image_url"] = local_images[0]
 
         def _similarity_score(candidate: dict, anchor: dict) -> float:
             score = 0.0

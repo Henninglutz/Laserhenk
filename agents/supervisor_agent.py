@@ -126,29 +126,39 @@ class SupervisorAgent:
 
             if "response_format" in allowed_params:
                 run_kwargs["response_format"] = {"type": "json_object"}
-            else:
-                logger.debug(
-                    "[SupervisorAgent] response_format not supported by agent.run; skipping"
-                )
 
             use_result_type = "result_type" in allowed_params
 
-            try:
-                if use_result_type:
-                    result = await self.pydantic_agent.run(
-                        user_message, result_type=SupervisorDecision, **run_kwargs
+            async def _call_agent(kwargs: dict, with_result_type: bool):
+                if with_result_type:
+                    return await self.pydantic_agent.run(
+                        user_message, result_type=SupervisorDecision, **kwargs
                     )
-                else:
-                    result = await self.pydantic_agent.run(user_message, **run_kwargs)
+                return await self.pydantic_agent.run(user_message, **kwargs)
+
+            try:
+                result = await _call_agent(run_kwargs, use_result_type)
             except TypeError as exc:
                 logger.warning(
-                    "[SupervisorAgent] agent.run rejected provided kwargs (%s); retrying minimal",
+                    "[SupervisorAgent] agent.run rejected kwargs (%s); retrying minimal",
                     exc,
                 )
                 minimal_kwargs = {
-                    key: value for key, value in run_kwargs.items() if key in {"deps"}
+                    key: value
+                    for key, value in run_kwargs.items()
+                    if key in {"deps", "message_history"}
                 }
-                result = await self.pydantic_agent.run(user_message, **minimal_kwargs)
+                try:
+                    result = await _call_agent(minimal_kwargs, False)
+                except Exception as exc2:
+                    logger.error(
+                        "[SupervisorAgent] agent.run failed after retry: %s",
+                        exc2,
+                        exc_info=True,
+                    )
+                    return self._fallback_decision(
+                        "Supervisor LLM call failed after retry"
+                    )
 
             try:
                 decision = self._extract_decision(result)
