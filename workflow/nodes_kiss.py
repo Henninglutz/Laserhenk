@@ -132,12 +132,18 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
         image_urls = fabric_dict.get("image_urls") or []
         local_paths = fabric_dict.get("local_image_paths") or []
         image_url = (image_urls[0] if image_urls else None) or (local_paths[0] if local_paths else None)
+
+        fabric_code = fabric_dict.get("fabric_code")
+        logging.info(f"[RAG] Fabric {fabric_code}: image_urls={len(image_urls)}, local_paths={len(local_paths)}, final_url={image_url}")
+
         if not image_url:
+            logging.warning(f"[RAG] ⚠️ Fabric {fabric_code} has NO images - skipping from image list")
             continue
+
         fabric_images.append(
             {
                 "url": image_url,
-                "fabric_code": fabric_dict.get("fabric_code"),
+                "fabric_code": fabric_code,
                 "name": fabric_dict.get("name", "Hochwertiger Stoff"),
                 "color": fabric_dict.get("color"),
                 "pattern": fabric_dict.get("pattern"),
