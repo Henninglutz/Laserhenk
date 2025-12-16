@@ -83,6 +83,8 @@ from agents.henk1_preferences import (
     fallback_intent_analysis,
 )
 from models.customer import SessionState
+from models.fabric import FabricColor, FabricPattern
+from models.handoff import Henk1ToDesignHenkPayload, OccasionType, StyleType
 
 logger = logging.getLogger(__name__)
 
@@ -137,14 +139,14 @@ class Henk1Agent(BaseAgent):
                 state.henk1_mood_board_shown = True
 
                 return AgentDecision(
-                    next_agent="operator",
+                    next_agent=None,
                     message=None,  # Tool will provide the message
                     action="show_fabric_images",
                     action_params={
                         "occasion": occasion,
                         "limit": 2,
                     },
-                    should_continue=True,
+                    should_continue=False,
                 )
             else:
                 logger.warning("[HENK1] No fabrics in rag_context, skipping image display")
@@ -216,25 +218,213 @@ class Henk1Agent(BaseAgent):
             f"{llm_response}\n\n{contact_prompt}" if contact_prompt else llm_response
         )
 
+        needs_snapshot = self._needs_snapshot(state)
+
         if intent.wants_fabrics:
+            gaps = self._missing_core_needs(needs_snapshot)
+            if gaps:
+                questions = " ".join(gaps)
+                return AgentDecision(
+                    next_agent=None,
+                    message=reply
+                    + "\n\nBevor ich dir Stoffe zeige, sag mir bitte noch: "
+                    + questions,
+                    action=None,
+                    should_continue=False,
+                )
+
+            self._persist_handoff_payload(state, needs_snapshot)
+
+            if state.henk1_rag_queried:
+                return AgentDecision(
+                    next_agent=None,
+                    message=reply
+                    + "\n\nIch habe dir gerade passende Stoffideen geschickt – sag kurz, was dir davon gefällt oder welche Farbe du lieber hättest.",
+                    action=None,
+                    should_continue=False,
+                )
+
             print("=== HENK1: Customer ready for fabric recommendations, calling RAG")
 
             return AgentDecision(
-                next_agent="operator",
+                next_agent="henk1",
                 message=reply,  # Show LLM response before RAG results
-                action="query_rag",  # Trigger RAG tool
+                action="rag_tool",  # Trigger RAG tool
                 action_params=intent.search_criteria,
                 should_continue=True,
             )
 
-        continue_flow = intent.wants_fabrics or not self.client
-
         return AgentDecision(
-            next_agent="operator",
+            next_agent=None,
             message=reply,
             action=None,
-            should_continue=continue_flow,
+            should_continue=False,
         )
+
+    def _missing_core_needs(self, needs: dict) -> list[str]:
+        """Identify missing Bedarfsermittlung-Infos before Stoffe gezeigt werden."""
+        gaps: list[str] = []
+
+        if not needs.get("occasion"):
+            gaps.append("für welchen Anlass der Anzug gedacht ist")
+        if not needs.get("colors"):
+            gaps.append("welche Farbe(n) du willst")
+        if not needs.get("budget_eur"):
+            gaps.append("dein Budget")
+        if not needs.get("timing_hint"):
+            gaps.append("wann du den Anzug brauchst")
+        if not needs.get("style_keywords"):
+            gaps.append("ob du es klassisch oder modern magst")
+
+        return gaps
+
+    def _needs_snapshot(self, state: SessionState) -> dict:
+        """Collect normalized needs from the conversation to avoid double-asking."""
+
+        conversation_text = " ".join(
+            msg.get("content", "").lower()
+            for msg in state.conversation_history
+            if isinstance(msg, dict)
+        )
+
+        latest_user = next(
+            (
+                msg.get("content")
+                for msg in reversed(state.conversation_history)
+                if isinstance(msg, dict) and msg.get("role") == "user"
+            ),
+            None,
+        )
+
+        style_info = self._extract_style_info(state)
+
+        timing_keywords = [
+            "bis",
+            "wann",
+            "datum",
+            "termin",
+            "monat",
+            "woche",
+            "januar",
+            "februar",
+            "märz",
+            "maerz",
+            "april",
+            "mai",
+            "juni",
+            "juli",
+            "august",
+            "september",
+            "oktober",
+            "november",
+            "dezember",
+        ]
+
+        budget_value = self._extract_budget(conversation_text)
+
+        return {
+            "occasion": style_info.get("occasion"),
+            "colors": style_info.get("colors", []),
+            "style_keywords": style_info.get("style_keywords", []),
+            "patterns": style_info.get("patterns", []),
+            "budget_eur": budget_value,
+            "timing_hint": next((t for t in timing_keywords if t in conversation_text), None),
+            "notes": latest_user,
+        }
+
+    def _extract_budget(self, conversation_text: str) -> Optional[float]:
+        """Parse the first numeric budget hint from the conversation text."""
+
+        import re
+
+        match = re.search(r"(\d+[\.,]?\d*)", conversation_text)
+        if not match:
+            return None
+
+        try:
+            return float(match.group(1).replace(",", "."))
+        except ValueError:
+            return None
+
+    def _persist_handoff_payload(self, state: SessionState, needs: dict) -> None:
+        """Persist a validated handoff payload once Pflichtinfos liegen vor."""
+
+        budget = needs.get("budget_eur")
+        colors_raw: list[str] = needs.get("colors", []) or []
+        patterns_raw: list[str] = needs.get("patterns", []) or []
+        occasion_raw = needs.get("occasion")
+
+        if not (budget and colors_raw and patterns_raw and occasion_raw):
+            return
+
+        color_mapping = {
+            "navy": FabricColor.NAVY,
+            "blue": FabricColor.NAVY,
+            "dark grey": FabricColor.GRAU,
+            "grey": FabricColor.GRAU,
+            "light grey": FabricColor.HELLGRAU,
+            "black": FabricColor.SCHWARZ,
+            "brown": FabricColor.BRAUN,
+            "beige": FabricColor.BEIGE,
+            "camel": FabricColor.BEIGE,
+            "olive": FabricColor.OLIV,
+            "green": FabricColor.OLIV,
+            "burgundy": FabricColor.BRAUN,
+            "red": FabricColor.BRAUN,
+        }
+
+        pattern_mapping = {
+            "fischgrat": FabricPattern.FISCHGRAT,
+            "tweed": FabricPattern.STRUKTUR,
+            "karo": FabricPattern.KARO,
+            "nadelstreifen": FabricPattern.NADELSTREIFEN,
+            "uni": FabricPattern.UNI,
+        }
+
+        colors = [color_mapping[c] for c in colors_raw if c in color_mapping]
+        patterns = [pattern_mapping[p] for p in patterns_raw if p in pattern_mapping]
+
+        if not colors or not patterns:
+            return
+
+        style = StyleType.BUSINESS
+        if "casual" in (needs.get("style_keywords") or []):
+            style = StyleType.SMART_CASUAL
+        elif "modern" in (needs.get("style_keywords") or []):
+            style = StyleType.BUSINESS
+        elif "klassisch" in (needs.get("style_keywords") or []):
+            style = StyleType.BUSINESS
+
+        occasion_mapping = {
+            "Business": OccasionType.BUSINESS_MEETING,
+            "Everyday": OccasionType.EVERYDAY,
+            "Hochzeit": OccasionType.WEDDING,
+            "Gala": OccasionType.GALA,
+            "Party": OccasionType.PARTY,
+            "Feier": OccasionType.PARTY,
+            "Formal": OccasionType.BUSINESS_MEETING,
+            "Casual": OccasionType.EVERYDAY,
+        }
+
+        occasion = occasion_mapping.get(occasion_raw, OccasionType.OTHER)
+
+        payload = {
+            "budget_min": float(budget),
+            "budget_max": float(budget),
+            "style": style,
+            "occasion": occasion,
+            "patterns": patterns,
+            "colors": colors,
+            "customer_notes": needs.get("notes"),
+        }
+
+        try:
+            validated = Henk1ToDesignHenkPayload(**payload).model_dump()
+        except Exception:
+            return
+
+        state.henk1_to_design_payload = validated
+        state.handoffs["design_henk"] = validated
     def _get_system_prompt(self) -> str:
         """Get HENK1 system prompt for needs assessment."""
         return """Du bist HENK1, der freundliche Maßanzug-Berater bei LASERHENK.
@@ -407,6 +597,7 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
         style_info = {
             "style_keywords": [],
             "colors": [],
+            "patterns": [],
             "occasion": None,
         }
 
@@ -423,6 +614,12 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
             "wedding": "Hochzeit",
             "business": "Business",
             "geschäft": "Business",
+            "beruf": "Business",
+            "arbeit": "Business",
+            "job": "Business",
+            "office": "Business",
+            "alltag": "Everyday",
+            "messe": "Business",
             "gala": "Gala",
             "empfang": "Gala",
             "party": "Party",
@@ -443,7 +640,7 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
             "grau": "grey", "dunkelgrau": "dark grey", "hellgrau": "light grey",
             "schwarz": "black",
             "braun": "brown", "beige": "beige", "camel": "camel",
-            "grün": "green", "olive": "olive",
+            "grün": "green", "olive": "olive", "tannengrün": "green",
             "bordeaux": "burgundy", "rot": "red", "weinrot": "burgundy",
         }
 
@@ -459,11 +656,26 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
             "sportlich": "sportlich", "casual": "casual",
             "formal": "formal", "formell": "formal",
             "schlicht": "minimalistisch", "minimalist": "minimalistisch",
+            "tweed": "tweed",
+        }
+
+        pattern_keywords = {
+            "fischgrat": "fischgrat",
+            "tweed": "tweed",
+            "karo": "karo",
+            "kariert": "karo",
+            "nadelstreifen": "nadelstreifen",
+            "streifen": "nadelstreifen",
+            "uni": "uni",
         }
 
         for keyword, style in style_keywords_map.items():
             if keyword in conversation_text and style not in style_info["style_keywords"]:
                 style_info["style_keywords"].append(style)
+
+        for keyword, pattern in pattern_keywords.items():
+            if keyword in conversation_text and pattern not in style_info["patterns"]:
+                style_info["patterns"].append(pattern)
 
         # Fallback style keywords if none found
         if not style_info["style_keywords"]:

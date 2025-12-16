@@ -2,6 +2,7 @@
 
 import logging
 import os
+from pathlib import Path
 from typing import Optional
 
 from sqlalchemy import text
@@ -12,6 +13,47 @@ from models.tools import RAGQuery, RAGResult
 from tools.embedding_service import get_embedding_service
 
 logger = logging.getLogger(__name__)
+
+
+# Pre-index local fabric images for quick lookup
+_FABRIC_IMAGE_DIR = Path(__file__).resolve().parent.parent / "storage" / "fabrics" / "images"
+_FABRIC_IMAGE_INDEX = {}
+if _FABRIC_IMAGE_DIR.exists():  # pragma: no branch - defensive guard
+    for file in _FABRIC_IMAGE_DIR.iterdir():
+        if not file.is_file():
+            continue
+        stem = file.stem.upper().replace(" ", "")
+        # store both raw stem and a version with separators normalized for fuzzy matching
+        _FABRIC_IMAGE_INDEX[stem] = file.name
+        _FABRIC_IMAGE_INDEX[stem.replace(".", "_")] = file.name
+
+
+def _find_local_image(fabric_code: Optional[str]) -> list[str]:
+    """Return accessible local image paths for a fabric code if available."""
+
+    if not fabric_code:
+        return []
+
+    variants = {
+        fabric_code,
+        fabric_code.replace("/", "_"),
+        fabric_code.replace("/", "_").replace(".", "_"),
+        fabric_code.replace(" ", ""),
+        fabric_code.replace(".", "_"),
+    }
+
+    for variant in variants:
+        key = variant.upper()
+        if key in _FABRIC_IMAGE_INDEX:
+            filename = _FABRIC_IMAGE_INDEX[key]
+            return [f"/fabrics/images/{filename}"]
+
+        normalized = key.replace(".", "_")
+        if normalized in _FABRIC_IMAGE_INDEX:
+            filename = _FABRIC_IMAGE_INDEX[normalized]
+            return [f"/fabrics/images/{filename}"]
+
+    return []
 
 
 class RAGTool:
@@ -272,8 +314,14 @@ class RAGTool:
                 image_path = metadata.get("image_path")
 
                 # Build image lists
-                image_urls = [image_url] if image_url else []
+                # Prefer database image_url/path; fallback to local storage lookup
                 local_image_paths = [image_path] if image_path else []
+                if not local_image_paths:
+                    local_image_paths = _find_local_image(result["fabric_code"])
+
+                image_urls = [image_url] if image_url else []
+                if not image_urls and local_image_paths:
+                    image_urls = local_image_paths
 
                 # Create FabricData
                 fabric_data = FabricData(

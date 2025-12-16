@@ -1,5 +1,7 @@
 """DALLE Tool - Image Generation with Fabric Reference Compositing."""
 
+from __future__ import annotations
+
 import logging
 import os
 import io
@@ -8,7 +10,12 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 import requests
-from PIL import Image, ImageDraw, ImageFont
+
+try:  # Optional dependency; falls back gracefully when unavailable
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError:  # pragma: no cover - environment without Pillow
+    Image = ImageDraw = ImageFont = None
+
 from openai import AsyncOpenAI
 
 from models.tools import DALLEImageRequest, DALLEImageResponse
@@ -39,6 +46,11 @@ class DALLETool:
         self.enabled = os.getenv("ENABLE_DALLE", "true").lower() == "true"
         self.images_dir = Path(__file__).parent.parent / "generated_images"
         self.images_dir.mkdir(parents=True, exist_ok=True)
+
+        if Image is None:
+            logger.warning(
+                "[DALLETool] Pillow not installed; skipping composite image features"
+            )
 
         if not self.client:
             logger.warning("[DALLETool] OpenAI API key not set, DALL-E disabled")
@@ -138,6 +150,10 @@ class DALLETool:
         )
 
         if not dalle_response.success or not dalle_response.image_url:
+            return dalle_response
+
+        if Image is None:
+            logger.warning("[DALLETool] Pillow missing; returning raw DALL-E image")
             return dalle_response
 
         # Download DALL-E image
@@ -242,6 +258,9 @@ NOTE: Leave bottom-right corner clear (for fabric swatches overlay)."""
         Returns:
             PIL Image
         """
+        if Image is None:
+            raise RuntimeError("Pillow not installed; cannot download images")
+
         response = requests.get(url, timeout=30)
         response.raise_for_status()
         return Image.open(io.BytesIO(response.content))
@@ -261,6 +280,9 @@ NOTE: Leave bottom-right corner clear (for fabric swatches overlay)."""
         Returns:
             Composite PIL Image
         """
+        if Image is None:
+            raise RuntimeError("Pillow not installed; cannot compose images")
+
         # Mood board dimensions
         mb_width, mb_height = mood_board.size
 

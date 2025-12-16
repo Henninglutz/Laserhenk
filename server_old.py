@@ -21,6 +21,25 @@ _workflow = create_smart_workflow()
 _sessions: Dict[str, HenkGraphState] = {}
 
 
+def _message_to_dict(msg: dict) -> dict:
+    if isinstance(msg, dict):
+        return msg
+
+    role = getattr(msg, "role", None) or getattr(msg, "type", None) or "assistant"
+    content = getattr(msg, "content", "")
+    data = {"role": role, "content": content}
+
+    metadata = getattr(msg, "metadata", None) or getattr(msg, "additional_kwargs", None)
+    if metadata:
+        data["metadata"] = metadata
+
+    sender = getattr(msg, "sender", None) or getattr(msg, "name", None)
+    if sender:
+        data["sender"] = sender
+
+    return data
+
+
 def _get_session(session_id: Optional[str]) -> Tuple[str, HenkGraphState]:
     if session_id and session_id in _sessions:
         return session_id, _sessions[session_id]
@@ -39,10 +58,12 @@ def process_chat(message: str, session_id: Optional[str] = None) -> Dict[str, ob
     state["user_input"] = message
 
     final_state = asyncio.run(_workflow.ainvoke(state))
+    messages = [_message_to_dict(m) for m in final_state.get("messages", [])]
+    final_state["messages"] = messages
     _sessions[sid] = final_state
 
     reply = "Danke, ich habe alles notiert."
-    for msg in reversed(final_state.get("messages", [])):
+    for msg in reversed(messages):
         if msg.get("role") == "assistant":
             reply = msg.get("content", reply)
             break
@@ -53,7 +74,7 @@ def process_chat(message: str, session_id: Optional[str] = None) -> Dict[str, ob
         "reply": reply,
         "session_id": sid,
         "stage": stage,
-        "messages": final_state.get("messages", []),
+        "messages": messages,
     }
 
 

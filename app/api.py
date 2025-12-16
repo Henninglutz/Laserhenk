@@ -1,14 +1,16 @@
 """API Blueprint - Chat und Session Management."""
 
+import asyncio
 import uuid
 from typing import Dict
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
 from pydantic import ValidationError
 
-from app.middleware import jwt_required_optional, get_current_user_id
+from app.middleware import get_current_user_id, jwt_required_optional
 from workflow.graph_state import HenkGraphState, create_initial_state
+from workflow.nodes_kiss import TOOL_REGISTRY
 from workflow.workflow import create_smart_workflow
 
 api_bp = Blueprint('api', __name__)
@@ -16,6 +18,36 @@ api_bp = Blueprint('api', __name__)
 # Global workflow und sessions
 _workflow = create_smart_workflow()
 _sessions: Dict[str, HenkGraphState] = {}
+_workflow_loop = asyncio.new_event_loop()
+asyncio.set_event_loop(_workflow_loop)
+
+
+def _normalize_role(role: str | None) -> str:
+    if role in {"ai", "assistant", "system"}:
+        return "assistant"
+    if role in {"human", "user"}:
+        return "user"
+    return "assistant" if role is None else role
+
+
+def _message_to_dict(msg: dict) -> dict:
+    if isinstance(msg, dict):
+        role = _normalize_role(msg.get("role"))
+        return {**msg, "role": role}
+
+    role = _normalize_role(getattr(msg, "role", None) or getattr(msg, "type", None))
+    content = getattr(msg, "content", "")
+    data = {"role": role, "content": content}
+
+    metadata = getattr(msg, "metadata", None) or getattr(msg, "additional_kwargs", None)
+    if metadata:
+        data["metadata"] = metadata
+
+    sender = getattr(msg, "sender", None) or getattr(msg, "name", None)
+    if sender:
+        data["sender"] = sender
+
+    return data
 
 
 def _get_or_create_session(session_id: str = None, user_id: str = None) -> tuple[str, HenkGraphState]:
@@ -109,9 +141,10 @@ def chat():
         state['messages'] = history
         state['user_input'] = message
 
-        # Process with workflow (synchronous wrapper for async)
-        import asyncio
-        final_state = asyncio.run(_workflow.ainvoke(state))
+        # Process with workflow on a persistent event loop to avoid teardown issues
+        final_state = _workflow_loop.run_until_complete(_workflow.ainvoke(state))
+        messages = [_message_to_dict(m) for m in final_state.get('messages', [])]
+        final_state['messages'] = messages
         _sessions[sid] = final_state
 
         # Extract assistant reply, image_url, and fabric_images
@@ -119,18 +152,24 @@ def chat():
         image_url = None
         fabric_images = None
 
-        # Get ONLY the LATEST assistant message (to avoid duplicates)
-        for msg in reversed(final_state.get('messages', [])):
-            if msg.get('role') == 'assistant':
-                reply = msg.get('content', reply)
-                # Check if message has image_url or fabric_images in metadata
-                metadata = msg.get('metadata', {})
-                if 'fabric_images' in metadata:
-                    fabric_images = metadata['fabric_images']
-                if 'image_url' in metadata:
-                    image_url = metadata['image_url']
-                # IMPORTANT: Break after first assistant message to avoid duplicates
-                break
+        tool_senders = set(TOOL_REGISTRY.keys())
+
+        # Prefer the latest agent reply (not a tool), but still capture tool metadata
+        for msg in reversed(messages):
+            if msg.get('role') != 'assistant':
+                continue
+
+            metadata = msg.get('metadata', {})
+            if 'fabric_images' in metadata and not fabric_images:
+                fabric_images = metadata['fabric_images']
+            if 'image_url' in metadata and not image_url:
+                image_url = metadata['image_url']
+
+            if msg.get('sender') in tool_senders:
+                continue
+
+            reply = msg.get('content', reply)
+            break
 
         # Current stage
         stage = final_state.get('current_agent') or final_state.get('next_agent') or 'henk1'
@@ -140,7 +179,7 @@ def chat():
             'session_id': sid,
             'stage': stage,
             'authenticated': user_id is not None,
-            'messages': final_state.get('messages', []),
+            'messages': messages,
         }
 
         # Add image_url if present

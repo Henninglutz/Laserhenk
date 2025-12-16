@@ -107,6 +107,8 @@ class SessionState(BaseModel):
         description="User's selected favorite fabric (fabric_code, name, color, image_url)",
     )
 
+    handoffs: dict = Field(default_factory=dict, description="Structured agent handoffs")
+
     # Handoff Payloads (tracking inter-agent data transfer)
     henk1_to_design_payload: Optional[dict] = Field(
         None, description="HENK1 → Design HENK handoff data"
