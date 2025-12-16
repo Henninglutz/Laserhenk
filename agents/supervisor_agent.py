@@ -194,6 +194,24 @@ class SupervisorAgent:
         if not text:
             return None
 
+        # STATE-BASED ROUTING: Execute queued RAG if HENK1 prepared it
+        if (
+            state.henk1_rag_queried
+            and not state.henk1_fabrics_shown
+            and hasattr(state, 'rag_context')
+            and state.rag_context
+        ):
+            # HENK1 has set rag_queried flag but fabrics haven't been shown yet
+            # This means RAG needs to be executed now!
+            query = state.rag_context.get("query", user_message) if isinstance(state.rag_context, dict) else user_message
+            logger.info("[SupervisorAgent] ✅ State-based RAG trigger detected (henk1_rag_queried=True, fabrics_shown=False)")
+            return SupervisorDecision(
+                next_destination="rag_tool",
+                reasoning="Executing queued RAG request from HENK1 (state-based trigger)",
+                action_params={"query": query},
+                confidence=0.98,
+            )
+
         selection_keywords = ["rechtes foto", "linkes foto", "rechts", "links", "zweite", "erste", "foto"]
         if state.shown_fabric_images and any(keyword in text for keyword in selection_keywords):
             return SupervisorDecision(
