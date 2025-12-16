@@ -129,11 +129,8 @@ class Henk1Agent(BaseAgent):
             rag_context = getattr(state, "rag_context", None) or {}
             suggestions = rag_context.get("fabric_suggestions") or []
 
-            logger.info("[HENK1] Fabrics in rag_context: %d", len(fabrics))
+            logger.info("[HENK1] Suggestions in rag_context: %d", len(suggestions))
 
-            if fabrics:
-                # Extract occasion from conversation if available
-                occasion = self._extract_style_info(state).get("occasion", "deinen Anlass")
             if suggestions:
                 style_info = self._extract_style_info(state)
                 prepared = self._prepare_fabric_presentations(
