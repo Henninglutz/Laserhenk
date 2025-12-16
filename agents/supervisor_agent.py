@@ -5,7 +5,6 @@ Der Supervisor ist der zentrale Router. Er entscheidet anhand von
 User-Intent, SessionState und History, welches Ziel (Agent oder Tool)
 als nächstes ausgeführt wird.
 """
-
 from __future__ import annotations
 
 import logging
@@ -42,7 +41,7 @@ class SupervisorDecision(BaseModel):
     reasoning: str = Field(
         default="Routing based on user message analysis",
         description="Begründung für Routing-Entscheidung (1-2 Sätze)",
-        min_length=10,
+        min_length=5,
         max_length=500,
     )
 
@@ -79,32 +78,22 @@ class SupervisorAgent:
             )
         else:
             try:
-                try:
-                    self.pydantic_agent = PydanticAgent[SupervisorDecision](
-                        model, retries=2
-                    )
-                    logger.info(
-                        f"[SupervisorAgent] Initialized with model={model} (pydantic-ai v1.0+ Generic)"
-                    )
-                except (TypeError, AttributeError):
-                    self.pydantic_agent = PydanticAgent(model, retries=2)
-                    logger.info(
-                        f"[SupervisorAgent] Initialized with model={model} (pydantic-ai v1.0+ plain)"
-                    )
-            except Exception as e1:
+                self.pydantic_agent = PydanticAgent[SupervisorDecision](model, retries=2)
+                logger.info(
+                    f"[SupervisorAgent] Initialized with model={model} (pydantic-ai generic)"
+                )
+            except Exception:
                 try:
                     self.pydantic_agent = PydanticAgent(
                         model, result_type=SupervisorDecision, retries=2
                     )
                     logger.info(
-                        f"[SupervisorAgent] Initialized with model={model} (pydantic-ai v0.0.x)"
+                        f"[SupervisorAgent] Initialized with model={model} (pydantic-ai legacy)"
                     )
-                except Exception as e2:  # pragma: no cover - fallback path
+                except Exception:
                     self.pydantic_agent = None
                     logger.warning(
-                        f"[SupervisorAgent] Failed to initialize PydanticAgent. "
-                        f"New API error: {e1}, Old API error: {e2}. "
-                        "Falling back to rule-based routing"
+                        "[SupervisorAgent] Failed to initialize PydanticAgent. Using rule-based routing"
                     )
 
         if self.pydantic_agent is not None:
@@ -132,68 +121,30 @@ class SupervisorAgent:
             return pre_routed
 
         if self.pydantic_agent is None:
-            logger.info("[SupervisorAgent] Using clarification fallback (no LLM available)")
-            return SupervisorDecision(
-                next_destination="clarification",
-                reasoning="pydantic_ai not installed",
-                user_message="Kannst du deine Anfrage noch einmal formulieren?",
-                confidence=0.0,
-            )
+            decision = self._offline_route(user_message, state, assessment)
+            return self._apply_hard_gates(decision, assessment)
 
         system_prompt = self._build_supervisor_prompt(state, assessment)
 
         try:
+            run_kwargs = {
+                "message_history": self._format_history(conversation_history),
+                "deps": {
+                    "system_prompt": system_prompt,
+                    "current_phase": getattr(state, "current_agent", None) or "H0",
+                    "customer_data": state.customer.model_dump(),
+                    "available_destinations": self._get_available_destinations(),
+                },
+            }
+
             try:
                 result = await self.pydantic_agent.run(
-                    user_message,
-                    result_type=SupervisorDecision,
-                    message_history=self._format_history(conversation_history),
-                    deps={
-                        "system_prompt": system_prompt,
-                        "current_phase": getattr(state, "current_agent", None) or "H0",
-                        "customer_data": state.customer.model_dump(),
-                        "available_destinations": self._get_available_destinations(),
-                    },
+                    user_message, result_type=SupervisorDecision, **run_kwargs
                 )
             except TypeError:
-                result = await self.pydantic_agent.run(
-                    user_message,
-                    message_history=self._format_history(conversation_history),
-                    deps={
-                        "system_prompt": system_prompt,
-                        "current_phase": getattr(state, "current_agent", None) or "H0",
-                        "customer_data": state.customer.model_dump(),
-                        "available_destinations": self._get_available_destinations(),
-                    },
-                )
+                result = await self.pydantic_agent.run(user_message, **run_kwargs)
 
-            decision: Optional[SupervisorDecision] = None
-            if hasattr(result, "data"):
-                decision = result.data
-            elif hasattr(result, "output"):
-                decision = result.output
-            elif isinstance(result, SupervisorDecision):
-                decision = result
-
-            if decision is None:
-                for attr_name in ["result", "value", "response", "content"]:
-                    if hasattr(result, attr_name):
-                        candidate = getattr(result, attr_name)
-                        if isinstance(candidate, SupervisorDecision):
-                            decision = candidate
-                            break
-                        if isinstance(candidate, dict):
-                            decision = SupervisorDecision(**candidate)
-                            break
-                        if isinstance(candidate, str):
-                            import json
-
-                            decision = SupervisorDecision(**json.loads(candidate))
-                            break
-
-            if decision is None:
-                raise ValueError(f"Unknown result structure: {type(result)}")
-
+            decision = self._extract_decision(result)
             decision = self._apply_hard_gates(decision, assessment)
 
             logger.info(
@@ -205,21 +156,10 @@ class SupervisorAgent:
 
             return decision
 
-        except Exception as e:  # pragma: no cover - safety
-            logger.error(f"[SupervisorAgent] LLM call failed: {e}", exc_info=True)
-
-            if isinstance(e, TypeError) and "Expected SupervisorDecision" in str(e):
-                logger.warning(
-                    "[SupervisorAgent] Structured output not working, using rule-based routing"
-                )
-                return self._rule_based_routing(user_message, state, conversation_history)
-
-            return SupervisorDecision(
-                next_destination="clarification",
-                reasoning="LLM error occurred, requesting clarification",
-                user_message="Entschuldigung, ich hatte ein kurzes Problem. Kannst du das wiederholen?",
-                confidence=0.0,
-            )
+        except Exception as exc:  # pragma: no cover - safety fallback
+            logger.error(f"[SupervisorAgent] LLM call failed: {exc}", exc_info=True)
+            decision = self._offline_route(user_message, state, assessment)
+            return self._apply_hard_gates(decision, assessment)
 
     def _pre_route(self, user_message: str, state: SessionState) -> Optional[SupervisorDecision]:
         """Rule-based fast path for obvious tool intents."""
@@ -288,11 +228,11 @@ class SupervisorAgent:
     ) -> str:
         current_phase = getattr(session_state, "current_agent", None) or "H0"
         customer_data = session_state.customer.model_dump()
-        completeness = self._assess_completeness(customer_data)
 
         dynamic_context = f"Current phase: {current_phase}\n"
-        dynamic_context += f"Customer completeness: {completeness}\n"
-        dynamic_context += f"Missing fields: {', '.join(assessment.missing_fields) or 'keine'}\n"
+        dynamic_context += (
+            f"Missing fields: {', '.join(assessment.missing_fields) or 'keine'}\n"
+        )
         dynamic_context += f"Recommended phase: {assessment.recommended_phase}\n"
 
         optional_fields = [f"{k}={v}" for k, v in customer_data.items() if v]
@@ -301,23 +241,6 @@ class SupervisorAgent:
 
         core_prompt = self._get_default_system_prompt()
         return f"{core_prompt}\n\n---\n\n{dynamic_context}"
-
-    def get_prompt_usage(self) -> Dict[str, Dict[str, Optional[str]]]:
-        """Expose prompt usage for debugging/tests."""
-        return prompt_registry.get_usage_report()
-
-    def _assess_completeness(self, customer_data: Dict[str, Any]) -> str:
-        if not customer_data:
-            return "Leer (0 Felder)"
-
-        field_count = len(customer_data)
-
-        if field_count < 3:
-            return f"Minimal ({field_count} Felder)"
-        elif field_count < 6:
-            return f"Teilweise ({field_count} Felder)"
-        else:
-            return f"Umfangreich ({field_count} Felder)"
 
     def _get_default_system_prompt(self) -> str:
         return """You are a routing supervisor for a bespoke suit consultation system.
@@ -348,40 +271,38 @@ RULES:
 
 IMPORTANT: Always return a valid SupervisorDecision object with all required fields."""
 
-    def _rule_based_routing(
-        self,
-        user_message: str,
-        session_state: SessionState,
-        conversation_history: List[Dict[str, Any]],
+    def _offline_route(
+        self, user_message: str, state: SessionState, assessment: PhaseAssessment
     ) -> SupervisorDecision:
-        _ = user_message, conversation_history  # unused
-        assessment = self.phase_assessor.assess(session_state)
+        pre_routed = self._pre_route(user_message, state)
+        if pre_routed:
+            return pre_routed
 
         if not assessment.is_henk1_complete:
             return SupervisorDecision(
                 next_destination="henk1",
-                reasoning="Rule-based routing to complete HENK1 essentials",
+                reasoning="Offline routing: HENK1 essentials incomplete",
                 confidence=0.65,
             )
 
         if not assessment.is_design_complete:
             return SupervisorDecision(
                 next_destination="design_henk",
-                reasoning="Rule-based routing to complete design fields",
+                reasoning="Offline routing: design details missing",
                 confidence=0.65,
             )
 
         if not assessment.is_measurements_complete:
             return SupervisorDecision(
                 next_destination="laserhenk",
-                reasoning="Rule-based routing to capture measurements",
+                reasoning="Offline routing: measurements missing",
                 confidence=0.65,
             )
 
         return SupervisorDecision(
             next_destination="end",
-            reasoning="All phases complete, ending session",
-            confidence=0.8,
+            reasoning="Offline routing: all phases complete",
+            confidence=0.6,
         )
 
     def _apply_hard_gates(
@@ -401,3 +322,45 @@ IMPORTANT: Always return a valid SupervisorDecision object with all required fie
             if role and content:
                 formatted.append({"role": role, "content": content})
         return formatted
+
+    def _extract_decision(self, result: Any) -> SupervisorDecision:
+        if isinstance(result, SupervisorDecision):
+            return result
+
+        for attr_name in ["data", "output", "result", "value", "response", "content"]:
+            candidate = getattr(result, attr_name, None)
+            if isinstance(candidate, SupervisorDecision):
+                return candidate
+            if isinstance(candidate, dict):
+                return SupervisorDecision(**candidate)
+            if isinstance(candidate, str):
+                import json
+
+                return SupervisorDecision(**json.loads(candidate))
+
+        raise ValueError(f"Unknown result structure: {type(result)}")
+
+    def _get_available_destinations(self) -> list[str]:
+        return [
+            "henk1",
+            "design_henk",
+            "laserhenk",
+            "rag_tool",
+            "comparison_tool",
+            "pricing_tool",
+            "clarification",
+            "end",
+        ]
+
+    def offline_route(
+        self, user_message: str, state: SessionState, assessment: PhaseAssessment | None = None
+    ) -> SupervisorDecision:
+        """Public offline routing helper for nodes without LLM access."""
+
+        active_assessment = assessment or self.phase_assessor.assess(state)
+        decision = self._offline_route(user_message, state, active_assessment)
+        return self._apply_hard_gates(decision, active_assessment)
+
+    def get_prompt_usage(self) -> Dict[str, Dict[str, Optional[str]]]:
+        """Expose prompt usage for debugging/tests."""
+        return prompt_registry.get_usage_report()

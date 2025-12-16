@@ -176,13 +176,17 @@ async def smart_operator_node(state: HenkGraphState) -> HenkGraphState:
 
     # Supervisor trifft Entscheidung (mit Offline-Fallback, damit Tests ohne API-Key laufen)
     supervisor = get_supervisor()
+    typed_state = (
+        session_state if isinstance(session_state, SessionState) else SessionState(**session_state)
+    )
+
     if not os.environ.get("OPENAI_API_KEY"):
         logger.info("[SmartOperator] Offline routing fallback (no OPENAI_API_KEY)")
-        decision = supervisor._rule_based_routing(user_input, session_state, conversation_history)
+        decision = supervisor.offline_route(user_input, typed_state)
     else:
         decision = await supervisor.decide_next_step(
             user_input,
-            session_state if isinstance(session_state, SessionState) else SessionState(**session_state),
+            typed_state,
             conversation_history,
         )
 
