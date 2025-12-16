@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -114,6 +115,7 @@ class SupervisorAgent:
             run_kwargs = {
                 "message_history": self._format_history(conversation_history),
                 "deps": {"system_prompt": system_prompt},
+                "response_format": {"type": "json_object"},
             }
 
             try:
@@ -123,22 +125,21 @@ class SupervisorAgent:
             except TypeError:
                 result = await self.pydantic_agent.run(user_message, **run_kwargs)
 
-            decision = self._extract_decision(result)
-        except (ValueError, json.JSONDecodeError) as exc:
-            logger.warning("[SupervisorAgent] LLM routing failed: %s", exc, exc_info=True)
-
-            pre_routed = self._pre_route(user_message, state)
-            if pre_routed:
-                decision = pre_routed
-                self._last_extract_path = "fallback_pre_route"
-            else:
-                decision = self._rule_based_routing(user_message, state, conversation_history)
+            try:
+                decision = self._extract_decision(result)
+            except (ValueError, json.JSONDecodeError) as exc:
+                logger.error(
+                    "[SupervisorAgent] Decision parsing failed, falling back: %s",
+                    exc,
+                    exc_info=True,
+                )
+                decision = self._fallback_decision(
+                    "LLM decision parse failure, safe fallback"
+                )
         except Exception as exc:  # pragma: no cover - safety fallback
             logger.error(f"[SupervisorAgent] LLM routing failed: {exc}", exc_info=True)
-            decision = SupervisorDecision(
-                next_destination="henk1",
-                reasoning="Fallback routing after unexpected error",
-                user_message="Sag mir kurz Anlass, Timing und Farbvorlieben.",
+            decision = self._fallback_decision(
+                "Unexpected supervisor exception, safe fallback"
             )
 
         decision = self._apply_hard_gates(decision, assessment)
@@ -233,7 +234,7 @@ class SupervisorAgent:
         return SupervisorDecision(
             next_destination="henk1",
             reasoning=reason,
-            user_message="Sag mir kurz Anlass, Timing und Farbvorlieben.",
+            user_message="Sag mir kurz Anlass, Timing und Farbrichtung – dann zeige ich Stoffe.",
             confidence=0.5,
         )
 
@@ -335,11 +336,21 @@ class SupervisorAgent:
             return _build_decision(candidate, "string_container_dict")
 
         if isinstance(candidate, str):
-            raw = candidate.strip()
+            raw = str(candidate)
+            raw = raw.strip()
+            logger.debug(
+                "[SupervisorAgent] Raw decision len=%s preview=%s",
+                len(raw),
+                raw[:200],
+            )
             if raw.startswith("```"):
                 raw = raw.strip("`").strip()
             if raw.startswith("json"):
                 raw = raw[4:].strip()
+
+            json_match = re.search(r"\{.*?\}", raw, re.DOTALL)
+            if json_match:
+                raw = json_match.group(0)
 
             if not raw:
                 return self._fallback_decision("Empty decision payload from supervisor LLM")
@@ -349,7 +360,8 @@ class SupervisorAgent:
             except json.JSONDecodeError as exc:
                 snippet = raw[:160]
                 logger.warning(
-                    "[SupervisorAgent] Failed to parse decision JSON, snippet=%s",
+                    "[SupervisorAgent] Failed to parse decision JSON (len=%s), snippet=%s",
+                    len(raw),
                     snippet,
                 )
                 return self._fallback_decision(

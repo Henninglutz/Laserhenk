@@ -123,6 +123,15 @@ class SessionState(BaseModel):
     henk1_suit_choice_prompted: bool = Field(
         default=False, description="HENK1 hat bereits nach 2/3-Teiler & Weste gefragt"
     )
+    suit_parts: Optional[str] = Field(
+        default=None, description="'2' für Zweiteiler oder '3' für Dreiteiler"
+    )
+    wants_vest: Optional[bool] = Field(
+        default=None, description="Ob der Kunde eine Weste möchte"
+    )
+    henk1_cut_confirmed: bool = Field(
+        default=False, description="Schnitt (2/3-Teiler + Weste) ist bestätigt"
+    )
 
     handoffs: dict[str, dict] = Field(
         default_factory=dict, description="Structured agent handoffs"

@@ -128,6 +128,8 @@ class Henk1Agent(BaseAgent):
                 user_input = msg.get("content", "")
                 break
 
+        suit_choice = self._apply_suit_choice_from_input(state, user_input)
+
         fabric_choice = self._detect_fabric_choice(user_input)
         if fabric_choice is not None and state.shown_fabric_images:
             logger.info("[HENK1] Detected fabric choice: %s", fabric_choice)
@@ -138,11 +140,17 @@ class Henk1Agent(BaseAgent):
             state.henk1_rag_queried = True
             state.henk1_fabrics_shown = True
 
-            follow_up = (
-                "Super, ich notiere den Stoff. Soll es ein 2- oder 3-Teiler werden?"
-                " Weste ja/nein?"
-            )
-            state.henk1_suit_choice_prompted = True
+            if state.henk1_cut_confirmed:
+                follow_up = (
+                    "Super, Stoff notiert. Lass uns direkt Passform & Revers klären – lieber"
+                    " schlank oder klassisch geschnitten?"
+                )
+            else:
+                follow_up = (
+                    "Super, ich notiere den Stoff. Soll es ein 2- oder 3-Teiler werden?"
+                    " Weste ja/nein?"
+                )
+                state.henk1_suit_choice_prompted = True
             return AgentDecision(
                 next_agent="design_henk",
                 message=follow_up,
@@ -152,24 +160,33 @@ class Henk1Agent(BaseAgent):
 
         if state.favorite_fabric:
             logger.info("[HENK1] Favorite fabric already set, skipping repeat")
-            user_choice = self._extract_suit_choice(user_input)
+            user_choice = suit_choice or self._extract_suit_choice(user_input)
 
-            if user_choice:
-                payload = state.henk1_to_design_payload or {}
-                payload = {**payload, **user_choice}
-                state.henk1_to_design_payload = payload
-                state.handoffs["design_henk"] = payload
+            if state.henk1_cut_confirmed:
+                variant_text = "2-Teiler" if state.suit_parts == "2" else "3-Teiler"
+                vest_text = " ohne Weste" if state.wants_vest is False else " mit Weste"
                 message = (
-                    "Perfekt, ich notiere: {variant}{vest}. "
-                    "Weiter geht's mit Details zu Schnitt & Futter."
-                ).format(
-                    variant="2-Teiler"
-                    if user_choice.get("suit_variant") == "two_piece"
-                    else "3-Teiler",
-                    vest=" ohne Weste"
-                    if user_choice.get("wants_vest") is False
-                    else " mit Weste",
+                    f"Perfekt, ich notiere: {variant_text}{vest_text}. "
+                    "Lass uns noch Passform & Revers festlegen – eher schlank oder klassisch?"
                 )
+            elif user_choice:
+                ack_parts = []
+                if state.suit_parts:
+                    ack_parts.append("2-Teiler" if state.suit_parts == "2" else "3-Teiler")
+                if state.wants_vest is not None:
+                    ack_parts.append("ohne Weste" if state.wants_vest is False else "mit Weste")
+
+                missing = []
+                if not state.suit_parts:
+                    missing.append("2- oder 3-Teiler")
+                if state.wants_vest is None:
+                    missing.append("Weste ja/nein")
+
+                message = "Notiert: " + ", ".join(ack_parts or ["Schnittdetails"])
+                if missing:
+                    message += ". Sag mir noch: " + " und ".join(missing) + "."
+                else:
+                    message += ". Lass uns Passform & Revers klären – schlank oder klassisch?"
             else:
                 if state.henk1_suit_choice_prompted:
                     message = (
@@ -1030,3 +1047,41 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
             return {"suit_variant": variant, "wants_vest": wants_vest}
 
         return None
+
+    def _apply_suit_choice_from_input(
+        self, state: SessionState, user_input: str
+    ) -> Optional[dict]:
+        """Persist parsed suit choices into session state and payload."""
+
+        choice = self._extract_suit_choice(user_input)
+        if not choice:
+            return None
+
+        updated = False
+        variant = choice.get("suit_variant")
+        if variant and not state.suit_parts:
+            state.suit_parts = "2" if variant == "two_piece" else "3"
+            updated = True
+
+        wants_vest = choice.get("wants_vest")
+        if wants_vest is not None and state.wants_vest is None:
+            state.wants_vest = wants_vest
+            updated = True
+
+        if state.suit_parts and state.wants_vest is not None:
+            state.henk1_cut_confirmed = True
+            state.henk1_suit_choice_prompted = True
+
+        if updated or state.henk1_cut_confirmed:
+            payload = state.henk1_to_design_payload or {}
+            if state.suit_parts:
+                payload["suit_variant"] = (
+                    "two_piece" if state.suit_parts == "2" else "three_piece"
+                )
+            if state.wants_vest is not None:
+                payload["wants_vest"] = state.wants_vest
+
+            state.henk1_to_design_payload = payload
+            state.handoffs["design_henk"] = payload
+
+        return choice
