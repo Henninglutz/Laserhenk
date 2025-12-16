@@ -1,6 +1,7 @@
 """Supervisor agent responsible for all routing decisions."""
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import Any, Dict, List, Literal, Optional
@@ -64,6 +65,7 @@ class SupervisorAgent:
     def __init__(self, model: str = "openai:gpt-4o-mini"):
         self.model = model
         self.phase_assessor = PhaseAssessor()
+        self._last_extract_path: str = "unknown"
 
         self.pydantic_agent = None
         if PydanticAgent is not None and os.environ.get("OPENAI_API_KEY"):
@@ -122,6 +124,15 @@ class SupervisorAgent:
                 result = await self.pydantic_agent.run(user_message, **run_kwargs)
 
             decision = self._extract_decision(result)
+        except (ValueError, json.JSONDecodeError) as exc:
+            logger.warning("[SupervisorAgent] LLM routing failed: %s", exc, exc_info=True)
+
+            pre_routed = self._pre_route(user_message, state)
+            if pre_routed:
+                decision = pre_routed
+                self._last_extract_path = "fallback_pre_route"
+            else:
+                decision = self._rule_based_routing(user_message, state, conversation_history)
         except Exception as exc:  # pragma: no cover - safety fallback
             logger.error(f"[SupervisorAgent] LLM routing failed: {exc}", exc_info=True)
             decision = self._offline_route(user_message, state, assessment)
@@ -129,10 +140,11 @@ class SupervisorAgent:
         decision = self._apply_hard_gates(decision, assessment)
 
         logger.info(
-            "[SupervisorAgent] Decision: %s | confidence=%.2f | reason=%s",
+            "[SupervisorAgent] Decision: %s | confidence=%.2f | reason=%s | extract_path=%s",
             decision.next_destination,
             decision.confidence,
             decision.reasoning,
+            self._last_extract_path,
         )
 
         return decision
@@ -205,7 +217,7 @@ class SupervisorAgent:
         customer_data = state.customer.model_dump()
         dynamic_context = [
             "Du bist der Supervisor. Entscheide den nächsten Schritt (Agent oder Tool).",
-            "HENK1 Essentials: Kontakt (Email oder Telefon) und Stoff-Farbe sind Pflicht. Timing (event_date) ist optional/soft.",
+            "HENK1 Essentials: Anlass, Timing (event_date auch weich) und Stoff-Farbe sind Pflicht. Budget ist optional.",
             f"Missing fields laut Assessment: {', '.join(assessment.missing_fields) or 'keine'}",
             f"Recommended phase: {assessment.recommended_phase}",
             "Tools (rag/pricing/comparison/measurement) dürfen jederzeit, wenn die Intention klar ist.",
@@ -260,21 +272,67 @@ class SupervisorAgent:
         return formatted
 
     def _extract_decision(self, result: Any) -> SupervisorDecision:
+        def _build_decision(payload: dict, source: str) -> SupervisorDecision:
+            self._last_extract_path = source
+            logger.debug("[SupervisorAgent] extract_decision: %s", source)
+            return SupervisorDecision(**payload)
+
+        # 1) Already a SupervisorDecision
         if isinstance(result, SupervisorDecision):
+            self._last_extract_path = "direct"
+            logger.debug("[SupervisorAgent] extract_decision: direct SupervisorDecision")
             return result
 
-        for attr_name in ["data", "output", "result", "value", "response", "content"]:
-            candidate = getattr(result, attr_name, None)
-            if isinstance(candidate, SupervisorDecision):
-                return candidate
-            if isinstance(candidate, dict):
-                return SupervisorDecision(**candidate)
-            if isinstance(candidate, str):
-                import json
+        # 2) Prefer explicit output container
+        output_candidate = getattr(result, "output", None)
+        if isinstance(output_candidate, SupervisorDecision):
+            return _build_decision(output_candidate.model_dump(), "output")
+        if isinstance(output_candidate, dict):
+            return _build_decision(output_candidate, "output")
 
-                return SupervisorDecision(**json.loads(candidate))
+        # 3) Fallback to data container
+        data_candidate = getattr(result, "data", None)
+        if isinstance(data_candidate, SupervisorDecision):
+            return _build_decision(data_candidate.model_dump(), "data")
+        if isinstance(data_candidate, dict):
+            return _build_decision(data_candidate, "data")
+
+        # 4) Final string-based parsing
+        candidate = getattr(result, "output", None) or getattr(result, "data", None)
+        if candidate is None:
+            candidate = getattr(result, "result", None) or getattr(result, "value", None)
+        if candidate is None:
+            candidate = getattr(result, "response", None) or getattr(result, "content", None)
+
+        if isinstance(candidate, SupervisorDecision):
+            return _build_decision(candidate.model_dump(), "string_container_decision")
+
+        if isinstance(candidate, dict):
+            return _build_decision(candidate, "string_container_dict")
+
+        if isinstance(candidate, str):
+            raw = candidate.strip()
+            if not raw:
+                raise ValueError("Empty decision payload from supervisor LLM")
+
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Non-JSON decision payload: {raw[:120]}") from exc
+
+            if not isinstance(parsed, dict):
+                raise ValueError(f"Decision JSON is not an object/dict: {type(parsed)}")
+
+            return _build_decision(parsed, "string_container_json")
 
         raise ValueError(f"Unknown result structure: {type(result)}")
+
+    def _rule_based_routing(
+        self, user_message: str, state: SessionState, conversation_history: List[dict]
+    ) -> SupervisorDecision:
+        assessment = self.phase_assessor.assess(state)
+        decision = self._offline_route(user_message, state, assessment)
+        return self._apply_hard_gates(decision, assessment)
 
     def offline_route(
         self, user_message: str, state: SessionState, assessment: PhaseAssessment | None = None

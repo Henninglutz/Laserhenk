@@ -43,8 +43,10 @@ class PhaseAssessor:
         design_missing = self._missing_design_fields(state)
         measurements_missing = self._missing_measurement_fields(state)
 
-        # HENK1 is complete if contact + fabric color are present; timing is soft.
-        is_henk1_complete = not {"contact", "fabric_color"} & set(henk1_missing)
+        # HENK1 is complete if occasion + timing + fabric color are present (timing may be soft).
+        is_henk1_complete = not {"occasion", "timing", "fabric_color"} & set(
+            henk1_missing
+        )
         is_design_complete = is_henk1_complete and not design_missing
         is_measurements_complete = is_design_complete and not measurements_missing
 
@@ -78,15 +80,14 @@ class PhaseAssessor:
     def _missing_henk1_fields(self, state: SessionState) -> list[str]:
         missing: list[str] = []
 
-        if not (state.customer.email or state.customer.phone):
-            missing.append("contact")
-
-        fabric_color = self._get_fabric_color(state)
-        if not fabric_color:
-            missing.append("fabric_color")
+        if not self._get_occasion(state):
+            missing.append("occasion")
 
         if not self._get_timing(state):
             missing.append("timing")
+
+        if not self._get_fabric_color(state):
+            missing.append("fabric_color")
 
         return missing
 
@@ -132,9 +133,40 @@ class PhaseAssessor:
 
         return (
             getattr(state.customer, "event_date", None)
+            or getattr(state.customer, "event_date_hint", None)
             or payload.get("timing")
             or payload.get("deadline")
         )
+
+    def _get_occasion(self, state: SessionState) -> str | None:
+        handoff = getattr(state, "handoffs", {}) or {}
+        payload = handoff.get("design_henk") or getattr(state, "henk1_to_design_payload", {}) or {}
+
+        if payload.get("occasion"):
+            return str(payload["occasion"])
+
+        # Lightweight keyword-based extraction from recent conversation
+        convo = " ".join(
+            msg.get("content", "").lower()
+            for msg in state.conversation_history[-10:]
+            if isinstance(msg, dict)
+        )
+        occasion_keywords = {
+            "hochzeit": "hochzeit",
+            "wedding": "wedding",
+            "business": "business",
+            "gala": "gala",
+            "party": "party",
+            "feier": "feier",
+            "formal": "formal",
+            "casual": "casual",
+        }
+
+        for keyword, value in occasion_keywords.items():
+            if keyword in convo:
+                return value
+
+        return None
 
     def _get_fabric_color(self, state: SessionState) -> str | None:
         prefs = state.design_preferences

@@ -679,6 +679,7 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> tu
 
         # Format Results
         if not recommendations:
+            logger.warning("[RAGTool] returned 0 fabrics for query '%s'", query)
             return ("""Hmm, ich habe gerade keine passenden Stoffe in der Datenbank gefunden.
 
 Das kann daran liegen, dass die Datenbank noch nicht vollständig gefüllt ist.
@@ -696,7 +697,7 @@ Wie möchtest du weitermachen? 🎩""", None)
             session_state = SessionState(**session_state)
 
         # Store fabric recommendations for potential image display
-        session_state.rag_context = {
+        rag_result = {
             "fabrics": [
                 {
                     "fabric_code": rec.fabric.fabric_code,
@@ -707,6 +708,11 @@ Wie möchtest du weitermachen? 🎩""", None)
                     "weight": rec.fabric.weight,
                     "image_urls": rec.fabric.image_urls,
                     "local_image_paths": rec.fabric.local_image_paths,
+                    "price_category": getattr(rec.fabric, "price_category", None),
+                    "price_tier": getattr(rec.fabric, "price_tier", None),
+                    "additional_metadata": getattr(
+                        rec.fabric, "additional_metadata", {}
+                    ),
                     "similarity_score": rec.similarity_score,
                 }
                 for rec in recommendations[:10]
@@ -715,6 +721,10 @@ Wie möchtest du weitermachen? 🎩""", None)
             "colors": colors,
             "patterns": patterns,
         }
+
+        session_state.rag_context = rag_result
+        session_state.henk1_rag_queried = True
+        state["rag_output"] = rag_result
         session_state.rag_context["fabric_suggestions"] = select_dual_fabrics(recommendations)
         state["session_state"] = session_state
 
@@ -1039,6 +1049,8 @@ async def _execute_show_fabric_images(
         rag_context = getattr(session_state, "rag_context", {})
         fabrics = rag_context.get("fabrics", [])
 
+        logger.info("[ShowFabricImages] Fabrics available in context: %d", len(fabrics))
+
         if not fabrics:
             logger.warning("[ShowFabricImages] No fabrics in RAG context")
             message = """Hmm, ich habe keine Stoff-Daten gefunden.
@@ -1046,40 +1058,84 @@ async def _execute_show_fabric_images(
 Lass mich nochmal die Datenbank abfragen! Welche Farben interessieren dich? 🎩"""
             return message, None
 
-        # Get top 2 fabrics with images
-        fabrics_with_images = []
-        for fabric in fabrics[:10]:  # Check first 10 fabrics
+        def _price_label(fabric: dict) -> str:
+            tier = (
+                fabric.get("price_category")
+                or fabric.get("price_tier")
+                or fabric.get("price_segment")
+                or (fabric.get("additional_metadata") or {}).get("price_tier")
+                or ""
+            )
+            tier = str(tier).lower()
+            if any(k in tier for k in ["lux", "premium", "deluxe", "exklusiv"]):
+                return "luxury"
+            if any(k in tier for k in ["mid", "medium", "standard", "classic", "regular"]):
+                return "mid"
+            if "entry" in tier or "basic" in tier or "value" in tier:
+                return "entry"
+            return tier or "unknown"
+
+        def _image_for_fabric(fabric: dict) -> Optional[str]:
             image_urls = fabric.get("image_urls", [])
             local_paths = fabric.get("local_image_paths", [])
 
-            # Prefer local paths, fallback to URLs
-            image_url = None
             if local_paths and local_paths[0]:
-                # Convert local path to web-accessible URL
-                # Assuming images are in generated_images/ or a static folder
-                local_path = local_paths[0]
-                # TODO: Configure proper static file serving
-                # For now, use the remote URL
-                image_url = image_urls[0] if image_urls else None
-            elif image_urls and image_urls[0]:
-                image_url = image_urls[0]
+                filename = os.path.basename(local_paths[0])
+                return f"/fabrics/images/{filename}"
+            if image_urls and image_urls[0]:
+                return image_urls[0]
+            return None
 
-            if image_url:
-                fabrics_with_images.append({
+        def _select_fabrics(fabric_items: list[dict], limit: int = 2) -> list[dict]:
+            scored = sorted(
+                fabric_items,
+                key=lambda f: f.get("similarity_score", 0.0),
+                reverse=True,
+            )
+            with_tier = [(fabric, _price_label(fabric)) for fabric in scored]
+
+            mid = [f for f, tier in with_tier if tier == "mid"]
+            luxury = [f for f, tier in with_tier if tier == "luxury"]
+
+            selection: list[dict] = []
+            if mid:
+                selection.append(mid[0])
+            if luxury:
+                selection.append(luxury[0])
+
+            # Fallback heuristics: take median and best match
+            if len(selection) < limit and scored:
+                top = scored[0]
+                median = scored[min(len(scored) - 1, len(scored) // 2)]
+                for candidate in [top, median]:
+                    if candidate not in selection:
+                        selection.append(candidate)
+                        if len(selection) >= limit:
+                            break
+
+            return selection[:limit]
+
+        fabrics_with_images: list[dict] = []
+        for fabric in _select_fabrics(fabrics, limit=params.get("limit", 2)):
+            image_url = _image_for_fabric(fabric)
+            if not image_url:
+                continue
+            fabrics_with_images.append(
+                {
                     "url": image_url,
                     "fabric_code": fabric.get("fabric_code", ""),
                     "name": fabric.get("name", "Hochwertiger Stoff"),
                     "color": fabric.get("color", ""),
                     "pattern": fabric.get("pattern", ""),
                     "composition": fabric.get("composition", ""),
+                    "weight": fabric.get("weight", ""),
+                    "price_tier": _price_label(fabric),
                     "similarity_score": fabric.get("similarity_score", 0.0),
-                })
-
-            if len(fabrics_with_images) >= 2:
-                break
+                }
+            )
 
         if not fabrics_with_images:
-            logger.warning("[ShowFabricImages] No fabric images available")
+            logger.warning("[ShowFabricImages] No fabric images available after selection")
             message = """Die Stoffbilder sind leider noch nicht verfügbar.
 
 Aber ich kann dir die technischen Details zeigen – welcher Stoff interessiert dich am meisten? 🎩"""
@@ -1088,23 +1144,33 @@ Aber ich kann dir die technischen Details zeigen – welcher Stoff interessiert 
         # Build message with fabric details
         occasion = params.get("occasion", "deinen Anlass")
 
-        message = f"""🎨 **Hier sind deine Top {len(fabrics_with_images)} Stoff-Empfehlungen!**
+        message = f"""🎨 **Hier sind deine Top {len(fabrics_with_images)} Stoff-Empfehlungen – direkt im Chat, nicht per Mail!**
 
 """
 
         for i, fabric in enumerate(fabrics_with_images, 1):
-            message += f"""**{i}. {fabric['name']}** (Ref: {fabric['fabric_code']})
+            tier_label = fabric.get("price_tier", "unknown")
+            message += f"""**{i}. {fabric['name']}** ({tier_label} | Ref: {fabric['fabric_code']})
+   📸 Bild: {fabric['url']}
    🎨 Farbe: {fabric['color']}
    ✨ Muster: {fabric['pattern']}
-   📦 Material: {fabric['composition']}
+   📦 Mischung: {fabric['composition']}
+   ⚖️ Gewicht: {fabric.get('weight') or 'ca. 260-280g/m²'}
 
 """
 
-        message += f"""Die Stoffe werden perfekt zu {occasion} passen!
+        message += f"""Diese beiden passen gut zu {occasion}: ein mittleres Preisniveau und eine luxuriöse Option.
 
 **Was denkst du?** Welcher gefällt dir besser? 🎩"""
 
-        logger.info(f"[ShowFabricImages] Returning {len(fabrics_with_images)} fabric images")
+        logger.info(
+            "[ShowFabricImages] Returning %d fabric images | selection=%s",
+            len(fabrics_with_images),
+            ", ".join(
+                f"{fabric.get('fabric_code')} ({fabric.get('price_tier')})"
+                for fabric in fabrics_with_images
+            ),
+        )
         return message, fabrics_with_images
 
     except Exception as e:

@@ -25,6 +25,9 @@ class Customer(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     event_date: Optional[str] = None
+    event_date_hint: Optional[str] = Field(
+        None, description="Soft timing hint (e.g., 'im Sommer', 'in 6 Wochen')"
+    )
     customer_type: CustomerType = CustomerType.NEW
     has_measurements: bool = False
     crm_lead_id: Optional[str] = Field(None, description="PIPEDRIVE CRM Lead ID")
@@ -112,7 +115,9 @@ class SessionState(BaseModel):
         description="User's selected favorite fabric (fabric_code, name, color, image_url)",
     )
 
-    handoffs: dict = Field(default_factory=dict, description="Structured agent handoffs")
+    handoffs: dict[str, dict] = Field(
+        default_factory=dict, description="Structured agent handoffs"
+    )
 
     # Handoff Payloads (tracking inter-agent data transfer)
     henk1_to_design_payload: Optional[dict] = Field(
