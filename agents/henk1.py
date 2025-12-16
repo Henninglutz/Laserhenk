@@ -131,6 +131,8 @@ class Henk1Agent(BaseAgent):
                 rag_context = {}
             fabrics = rag_context.get("fabrics", [])
 
+            logger.info("[HENK1] Fabrics in rag_context: %d", len(fabrics))
+
             if fabrics:
                 # Extract occasion from conversation if available
                 occasion = self._extract_style_info(state).get("occasion", "deinen Anlass")
@@ -149,7 +151,17 @@ class Henk1Agent(BaseAgent):
                     should_continue=False,
                 )
             else:
-                logger.warning("[HENK1] No fabrics in rag_context, skipping image display")
+                logger.warning("[HENK1] No fabrics in rag_context, asking for clarification")
+                clarification_msg = (
+                    "Ich habe gerade keine Stoffvorschläge aus der Datenbank. "
+                    "Welche Farbe oder welches Muster soll ich für dich finden?"
+                )
+                return AgentDecision(
+                    next_agent=None,
+                    message=clarification_msg,
+                    action=None,
+                    should_continue=False,
+                )
 
         # If RAG has been queried and fabric images shown, mark complete and wait for user
         if state.henk1_rag_queried and state.henk1_mood_board_shown:
@@ -268,10 +280,8 @@ class Henk1Agent(BaseAgent):
             gaps.append("für welchen Anlass der Anzug gedacht ist")
         if not needs.get("colors"):
             gaps.append("welche Farbe(n) du willst")
-        if not needs.get("budget_eur"):
-            gaps.append("dein Budget")
         if not needs.get("timing_hint"):
-            gaps.append("wann du den Anzug brauchst")
+            gaps.append("wann du den Anzug brauchst (Termin oder Zeitraum)")
         if not needs.get("style_keywords"):
             gaps.append("ob du es klassisch oder modern magst")
 
@@ -297,29 +307,8 @@ class Henk1Agent(BaseAgent):
 
         style_info = self._extract_style_info(state)
 
-        timing_keywords = [
-            "bis",
-            "wann",
-            "datum",
-            "termin",
-            "monat",
-            "woche",
-            "januar",
-            "februar",
-            "märz",
-            "maerz",
-            "april",
-            "mai",
-            "juni",
-            "juli",
-            "august",
-            "september",
-            "oktober",
-            "november",
-            "dezember",
-        ]
-
         budget_value = self._extract_budget(conversation_text)
+        timing_hint = self._extract_timing_hint(conversation_text, state)
 
         return {
             "occasion": style_info.get("occasion"),
@@ -327,7 +316,7 @@ class Henk1Agent(BaseAgent):
             "style_keywords": style_info.get("style_keywords", []),
             "patterns": style_info.get("patterns", []),
             "budget_eur": budget_value,
-            "timing_hint": next((t for t in timing_keywords if t in conversation_text), None),
+            "timing_hint": timing_hint,
             "notes": latest_user,
         }
 
@@ -344,6 +333,31 @@ class Henk1Agent(BaseAgent):
             return float(match.group(1).replace(",", "."))
         except ValueError:
             return None
+
+    def _extract_timing_hint(
+        self, conversation_text: str, state: SessionState
+    ) -> Optional[str]:
+        """Extract soft timing hints (e.g., seasons, quarters, relative weeks)."""
+
+        import re
+
+        soft_patterns = [
+            r"in\s+\d+\s+(?:wochen|woche|monaten|monate|tagen|tage)",
+            r"q[1-4]",
+            r"sommer|winter|frühjahr|fruehjahr|fruhjahr|herbst|frühling|fruhling",
+            r"januar|februar|märz|maerz|april|mai|juni|juli|august|september|oktober|november|dezember",
+        ]
+
+        for pattern in soft_patterns:
+            match = re.search(pattern, conversation_text, re.IGNORECASE)
+            if match:
+                hint = match.group(0)
+                if not state.customer.event_date:
+                    state.customer.event_date = hint
+                state.customer.event_date_hint = hint
+                return hint
+
+        return None
 
     def _persist_handoff_payload(self, state: SessionState, needs: dict) -> None:
         """Persist a validated handoff payload once Pflichtinfos liegen vor."""
@@ -430,13 +444,13 @@ class Henk1Agent(BaseAgent):
 
 Deine Aufgabe - BEDARFSERMITTLUNG (alle Infos sammeln!):
 
-✅ PFLICHT-INFOS (sammle ALLE bevor du fertig bist):
+✅ PFLICHT-INFOS (bevor du Stoffe zeigst):
    1. ANLASS: Wofür braucht der Kunde den Anzug? (Hochzeit, Business, Gala, etc.)
-   2. BUDGET: Wie viel möchte er ausgeben? (grobe Preisvorstellung)
-   3. TIMING: Wann wird der Anzug benötigt? (Deadline)
-   4. STIL: Welchen Stil bevorzugt er? (klassisch, modern, locker, etc.)
-   5. FARBE: Welche Farben gefallen ihm? (blau, grau, schwarz, etc.)
-   6. KONTAKT: Wenn klarer Kauf-/Terminwunsch → höflich nach Email und WhatsApp/Telefon fragen
+   2. TIMING: Wann wird der Anzug benötigt? Datum oder weiche Angabe (Sommer, in 6 Wochen)
+   3. STIL: Welchen Stil bevorzugt er? (klassisch, modern, locker, etc.)
+   4. FARBE: Welche Farben gefallen ihm? (blau, grau, schwarz, etc.)
+   5. KONTAKT: Wenn klarer Kauf-/Terminwunsch → höflich nach Email und WhatsApp/Telefon fragen
+   (Budget ist hilfreich, aber kein Pflichtfeld.)
 
 💬 GESPRÄCHSFÜHRUNG:
 - Sei herzlich, persönlich und kompetent
