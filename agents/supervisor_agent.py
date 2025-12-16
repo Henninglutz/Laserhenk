@@ -195,15 +195,15 @@ class SupervisorAgent:
             return None
 
         # STATE-BASED ROUTING: Execute queued RAG if HENK1 prepared it
-        if (
-            state.henk1_rag_queried
-            and not state.henk1_fabrics_shown
-            and hasattr(state, 'rag_context')
-            and state.rag_context
-        ):
+        if state.henk1_rag_queried and not state.henk1_fabrics_shown:
             # HENK1 has set rag_queried flag but fabrics haven't been shown yet
             # This means RAG needs to be executed now!
-            query = state.rag_context.get("query", user_message) if isinstance(state.rag_context, dict) else user_message
+            query = user_message  # Use current user message as query
+
+            # If rag_context already exists (from previous RAG execution), use that query
+            if hasattr(state, 'rag_context') and state.rag_context and isinstance(state.rag_context, dict):
+                query = state.rag_context.get("query", user_message)
+
             logger.info("[SupervisorAgent] ✅ State-based RAG trigger detected (henk1_rag_queried=True, fabrics_shown=False)")
             return SupervisorDecision(
                 next_destination="rag_tool",
