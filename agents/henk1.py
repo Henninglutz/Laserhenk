@@ -86,6 +86,7 @@ from agents.henk1_preferences import (
 from models.customer import SessionState
 from models.fabric import FabricColor, FabricPattern
 from models.handoff import Henk1ToDesignHenkPayload, OccasionType, StyleType
+from tools.rag_tool import _find_local_image
 
 logger = logging.getLogger(__name__)
 
@@ -861,6 +862,11 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
                 or fabric.get("image"),
                 "raw": fabric,
             }
+
+            if not entry["image_url"] and reference:
+                local_images = _find_local_image(reference)
+                if local_images:
+                    entry["image_url"] = local_images[0]
             normalized.append(entry)
 
         def _pick_with_image(items: list[dict], tier: str) -> Optional[dict]:

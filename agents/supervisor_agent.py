@@ -1,6 +1,7 @@
 """Supervisor agent responsible for all routing decisions."""
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import os
@@ -112,18 +113,42 @@ class SupervisorAgent:
         system_prompt = self._build_supervisor_prompt(state, assessment)
 
         try:
-            run_kwargs = {
+            base_kwargs = {
                 "message_history": self._format_history(conversation_history),
                 "deps": {"system_prompt": system_prompt},
-                "response_format": {"type": "json_object"},
+            }
+            run_sig = inspect.signature(self.pydantic_agent.run)
+            allowed_params = set(run_sig.parameters.keys())
+
+            run_kwargs = {
+                key: value for key, value in base_kwargs.items() if key in allowed_params
             }
 
-            try:
-                result = await self.pydantic_agent.run(
-                    user_message, result_type=SupervisorDecision, **run_kwargs
+            if "response_format" in allowed_params:
+                run_kwargs["response_format"] = {"type": "json_object"}
+            else:
+                logger.debug(
+                    "[SupervisorAgent] response_format not supported by agent.run; skipping"
                 )
-            except TypeError:
-                result = await self.pydantic_agent.run(user_message, **run_kwargs)
+
+            use_result_type = "result_type" in allowed_params
+
+            try:
+                if use_result_type:
+                    result = await self.pydantic_agent.run(
+                        user_message, result_type=SupervisorDecision, **run_kwargs
+                    )
+                else:
+                    result = await self.pydantic_agent.run(user_message, **run_kwargs)
+            except TypeError as exc:
+                logger.warning(
+                    "[SupervisorAgent] agent.run rejected provided kwargs (%s); retrying minimal",
+                    exc,
+                )
+                minimal_kwargs = {
+                    key: value for key, value in run_kwargs.items() if key in {"deps"}
+                }
+                result = await self.pydantic_agent.run(user_message, **minimal_kwargs)
 
             try:
                 decision = self._extract_decision(result)
