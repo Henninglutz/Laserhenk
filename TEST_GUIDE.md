@@ -119,3 +119,15 @@ echo "4. Scripts..."
 echo ""
 echo "=== TEST ABGESCHLOSSEN ==="
 ```
+
+## Kurzer manueller Check (Supervisor + Schnitt-Loop)
+1. Server starten: `python run_flask.py`
+2. Chat posten:
+   ```bash
+   curl -X POST http://localhost:3000/api/chat \
+     -H "Content-Type: application/json" \
+     -d '{"session_id":"demo","message":"Zweiteiler ohne Weste"}'
+   ```
+3. Erwartung:
+   - Keine 500er im Log, selbst wenn das Supervisor-LLM kein JSON liefert.
+   - SessionState enthält `suit_parts="2"`, `wants_vest=false`, `henk1_cut_confirmed=true` und es folgt keine erneute 2/3-Teiler-Rückfrage.

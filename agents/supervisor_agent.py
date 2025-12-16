@@ -1,9 +1,11 @@
 """Supervisor agent responsible for all routing decisions."""
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import os
+import re
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -111,31 +113,69 @@ class SupervisorAgent:
         system_prompt = self._build_supervisor_prompt(state, assessment)
 
         try:
-            run_kwargs = {
+            base_kwargs = {
                 "message_history": self._format_history(conversation_history),
                 "deps": {"system_prompt": system_prompt},
             }
+            run_sig = inspect.signature(self.pydantic_agent.run)
+            allowed_params = set(run_sig.parameters.keys())
+
+            run_kwargs = {
+                key: value for key, value in base_kwargs.items() if key in allowed_params
+            }
+
+            if "response_format" in allowed_params:
+                run_kwargs["response_format"] = {"type": "json_object"}
+
+            use_result_type = "result_type" in allowed_params
+
+            async def _call_agent(kwargs: dict, with_result_type: bool):
+                if with_result_type:
+                    return await self.pydantic_agent.run(
+                        user_message, result_type=SupervisorDecision, **kwargs
+                    )
+                return await self.pydantic_agent.run(user_message, **kwargs)
 
             try:
-                result = await self.pydantic_agent.run(
-                    user_message, result_type=SupervisorDecision, **run_kwargs
+                result = await _call_agent(run_kwargs, use_result_type)
+            except TypeError as exc:
+                logger.warning(
+                    "[SupervisorAgent] agent.run rejected kwargs (%s); retrying minimal",
+                    exc,
                 )
-            except TypeError:
-                result = await self.pydantic_agent.run(user_message, **run_kwargs)
+                minimal_kwargs = {
+                    key: value
+                    for key, value in run_kwargs.items()
+                    if key in {"deps", "message_history"}
+                }
+                try:
+                    result = await _call_agent(minimal_kwargs, False)
+                except Exception as exc2:
+                    logger.error(
+                        "[SupervisorAgent] agent.run failed after retry: %s",
+                        exc2,
+                        exc_info=True,
+                    )
+                    return self._fallback_decision(
+                        "Supervisor LLM call failed after retry"
+                    )
 
-            decision = self._extract_decision(result)
-        except (ValueError, json.JSONDecodeError) as exc:
-            logger.warning("[SupervisorAgent] LLM routing failed: %s", exc, exc_info=True)
-
-            pre_routed = self._pre_route(user_message, state)
-            if pre_routed:
-                decision = pre_routed
-                self._last_extract_path = "fallback_pre_route"
-            else:
-                decision = self._rule_based_routing(user_message, state, conversation_history)
+            try:
+                decision = self._extract_decision(result)
+            except (ValueError, json.JSONDecodeError) as exc:
+                logger.error(
+                    "[SupervisorAgent] Decision parsing failed, falling back: %s",
+                    exc,
+                    exc_info=True,
+                )
+                decision = self._fallback_decision(
+                    "LLM decision parse failure, safe fallback"
+                )
         except Exception as exc:  # pragma: no cover - safety fallback
             logger.error(f"[SupervisorAgent] LLM routing failed: {exc}", exc_info=True)
-            decision = self._offline_route(user_message, state, assessment)
+            decision = self._fallback_decision(
+                "Unexpected supervisor exception, safe fallback"
+            )
 
         decision = self._apply_hard_gates(decision, assessment)
 
@@ -153,6 +193,15 @@ class SupervisorAgent:
         text = (user_message or "").lower()
         if not text:
             return None
+
+        selection_keywords = ["rechtes foto", "linkes foto", "rechts", "links", "zweite", "erste", "foto"]
+        if state.shown_fabric_images and any(keyword in text for keyword in selection_keywords):
+            return SupervisorDecision(
+                next_destination="henk1",
+                reasoning="Detected fabric selection, routing back to henk1/design flow",
+                user_message=user_message,
+                confidence=0.95,
+            )
 
         color_hint = None
         if state.design_preferences.preferred_colors:
@@ -212,6 +261,17 @@ class SupervisorAgent:
             )
 
         return None
+
+    def _fallback_decision(self, reason: str) -> SupervisorDecision:
+        """Return a safe routing decision back to HENK1 without raising."""
+
+        self._last_extract_path = "fallback"
+        return SupervisorDecision(
+            next_destination="henk1",
+            reasoning=reason,
+            user_message="Sag mir kurz Anlass, Timing und Farbrichtung – dann zeige ich Stoffe.",
+            confidence=0.5,
+        )
 
     def _build_supervisor_prompt(self, state: SessionState, assessment: PhaseAssessment) -> str:
         customer_data = state.customer.model_dump()
@@ -311,21 +371,46 @@ class SupervisorAgent:
             return _build_decision(candidate, "string_container_dict")
 
         if isinstance(candidate, str):
-            raw = candidate.strip()
+            raw = str(candidate)
+            raw = raw.strip()
+            logger.debug(
+                "[SupervisorAgent] Raw decision len=%s preview=%s",
+                len(raw),
+                raw[:200],
+            )
+            if raw.startswith("```"):
+                raw = raw.strip("`").strip()
+            if raw.startswith("json"):
+                raw = raw[4:].strip()
+
+            json_match = re.search(r"\{.*?\}", raw, re.DOTALL)
+            if json_match:
+                raw = json_match.group(0)
+
             if not raw:
-                raise ValueError("Empty decision payload from supervisor LLM")
+                return self._fallback_decision("Empty decision payload from supervisor LLM")
 
             try:
                 parsed = json.loads(raw)
             except json.JSONDecodeError as exc:
-                raise ValueError(f"Non-JSON decision payload: {raw[:120]}") from exc
+                snippet = raw[:160]
+                logger.warning(
+                    "[SupervisorAgent] Failed to parse decision JSON (len=%s), snippet=%s",
+                    len(raw),
+                    snippet,
+                )
+                return self._fallback_decision(
+                    f"Non-JSON decision payload, falling back: {snippet}"
+                )
 
             if not isinstance(parsed, dict):
-                raise ValueError(f"Decision JSON is not an object/dict: {type(parsed)}")
+                return self._fallback_decision(
+                    f"Decision JSON is not an object/dict: {type(parsed)}"
+                )
 
             return _build_decision(parsed, "string_container_json")
 
-        raise ValueError(f"Unknown result structure: {type(result)}")
+        return self._fallback_decision(f"Unknown result structure: {type(result)}")
 
     def _rule_based_routing(
         self, user_message: str, state: SessionState, conversation_history: List[dict]
