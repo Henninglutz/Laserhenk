@@ -221,7 +221,8 @@ async def _show_fabric_images(params: dict, state: HenkGraphState) -> ToolResult
     for fabric in fabrics:
         image_urls = fabric.get("image_urls") or []
         local_paths = fabric.get("local_image_paths") or []
-        image_url = (image_urls[0] if image_urls else None) or (local_paths[0] if local_paths else None)
+        # Prefer local paths (served via /fabrics/images) to avoid broken external links
+        image_url = (local_paths[0] if local_paths else None) or (image_urls[0] if image_urls else None)
         if not image_url:
             continue
         fabrics_with_images.append(
