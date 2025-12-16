@@ -129,6 +129,13 @@ class Henk1Agent(BaseAgent):
                 user_input = msg.get("content", "")
                 break
 
+        # SOFORT-FIX: Weste-Präferenz aus User-Input extrahieren
+        user_lower = user_input.lower()
+        if "weste" in user_lower and any(kw in user_lower for kw in ["mit", "haben", "möchte", "will", "brauche"]):
+            if state.wants_vest is None:
+                state.wants_vest = True
+                logger.info("[HENK1] ✅ FORCED: wants_vest = True from user input: '%s'", user_input[:60])
+
         suit_choice = self._apply_suit_choice_from_input(state, user_input)
 
         if self._detect_contact_decline(user_input):
@@ -250,20 +257,47 @@ class Henk1Agent(BaseAgent):
                     should_continue=False,
                 )
 
-        # If RAG has been queried and fabric images shown, mark complete and wait for user
+        # If RAG has been queried and fabric images shown, check if user responded
         if state.henk1_rag_queried and state.henk1_fabrics_shown:
             logger.info(
-                "[HENK1] RAG queried and fabric images shown, HENK1 complete - waiting for user response"
+                "[HENK1] RAG queried and fabric images shown - checking for user response"
             )
             if not state.customer.customer_id:
                 state.customer.customer_id = f"TEMP_{state.session_id[:8]}"
 
-            return AgentDecision(
-                next_agent=None,
-                message=None,  # Fabric images already shown, no additional message needed
-                action=None,
-                should_continue=False,  # WAIT for user response to fabric images
-            )
+            # SOFORT-FIX: Check if user has responded after fabric images
+            recent_user_messages = [
+                msg for msg in state.conversation_history[-3:]
+                if isinstance(msg, dict) and msg.get("role") == "user"
+            ]
+
+            if recent_user_messages and state.favorite_fabric:
+                # User has responded and selected fabric → forward to Design HENK
+                logger.info("[HENK1] ✅ User responded after fabrics, forwarding to Design HENK")
+                return AgentDecision(
+                    next_agent="design_henk",
+                    message="Perfekt! Lass uns jetzt über Schnitt und Details sprechen...",
+                    action=None,
+                    should_continue=True,  # Continue to Design HENK
+                )
+            elif recent_user_messages and not state.favorite_fabric:
+                # User responded but hasn't selected fabric yet → continue conversation
+                logger.info("[HENK1] User responded but no fabric selected yet, continuing conversation")
+                return AgentDecision(
+                    next_agent=None,
+                    message=None,
+                    action=None,
+                    should_continue=False,  # WAIT for fabric selection
+                )
+            else:
+                # No response yet → wait
+                logger.info("[HENK1] No user response yet, waiting...")
+                return AgentDecision(
+                    next_agent=None,
+                    message=None,
+                    action=None,
+                    should_continue=False,  # WAIT for user response
+                )
 
         # NOTE: Old mood board generation (BEFORE RAG) has been removed
         # New flow: RAG first → then show real fabric images (not DALL-E mood board)

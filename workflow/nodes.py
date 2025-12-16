@@ -677,6 +677,21 @@ async def _execute_rag_tool(params: Dict[str, Any], state: HenkGraphState) -> tu
     try:
         recommendations = await rag.search_fabrics(criteria)
 
+        # SOFORT-FIX: Filter out unsuitable materials for suits
+        SUIT_EXCLUDED_MATERIALS = ["polyurethan", "polyamid", "nylon", "elasthan", "polyester"]
+        original_count = len(recommendations)
+        recommendations = [
+            rec for rec in recommendations
+            if not any(
+                mat in (rec.fabric.composition or "").lower()
+                for mat in SUIT_EXCLUDED_MATERIALS
+            )
+        ]
+        if original_count > len(recommendations):
+            logger.info(
+                f"[RAG] ✅ Filtered {original_count - len(recommendations)} non-suit fabrics (polyurethan, nylon, etc.)"
+            )
+
         # Format Results
         if not recommendations:
             logger.warning("[RAGTool] returned 0 fabrics for query '%s'", query)

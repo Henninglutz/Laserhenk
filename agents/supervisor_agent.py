@@ -276,6 +276,9 @@ class SupervisorAgent:
     def _build_supervisor_prompt(self, state: SessionState, assessment: PhaseAssessment) -> str:
         customer_data = state.customer.model_dump()
         dynamic_context = [
+            "⚠️ CRITICAL: You MUST return ONLY valid JSON. NO explanatory text before or after the JSON object.",
+            "Required JSON format: {\"next_destination\": \"henk1|design_henk|rag_tool|pricing_tool|comparison_tool|laserhenk|clarification|end\", \"reasoning\": \"brief explanation\", \"confidence\": 0.9}",
+            "",
             "Du bist der Supervisor. Entscheide den nächsten Schritt (Agent oder Tool).",
             "HENK1 Essentials: Anlass, Timing (event_date auch weich) und Stoff-Farbe sind Pflicht. Budget ist optional.",
             f"Missing fields laut Assessment: {', '.join(assessment.missing_fields) or 'keine'}",
