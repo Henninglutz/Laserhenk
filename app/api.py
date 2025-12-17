@@ -1,6 +1,7 @@
 """API Blueprint - Chat und Session Management."""
 
 import asyncio
+import logging
 import uuid
 from typing import Dict
 
@@ -142,34 +143,70 @@ def chat():
         state['user_input'] = message
 
         # Process with workflow on a persistent event loop to avoid teardown issues
+        logging.info("[API] Invoking workflow...")
         final_state = _workflow_loop.run_until_complete(_workflow.ainvoke(state))
+        logging.info(f"[API] Workflow completed, got {len(final_state.get('messages', []))} messages")
+
         messages = [_message_to_dict(m) for m in final_state.get('messages', [])]
+        logging.info(f"[API] Converted {len(messages)} messages to dict")
+
         final_state['messages'] = messages
         _sessions[sid] = final_state
+        logging.info(f"[API] Saved session state")
 
         # Extract assistant reply, image_url, and fabric_images
         reply = 'Danke, ich habe alles notiert.'
         image_url = None
         fabric_images = None
+        logging.info(f"[API] Starting metadata extraction from {len(messages)} messages")
 
         tool_senders = set(TOOL_REGISTRY.keys())
 
         # Prefer the latest agent reply (not a tool), but still capture tool metadata
+        reply_found = False
         for msg in reversed(messages):
             if msg.get('role') != 'assistant':
                 continue
 
             metadata = msg.get('metadata', {})
-            if 'fabric_images' in metadata and not fabric_images:
-                fabric_images = metadata['fabric_images']
-            if 'image_url' in metadata and not image_url:
-                image_url = metadata['image_url']
+            sender = msg.get('sender', 'unknown')
 
+            # DEBUG: Log metadata extraction
+            if metadata:
+                logging.info(f"[API] Message from {sender}: has metadata keys={list(metadata.keys())}")
+                # DEBUG: Log actual metadata content
+                logging.info(f"[API] Metadata content: {metadata}")
+
+            # ALWAYS extract metadata from ALL messages (including tools)
+            # Handle nested metadata structure - unwrap ALL levels of metadata.metadata.metadata...
+            actual_metadata = metadata
+            unwrap_count = 0
+            while 'metadata' in actual_metadata and isinstance(actual_metadata.get('metadata'), dict):
+                actual_metadata = actual_metadata['metadata']
+                unwrap_count += 1
+                if unwrap_count > 10:  # Safety: prevent infinite loop
+                    logging.warning(f"[API] ⚠️ Stopped unwrapping after {unwrap_count} levels!")
+                    break
+            if unwrap_count > 0:
+                logging.info(f"[API] Unwrapped {unwrap_count} levels of nested metadata from {sender}")
+
+            if 'fabric_images' in actual_metadata and not fabric_images:
+                fabric_images = actual_metadata['fabric_images']
+                logging.info(f"[API] ✅ Extracted fabric_images from {sender}: {len(fabric_images)} images")
+            if 'image_url' in actual_metadata and not image_url:
+                image_url = actual_metadata['image_url']
+                logging.info(f"[API] ✅ Extracted image_url from {sender}")
+
+            # Skip tool messages for reply extraction (but NOT for metadata!)
             if msg.get('sender') in tool_senders:
                 continue
 
-            reply = msg.get('content', reply)
-            break
+            # Use first non-tool message as reply (but continue loop for metadata)
+            if not reply_found:
+                reply = msg.get('content', reply)
+                reply_found = True
+                logging.info(f"[API] Using reply from {sender}")
+                # DON'T break - continue to check other messages for metadata!
 
         # Current stage
         stage = final_state.get('current_agent') or final_state.get('next_agent') or 'henk1'
@@ -193,8 +230,10 @@ def chat():
         return jsonify(response_data), 200
 
     except ValidationError as e:
+        logging.error(f"[API] Validation error: {e}", exc_info=True)
         return jsonify({'error': 'Validation error', 'details': e.errors()}), 400
     except Exception as e:
+        logging.error(f"[API] Internal error: {e}", exc_info=True)
         return jsonify({'error': 'Internal error', 'message': str(e)}), 500
 
 

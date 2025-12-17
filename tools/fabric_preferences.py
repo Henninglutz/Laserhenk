@@ -135,10 +135,22 @@ def build_fabric_search_criteria(
         if stored_colors:
             colors = stored_colors
             logger.info(f"[FabricPrefs] Using stored color preferences: {colors}")
+        else:
+            logger.info("[FabricPrefs] No stored color preferences found in session")
 
-    if colors and normalized_state and not normalized_state.design_preferences.preferred_colors:
-        normalized_state.design_preferences.preferred_colors = colors
-        logger.info(f"[FabricPrefs] Stored color preferences in session: {colors}")
+    if colors and normalized_state:
+        if not normalized_state.design_preferences.preferred_colors:
+            normalized_state.design_preferences.preferred_colors = colors
+            logger.info(f"[FabricPrefs] Stored NEW color preferences in session: {colors}")
+        else:
+            # Merge with existing colors (keep both)
+            existing = normalized_state.design_preferences.preferred_colors
+            merged = list(dict.fromkeys([*existing, *colors]))  # Remove duplicates, preserve order
+            if merged != existing:
+                normalized_state.design_preferences.preferred_colors = merged
+                logger.info(f"[FabricPrefs] MERGED color preferences: {existing} + {colors} = {merged}")
+            else:
+                logger.info(f"[FabricPrefs] Color preferences unchanged: {colors}")
 
     criteria = FabricSearchCriteria(
         colors=colors,

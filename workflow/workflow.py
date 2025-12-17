@@ -21,11 +21,18 @@ def _after_route(state: HenkGraphState) -> str:
 
 
 def _after_run_step(state: HenkGraphState) -> str:
-    if state.get("awaiting_user_input"):
-        return END
+    awaiting = state.get("awaiting_user_input")
     next_step = state.get("next_step") or {}
+
+    logger.info(f"[Workflow] After run_step: awaiting_user_input={awaiting}, next_step={next_step}")
+
+    if awaiting:
+        logger.info("[Workflow] Awaiting user input, going to END")
+        return END
     if next_step.get("should_continue"):
+        logger.info(f"[Workflow] should_continue=True, going back to run_step for {next_step.get('name')}")
         return "run_step"
+    logger.info("[Workflow] No continuation, going to route")
     return "route"
 
 

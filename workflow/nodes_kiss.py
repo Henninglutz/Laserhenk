@@ -132,16 +132,33 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
         image_urls = fabric_dict.get("image_urls") or []
         local_paths = fabric_dict.get("local_image_paths") or []
         image_url = (image_urls[0] if image_urls else None) or (local_paths[0] if local_paths else None)
+
+        fabric_code = fabric_dict.get("fabric_code")
+        logging.info(f"[RAG] Fabric {fabric_code}: image_urls={len(image_urls)}, local_paths={len(local_paths)}, final_url={image_url}")
+
         if not image_url:
+            logging.warning(f"[RAG] ⚠️ Fabric {fabric_code} has NO images - skipping from image list")
             continue
+
+        # Extract data with robust fallbacks
+        name = fabric_dict.get("name") or "Hochwertiger Stoff"
+        color = fabric_dict.get("color") or "Klassisch"
+        pattern = fabric_dict.get("pattern") or "Uni"
+        composition = fabric_dict.get("composition") or "Hochwertige Wollmischung"
+        supplier = fabric_dict.get("supplier") or "Formens"
+
+        # Log extracted data for debugging
+        logging.info(f"[RAG] Building fabric_image for {fabric_code}: name={name!r}, color={color!r}, pattern={pattern!r}")
+
         fabric_images.append(
             {
                 "url": image_url,
-                "fabric_code": fabric_dict.get("fabric_code"),
-                "name": fabric_dict.get("name", "Hochwertiger Stoff"),
-                "color": fabric_dict.get("color"),
-                "pattern": fabric_dict.get("pattern"),
-                "composition": fabric_dict.get("composition"),
+                "fabric_code": fabric_code,
+                "name": name,
+                "color": color,
+                "pattern": pattern,
+                "composition": composition,
+                "supplier": supplier,
             }
         )
         if len(fabric_images) >= 2:
@@ -149,6 +166,11 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
 
     if hasattr(session_state, "shown_fabric_images"):
         session_state.shown_fabric_images.extend(fabric_images)
+
+    # Mark that fabrics have been shown to prevent repeated RAG calls
+    if fabric_images:
+        session_state.henk1_fabrics_shown = True
+        logging.info(f"[RAG] ✅ Set henk1_fabrics_shown = True ({len(fabric_images)} images)")
 
     state["session_state"] = session_state
 
@@ -161,7 +183,7 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
 
     formatted = "**Passende Stoffe für dich:**\n\n" + "".join(
         f"{idx}. {getattr(rec.fabric, 'name', None) or 'Hochwertiger Stoff'} (Code: {getattr(rec.fabric, 'fabric_code', None)}) - "
-        f"Farbe: {getattr(rec.fabric, 'color', None) or 'klassisch'}, Muster: {getattr(rec.fabric, 'pattern', None) or 'uni'}\n"
+        f"Farbe: {getattr(rec.fabric, 'color', None) or 'Klassisch'}, Muster: {getattr(rec.fabric, 'pattern', None) or 'Uni'}\n"
         for idx, rec in enumerate(recommendations[:5], 1)
     )
 
@@ -375,18 +397,24 @@ def _validate_handoff(target: str, payload: dict) -> tuple[bool, Optional[str]]:
 
 async def run_step_node(state: HenkGraphState) -> HenkGraphState:
     action_data = state.get("next_step")
+    logging.info(f"[RunStep] action_data: {action_data}")
     if not action_data:
+        logging.warning("[RunStep] No action_data, returning awaiting_user_input=True")
         return {"awaiting_user_input": True, "next_step": None}
 
     action = HandoffAction.model_validate(action_data)
+    logging.info(f"[RunStep] Executing {action.kind}: {action.name}")
 
     if action.kind == "tool":
+        logging.info(f"[RunStep] Running tool: {action.name} with params: {action.params}")
         return await _run_tool_action(action, state)
 
     agent_factory = AGENT_REGISTRY.get(action.name)
     if not agent_factory:
+        logging.warning(f"[RunStep] Agent {action.name} not found in registry")
         return {"awaiting_user_input": True, "next_step": None}
 
+    logging.info(f"[RunStep] Running agent: {action.name}")
     return await _run_agent_step(agent_factory(), action, state)
 
 
@@ -431,6 +459,8 @@ async def _run_agent_step(agent: Any, action: HandoffAction, state: HenkGraphSta
     decision = await agent.process(session_state)
     session_state.current_agent = agent.agent_name
 
+    logging.info(f"[AgentStep] {agent.agent_name} decision: action={decision.action}, next_agent={decision.next_agent}, should_continue={decision.should_continue}")
+
     messages = list(state.get("messages", []))
     if decision.message:
         messages.append({"role": "assistant", "content": decision.message, "sender": agent.agent_name})
@@ -455,9 +485,11 @@ async def _run_agent_step(agent: Any, action: HandoffAction, state: HenkGraphSta
         else:
             messages.append({"role": "assistant", "content": f"Handoff fehlgeschlagen: {err}"})
             updates["awaiting_user_input"] = True
+        logging.info(f"[AgentStep] Handoff to {target}: ok={ok}")
         return updates
 
     if decision.action and decision.action in TOOL_REGISTRY:
+        logging.info(f"[AgentStep] Tool action detected: {decision.action}, creating next_step for tool execution")
         updates["next_step"] = HandoffAction(
             kind="tool",
             name=decision.action,
@@ -466,9 +498,11 @@ async def _run_agent_step(agent: Any, action: HandoffAction, state: HenkGraphSta
             return_to_agent=decision.next_agent or agent.agent_name,
         ).model_dump()
         updates["awaiting_user_input"] = False
+        logging.info(f"[AgentStep] next_step set: {updates['next_step']}")
         return updates
 
     if decision.next_agent:
+        logging.info(f"[AgentStep] Next agent: {decision.next_agent}, should_continue={decision.should_continue}")
         updates["next_step"] = HandoffAction(
             kind="agent",
             name=decision.next_agent,
@@ -477,5 +511,6 @@ async def _run_agent_step(agent: Any, action: HandoffAction, state: HenkGraphSta
         ).model_dump()
         updates["awaiting_user_input"] = False if decision.should_continue else True
 
+    logging.info(f"[AgentStep] Final updates: awaiting_user_input={updates['awaiting_user_input']}, next_step={updates.get('next_step')}")
     return updates
 

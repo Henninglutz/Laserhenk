@@ -2,10 +2,18 @@
 """Flask Application Entry Point für LASERHENK."""
 
 import os
+import logging
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+# Configure logging BEFORE importing modules that use it
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%H:%M:%S'
+)
 
 # Import Flask app
 from app import app

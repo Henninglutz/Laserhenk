@@ -194,14 +194,49 @@ class SupervisorAgent:
         if not text:
             return None
 
-        selection_keywords = ["rechtes foto", "linkes foto", "rechts", "links", "zweite", "erste", "foto"]
+        # STATE-BASED ROUTING: Execute queued RAG if HENK1 prepared it
+        if state.henk1_rag_queried and not state.henk1_fabrics_shown:
+            # HENK1 has set rag_queried flag but fabrics haven't been shown yet
+            # This means RAG needs to be executed now!
+            query = user_message  # Use current user message as query
+
+            # If rag_context already exists (from previous RAG execution), use that query
+            if hasattr(state, 'rag_context') and state.rag_context and isinstance(state.rag_context, dict):
+                query = state.rag_context.get("query", user_message)
+
+            logger.info("[SupervisorAgent] ✅ State-based RAG trigger detected (henk1_rag_queried=True, fabrics_shown=False)")
+            return SupervisorDecision(
+                next_destination="rag_tool",
+                reasoning="Executing queued RAG request from HENK1 (state-based trigger)",
+                action_params={"query": query},
+                confidence=0.98,
+            )
+
+        selection_keywords = [
+            "rechtes foto", "linkes foto", "rechts", "links",
+            "zweite", "erste", "foto",
+            "nummer", "nr.", "nr ", "no.", "number",
+            "den ersten", "den zweiten", "die erste", "die zweite",
+            "stoff 1", "stoff 2", "#1", "#2",
+            "ein passt", "eins", "zwei"  # "wenn die nr. ein passt"
+        ]
+
+        # DEBUG: Log fabric selection check
+        logger.info(f"[SupervisorAgent] Checking fabric selection: text='{text}', shown_fabric_images={len(state.shown_fabric_images) if state.shown_fabric_images else 0}")
+
         if state.shown_fabric_images and any(keyword in text for keyword in selection_keywords):
+            logger.info(f"[SupervisorAgent] ✅ Fabric selection detected: '{text}' matches keywords, routing to HENK1")
             return SupervisorDecision(
                 next_destination="henk1",
                 reasoning="Detected fabric selection, routing back to henk1/design flow",
                 user_message=user_message,
                 confidence=0.95,
             )
+        else:
+            if state.shown_fabric_images:
+                logger.info(f"[SupervisorAgent] ❌ No fabric selection keyword found in '{text}'")
+            else:
+                logger.info(f"[SupervisorAgent] ❌ No shown_fabric_images in state (empty or None)")
 
         color_hint = None
         if state.design_preferences.preferred_colors:
@@ -276,6 +311,17 @@ class SupervisorAgent:
     def _build_supervisor_prompt(self, state: SessionState, assessment: PhaseAssessment) -> str:
         customer_data = state.customer.model_dump()
         dynamic_context = [
+            "⚠️ CRITICAL: You MUST return ONLY valid JSON. NO explanatory text before or after the JSON object.",
+            "",
+            "REQUIRED JSON STRUCTURE:",
+            "{",
+            '  "next_destination": "henk1",  // MUST be ONE OF: henk1, design_henk, rag_tool, pricing_tool, comparison_tool, laserhenk, clarification, end',
+            '  "reasoning": "Brief explanation of routing decision",',
+            '  "confidence": 0.9  // Float between 0.0 and 1.0',
+            "}",
+            "",
+            "IMPORTANT: next_destination must be a SINGLE value, not multiple values separated by |",
+            "",
             "Du bist der Supervisor. Entscheide den nächsten Schritt (Agent oder Tool).",
             "HENK1 Essentials: Anlass, Timing (event_date auch weich) und Stoff-Farbe sind Pflicht. Budget ist optional.",
             f"Missing fields laut Assessment: {', '.join(assessment.missing_fields) or 'keine'}",
