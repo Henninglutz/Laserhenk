@@ -178,12 +178,17 @@ def chat():
                 logging.info(f"[API] Metadata content: {metadata}")
 
             # ALWAYS extract metadata from ALL messages (including tools)
-            # Handle nested metadata structure (can be metadata.fabric_images OR metadata.metadata.fabric_images)
+            # Handle nested metadata structure - unwrap ALL levels of metadata.metadata.metadata...
             actual_metadata = metadata
-            if 'metadata' in metadata and isinstance(metadata.get('metadata'), dict):
-                # Nested structure: unwrap one level
-                actual_metadata = metadata['metadata']
-                logging.info(f"[API] Unwrapped nested metadata from {sender}")
+            unwrap_count = 0
+            while 'metadata' in actual_metadata and isinstance(actual_metadata.get('metadata'), dict):
+                actual_metadata = actual_metadata['metadata']
+                unwrap_count += 1
+                if unwrap_count > 10:  # Safety: prevent infinite loop
+                    logging.warning(f"[API] ⚠️ Stopped unwrapping after {unwrap_count} levels!")
+                    break
+            if unwrap_count > 0:
+                logging.info(f"[API] Unwrapped {unwrap_count} levels of nested metadata from {sender}")
 
             if 'fabric_images' in actual_metadata and not fabric_images:
                 fabric_images = actual_metadata['fabric_images']

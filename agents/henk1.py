@@ -131,10 +131,20 @@ class Henk1Agent(BaseAgent):
 
         # SOFORT-FIX: Weste-Präferenz aus User-Input extrahieren
         user_lower = user_input.lower()
-        if "weste" in user_lower and any(kw in user_lower for kw in ["mit", "haben", "möchte", "will", "brauche"]):
-            if state.wants_vest is None:
-                state.wants_vest = True
-                logger.info("[HENK1] ✅ FORCED: wants_vest = True from user input: '%s'", user_input[:60])
+
+        # Check for NEGATIVE vest keywords first (ohne, keine, nicht)
+        if "weste" in user_lower:
+            negative_keywords = ["ohne weste", "keine weste", "nicht mit weste", "kein weste"]
+            positive_keywords = ["mit weste", "haben weste", "möchte weste", "will weste", "weste ja"]
+
+            if any(kw in user_lower for kw in negative_keywords):
+                if state.wants_vest is None:
+                    state.wants_vest = False
+                    logger.info("[HENK1] ✅ FORCED: wants_vest = False from user input: '%s'", user_input[:60])
+            elif any(kw in user_lower for kw in positive_keywords):
+                if state.wants_vest is None:
+                    state.wants_vest = True
+                    logger.info("[HENK1] ✅ FORCED: wants_vest = True from user input: '%s'", user_input[:60])
 
         suit_choice = self._apply_suit_choice_from_input(state, user_input)
 
@@ -411,17 +421,17 @@ class Henk1Agent(BaseAgent):
         """Identify missing Bedarfsermittlung-Infos before Stoffe gezeigt werden."""
         gaps: list[str] = []
 
-        if not needs.get("occasion"):
-            gaps.append("für welchen Anlass der Anzug gedacht ist")
+        # CRITICAL: Only require colors and timing - occasion and style can be asked AFTER showing fabrics
         if not needs.get("colors"):
             gaps.append("welche Farbe(n) du willst")
         if not needs.get("timing_hint"):
             gaps.append("wann du den Anzug brauchst (Termin oder Zeitraum)")
-        if not needs.get("style_keywords"):
-            gaps.append("ob du es klassisch oder modern magst")
-        budget_status = needs.get("budget_status")
-        if not needs.get("budget_eur") and budget_status not in {"none"}:
-            gaps.append("ob du ein Budget im Kopf hast (kannst auch 'kein Budget' sagen)")
+
+        # Optional: Ask for these AFTER fabrics are shown
+        # if not needs.get("occasion"):
+        #     gaps.append("für welchen Anlass der Anzug gedacht ist")
+        # if not needs.get("style_keywords"):
+        #     gaps.append("ob du es klassisch oder modern magst")
 
         return gaps
 
