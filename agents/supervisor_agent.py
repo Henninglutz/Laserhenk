@@ -213,13 +213,23 @@ class SupervisorAgent:
             )
 
         selection_keywords = ["rechtes foto", "linkes foto", "rechts", "links", "zweite", "erste", "foto"]
+
+        # DEBUG: Log fabric selection check
+        logger.info(f"[SupervisorAgent] Checking fabric selection: text='{text}', shown_fabric_images={len(state.shown_fabric_images) if state.shown_fabric_images else 0}")
+
         if state.shown_fabric_images and any(keyword in text for keyword in selection_keywords):
+            logger.info(f"[SupervisorAgent] ✅ Fabric selection detected: '{text}' matches keywords, routing to HENK1")
             return SupervisorDecision(
                 next_destination="henk1",
                 reasoning="Detected fabric selection, routing back to henk1/design flow",
                 user_message=user_message,
                 confidence=0.95,
             )
+        else:
+            if state.shown_fabric_images:
+                logger.info(f"[SupervisorAgent] ❌ No fabric selection keyword found in '{text}'")
+            else:
+                logger.info(f"[SupervisorAgent] ❌ No shown_fabric_images in state (empty or None)")
 
         color_hint = None
         if state.design_preferences.preferred_colors:

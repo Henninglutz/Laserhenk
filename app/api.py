@@ -160,10 +160,18 @@ def chat():
                 continue
 
             metadata = msg.get('metadata', {})
+            sender = msg.get('sender', 'unknown')
+
+            # DEBUG: Log metadata extraction
+            if metadata:
+                logging.info(f"[API] Message from {sender}: has metadata keys={list(metadata.keys())}")
+
             if 'fabric_images' in metadata and not fabric_images:
                 fabric_images = metadata['fabric_images']
+                logging.info(f"[API] ✅ Extracted fabric_images from {sender}: {len(fabric_images)} images")
             if 'image_url' in metadata and not image_url:
                 image_url = metadata['image_url']
+                logging.info(f"[API] ✅ Extracted image_url from {sender}")
 
             if msg.get('sender') in tool_senders:
                 continue
