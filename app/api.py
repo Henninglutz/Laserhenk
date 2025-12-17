@@ -142,6 +142,9 @@ def chat():
         state['messages'] = history
         state['user_input'] = message
 
+        # Track message count BEFORE workflow to detect new messages
+        old_message_count = len(history)
+
         # Process with workflow on a persistent event loop to avoid teardown issues
         logging.info("[API] Invoking workflow...")
         final_state = _workflow_loop.run_until_complete(_workflow.ainvoke(state))
@@ -158,13 +161,16 @@ def chat():
         reply = 'Danke, ich habe alles notiert.'
         image_url = None
         fabric_images = None
-        logging.info(f"[API] Starting metadata extraction from {len(messages)} messages")
+
+        # Only extract metadata from NEW messages in this workflow run
+        new_messages = messages[old_message_count:]
+        logging.info(f"[API] Starting metadata extraction from {len(new_messages)} NEW messages (total: {len(messages)})")
 
         tool_senders = set(TOOL_REGISTRY.keys())
 
         # Prefer the latest agent reply (not a tool), but still capture tool metadata
         reply_found = False
-        for msg in reversed(messages):
+        for msg in reversed(new_messages):
             if msg.get('role') != 'assistant':
                 continue
 
