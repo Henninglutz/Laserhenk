@@ -178,11 +178,18 @@ def chat():
                 logging.info(f"[API] Metadata content: {metadata}")
 
             # ALWAYS extract metadata from ALL messages (including tools)
-            if 'fabric_images' in metadata and not fabric_images:
-                fabric_images = metadata['fabric_images']
+            # Handle nested metadata structure (can be metadata.fabric_images OR metadata.metadata.fabric_images)
+            actual_metadata = metadata
+            if 'metadata' in metadata and isinstance(metadata.get('metadata'), dict):
+                # Nested structure: unwrap one level
+                actual_metadata = metadata['metadata']
+                logging.info(f"[API] Unwrapped nested metadata from {sender}")
+
+            if 'fabric_images' in actual_metadata and not fabric_images:
+                fabric_images = actual_metadata['fabric_images']
                 logging.info(f"[API] ✅ Extracted fabric_images from {sender}: {len(fabric_images)} images")
-            if 'image_url' in metadata and not image_url:
-                image_url = metadata['image_url']
+            if 'image_url' in actual_metadata and not image_url:
+                image_url = actual_metadata['image_url']
                 logging.info(f"[API] ✅ Extracted image_url from {sender}")
 
             # Skip tool messages for reply extraction (but NOT for metadata!)
