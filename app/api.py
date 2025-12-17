@@ -176,11 +176,11 @@ def chat():
 
             metadata = msg.get('metadata', {})
             sender = msg.get('sender', 'unknown')
+            content = msg.get('content', '')
 
             # DEBUG: Log metadata extraction
+            logging.info(f"[API] Message from {sender}: role={msg.get('role')}, content_length={len(content)}, has_metadata={bool(metadata)}")
             if metadata:
-                logging.info(f"[API] Message from {sender}: has metadata keys={list(metadata.keys())}")
-                # DEBUG: Log actual metadata content
                 logging.info(f"[API] Metadata content: {metadata}")
 
             # ALWAYS extract metadata from ALL messages (including tools)
