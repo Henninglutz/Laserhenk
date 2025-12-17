@@ -163,6 +163,7 @@ def chat():
         tool_senders = set(TOOL_REGISTRY.keys())
 
         # Prefer the latest agent reply (not a tool), but still capture tool metadata
+        reply_found = False
         for msg in reversed(messages):
             if msg.get('role') != 'assistant':
                 continue
@@ -176,6 +177,7 @@ def chat():
                 # DEBUG: Log actual metadata content
                 logging.info(f"[API] Metadata content: {metadata}")
 
+            # ALWAYS extract metadata from ALL messages (including tools)
             if 'fabric_images' in metadata and not fabric_images:
                 fabric_images = metadata['fabric_images']
                 logging.info(f"[API] ✅ Extracted fabric_images from {sender}: {len(fabric_images)} images")
@@ -183,11 +185,16 @@ def chat():
                 image_url = metadata['image_url']
                 logging.info(f"[API] ✅ Extracted image_url from {sender}")
 
+            # Skip tool messages for reply extraction (but NOT for metadata!)
             if msg.get('sender') in tool_senders:
                 continue
 
-            reply = msg.get('content', reply)
-            break
+            # Use first non-tool message as reply (but continue loop for metadata)
+            if not reply_found:
+                reply = msg.get('content', reply)
+                reply_found = True
+                logging.info(f"[API] Using reply from {sender}")
+                # DON'T break - continue to check other messages for metadata!
 
         # Current stage
         stage = final_state.get('current_agent') or final_state.get('next_agent') or 'henk1'
