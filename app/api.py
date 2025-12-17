@@ -1,6 +1,7 @@
 """API Blueprint - Chat und Session Management."""
 
 import asyncio
+import logging
 import uuid
 from typing import Dict
 
