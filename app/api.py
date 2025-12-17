@@ -142,15 +142,22 @@ def chat():
         state['user_input'] = message
 
         # Process with workflow on a persistent event loop to avoid teardown issues
+        logging.info("[API] Invoking workflow...")
         final_state = _workflow_loop.run_until_complete(_workflow.ainvoke(state))
+        logging.info(f"[API] Workflow completed, got {len(final_state.get('messages', []))} messages")
+
         messages = [_message_to_dict(m) for m in final_state.get('messages', [])]
+        logging.info(f"[API] Converted {len(messages)} messages to dict")
+
         final_state['messages'] = messages
         _sessions[sid] = final_state
+        logging.info(f"[API] Saved session state")
 
         # Extract assistant reply, image_url, and fabric_images
         reply = 'Danke, ich habe alles notiert.'
         image_url = None
         fabric_images = None
+        logging.info(f"[API] Starting metadata extraction from {len(messages)} messages")
 
         tool_senders = set(TOOL_REGISTRY.keys())
 
@@ -201,8 +208,10 @@ def chat():
         return jsonify(response_data), 200
 
     except ValidationError as e:
+        logging.error(f"[API] Validation error: {e}", exc_info=True)
         return jsonify({'error': 'Validation error', 'details': e.errors()}), 400
     except Exception as e:
+        logging.error(f"[API] Internal error: {e}", exc_info=True)
         return jsonify({'error': 'Internal error', 'message': str(e)}), 500
 
 
