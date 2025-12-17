@@ -140,14 +140,25 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
             logging.warning(f"[RAG] ⚠️ Fabric {fabric_code} has NO images - skipping from image list")
             continue
 
+        # Extract data with robust fallbacks
+        name = fabric_dict.get("name") or "Hochwertiger Stoff"
+        color = fabric_dict.get("color") or "Klassisch"
+        pattern = fabric_dict.get("pattern") or "Uni"
+        composition = fabric_dict.get("composition") or "Hochwertige Wollmischung"
+        supplier = fabric_dict.get("supplier") or "Formens"
+
+        # Log extracted data for debugging
+        logging.info(f"[RAG] Building fabric_image for {fabric_code}: name={name!r}, color={color!r}, pattern={pattern!r}")
+
         fabric_images.append(
             {
                 "url": image_url,
                 "fabric_code": fabric_code,
-                "name": fabric_dict.get("name", "Hochwertiger Stoff"),
-                "color": fabric_dict.get("color"),
-                "pattern": fabric_dict.get("pattern"),
-                "composition": fabric_dict.get("composition"),
+                "name": name,
+                "color": color,
+                "pattern": pattern,
+                "composition": composition,
+                "supplier": supplier,
             }
         )
         if len(fabric_images) >= 2:
@@ -172,7 +183,7 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
 
     formatted = "**Passende Stoffe für dich:**\n\n" + "".join(
         f"{idx}. {getattr(rec.fabric, 'name', None) or 'Hochwertiger Stoff'} (Code: {getattr(rec.fabric, 'fabric_code', None)}) - "
-        f"Farbe: {getattr(rec.fabric, 'color', None) or 'klassisch'}, Muster: {getattr(rec.fabric, 'pattern', None) or 'uni'}\n"
+        f"Farbe: {getattr(rec.fabric, 'color', None) or 'Klassisch'}, Muster: {getattr(rec.fabric, 'pattern', None) or 'Uni'}\n"
         for idx, rec in enumerate(recommendations[:5], 1)
     )
 
