@@ -94,16 +94,22 @@ class DesignHenkAgent(BaseAgent):
         # Für jetzt: Struktur-Placeholder
 
         # Check if we need to query RAG for design options
+        # DISABLED: Design RAG not implemented yet, skip for now
+        # if not state.design_rag_queried:
+        #     return AgentDecision(
+        #         next_agent="design_henk",
+        #         message="Querying RAG for design options",
+        #         action="rag_tool",  # FIXED: was "query_rag"
+        #         action_params={
+        #             "query": "Design options: Revers, Futter, Schulter, Bund"
+        #         },
+        #         should_continue=True,
+        #     )
+
+        # TEMPORARY: Mark as queried to skip infinite loop
         if not state.design_rag_queried:
-            return AgentDecision(
-                next_agent="design_henk",
-                message="Querying RAG for design options",
-                action="query_rag",
-                action_params={
-                    "query": "Design options: Revers, Futter, Schulter, Bund"
-                },
-                should_continue=True,
-            )
+            state.design_rag_queried = True
+            logger.info("[DesignHenk] ⚠️ Design RAG disabled - skipping to preferences collection")
 
         # Check if design preferences are collected
         preferences_complete = (
