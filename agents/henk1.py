@@ -166,7 +166,7 @@ class Henk1Agent(BaseAgent):
                 next_agent="design_henk",
                 message=follow_up,
                 action=None,
-                should_continue=False,
+                should_continue=True,  # FIXED: Must be True to continue to design_henk
             )
 
         if state.favorite_fabric:
@@ -213,7 +213,7 @@ class Henk1Agent(BaseAgent):
                 next_agent="design_henk",
                 message=message,
                 action=None,
-                should_continue=False,
+                should_continue=True,  # FIXED: Must be True to continue to design_henk
             )
 
         # If RAG has been queried, show curated fabric pair (mid + luxury)

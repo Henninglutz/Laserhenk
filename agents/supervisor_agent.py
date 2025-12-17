@@ -212,7 +212,14 @@ class SupervisorAgent:
                 confidence=0.98,
             )
 
-        selection_keywords = ["rechtes foto", "linkes foto", "rechts", "links", "zweite", "erste", "foto"]
+        selection_keywords = [
+            "rechtes foto", "linkes foto", "rechts", "links",
+            "zweite", "erste", "foto",
+            "nummer", "nr.", "nr ", "no.", "number",
+            "den ersten", "den zweiten", "die erste", "die zweite",
+            "stoff 1", "stoff 2", "#1", "#2",
+            "ein passt", "eins", "zwei"  # "wenn die nr. ein passt"
+        ]
 
         # DEBUG: Log fabric selection check
         logger.info(f"[SupervisorAgent] Checking fabric selection: text='{text}', shown_fabric_images={len(state.shown_fabric_images) if state.shown_fabric_images else 0}")

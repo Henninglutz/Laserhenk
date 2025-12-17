@@ -173,6 +173,8 @@ def chat():
             # DEBUG: Log metadata extraction
             if metadata:
                 logging.info(f"[API] Message from {sender}: has metadata keys={list(metadata.keys())}")
+                # DEBUG: Log actual metadata content
+                logging.info(f"[API] Metadata content: {metadata}")
 
             if 'fabric_images' in metadata and not fabric_images:
                 fabric_images = metadata['fabric_images']
