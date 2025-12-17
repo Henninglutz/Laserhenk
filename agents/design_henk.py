@@ -126,7 +126,12 @@ class DesignHenkAgent(BaseAgent):
 
             return AgentDecision(
                 next_agent=None,
-                message="Design preferences collected (mock data)",
+                message="Perfekt! Lass uns jetzt über die Details deines Anzugs sprechen.\n\n"
+                       "Ich würde gerne ein paar Fragen zum Schnitt stellen:\n\n"
+                       "1️⃣ **Revers-Stil**: Bevorzugst du klassische Spitzrevers oder moderne Stegrevers?\n"
+                       "2️⃣ **Schulterpolster**: Wie ausgeprägt soll die Schulter sein? (keine, leicht, mittel, stark)\n"
+                       "3️⃣ **Hosenbund**: Mit Bundfalte oder glatt?\n\n"
+                       "Sag mir einfach, was dir gefällt!",
                 action=None,
                 should_continue=False,
             )
@@ -151,7 +156,7 @@ class DesignHenkAgent(BaseAgent):
             return AgentDecision(
                 next_agent=None,
                 message="Generiere Ihr Outfit-Moodbild...",
-                action="generate_image",
+                action="dalle_tool",  # FIXED: was "generate_image", must match TOOL_REGISTRY
                 action_params={
                     "prompt_type": "outfit_visualization",
                     "fabric_data": fabric_data,

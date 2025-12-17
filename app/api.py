@@ -142,6 +142,9 @@ def chat():
         state['messages'] = history
         state['user_input'] = message
 
+        # Track message count BEFORE workflow to detect new messages
+        old_message_count = len(history)
+
         # Process with workflow on a persistent event loop to avoid teardown issues
         logging.info("[API] Invoking workflow...")
         final_state = _workflow_loop.run_until_complete(_workflow.ainvoke(state))
@@ -158,23 +161,26 @@ def chat():
         reply = 'Danke, ich habe alles notiert.'
         image_url = None
         fabric_images = None
-        logging.info(f"[API] Starting metadata extraction from {len(messages)} messages")
+
+        # Only extract metadata from NEW messages in this workflow run
+        new_messages = messages[old_message_count:]
+        logging.info(f"[API] Starting metadata extraction from {len(new_messages)} NEW messages (total: {len(messages)})")
 
         tool_senders = set(TOOL_REGISTRY.keys())
 
         # Prefer the latest agent reply (not a tool), but still capture tool metadata
         reply_found = False
-        for msg in reversed(messages):
+        for msg in reversed(new_messages):
             if msg.get('role') != 'assistant':
                 continue
 
             metadata = msg.get('metadata', {})
             sender = msg.get('sender', 'unknown')
+            content = msg.get('content', '')
 
             # DEBUG: Log metadata extraction
+            logging.info(f"[API] Message from {sender}: role={msg.get('role')}, content_length={len(content)}, has_metadata={bool(metadata)}")
             if metadata:
-                logging.info(f"[API] Message from {sender}: has metadata keys={list(metadata.keys())}")
-                # DEBUG: Log actual metadata content
                 logging.info(f"[API] Metadata content: {metadata}")
 
             # ALWAYS extract metadata from ALL messages (including tools)
