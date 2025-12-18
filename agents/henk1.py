@@ -72,6 +72,7 @@ BEISPIEL-ABLAUF:
 import json
 import logging
 import os
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -1119,6 +1120,36 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
 
         right_keywords = ["rechts", "zweite", "rechtsen", "rechtsen?", "2", "zweiter", "zweiten"]
         left_keywords = ["links", "erste", "1", "ersten", "linke"]
+
+        ordinal_map = {
+            "erste": 0,
+            "ersten": 0,
+            "erster": 0,
+            "zweite": 1,
+            "zweiten": 1,
+            "zweiter": 1,
+            "dritte": 2,
+            "dritten": 2,
+            "dritter": 2,
+            "vierte": 3,
+            "vierten": 3,
+            "vierter": 3,
+            "fünfte": 4,
+            "fünften": 4,
+            "fünfter": 4,
+        }
+
+        match = re.search(r"(?:nummer|nr\.?|no\.?|#)\s*(\d+)", text)
+        if match:
+            return max(int(match.group(1)) - 1, 0)
+
+        digit_match = re.search(r"\b([1-9])\b", text)
+        if digit_match:
+            return max(int(digit_match.group(1)) - 1, 0)
+
+        for keyword, idx in ordinal_map.items():
+            if keyword in text:
+                return idx
 
         if any(key in text for key in right_keywords):
             return 1

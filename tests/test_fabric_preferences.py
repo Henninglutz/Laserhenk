@@ -43,3 +43,24 @@ def test_negation_patterns_block_color_matches():
     assert "blue" not in criteria.colors
     assert "burgundy" in criteria.colors
     assert "blue" in excluded
+
+
+def test_detects_herringbone_pattern_from_query():
+    query = "dunkel grau mit fischgrat bitte"
+    params = {}
+
+    criteria, _, excluded, filters = build_fabric_search_criteria(query, params, _empty_state())
+
+    assert "herringbone" in criteria.patterns
+    assert "dark grey" in criteria.colors
+    assert excluded == []
+    assert any("Muster: herringbone" in f for f in filters)
+
+
+def test_merges_pattern_from_params_and_query():
+    query = "hast du auch fischgrät?"
+    params = {"patterns": ["pinstripe"]}
+
+    criteria, _, _, _ = build_fabric_search_criteria(query, params, _empty_state())
+
+    assert criteria.patterns == ["pinstripe", "herringbone"]

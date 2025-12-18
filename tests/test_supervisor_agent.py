@@ -41,3 +41,21 @@ def test_pre_route_ignores_design_keywords_without_design_phase():
     decision = agent._pre_route("stegrevers und wenig polster", state)
 
     assert decision is None
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "der dritte bitte",
+        "nummer 3 bitte",
+        "#3 passt",
+    ],
+)
+def test_pre_route_accepts_third_fabric_selection(message):
+    agent = SupervisorAgent()
+    state = make_state(shown_fabric_images=[{"fabric_code": "A"}] * 3)
+
+    decision = agent._pre_route(message, state)
+
+    assert decision is not None
+    assert decision.next_destination == "henk1"

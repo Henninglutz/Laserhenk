@@ -20,7 +20,9 @@ GERMAN_COLOR_MAP: Dict[str, str] = {
     "marine": "navy",
     "navy": "navy",
     "dunkelgrau": "dark grey",
+    "dunkel grau": "dark grey",
     "hellgrau": "light grey",
+    "hell grau": "light grey",
     "grau": "grey",
     "schwarz": "black",
     "dunkelbraun": "dark brown",
@@ -44,6 +46,15 @@ MATERIAL_KEYWORDS = {
     "baumwolle": "cotton",
     "cotton": "cotton",
     "chino": "cotton",
+}
+
+# Mapping gängiger Muster-Begriffe auf konsistente Pattern-Labels
+PATTERN_KEYWORDS = {
+    "fischgrat": "herringbone",
+    "fischgrät": "herringbone",
+    "fischgrätmuster": "herringbone",
+    "herringbone": "herringbone",
+    "herring bone": "herringbone",
 }
 
 
@@ -112,6 +123,25 @@ def _detect_materials(query_lower: str, preferred_materials: Optional[Iterable[s
     return None
 
 
+def _extract_patterns(query_lower: str, patterns: list[str]) -> list[str]:
+    found = list(patterns)
+    for keyword, normalized in PATTERN_KEYWORDS.items():
+        if keyword in query_lower:
+            found.append(normalized)
+
+    if found:
+        deduped = list(dict.fromkeys(found))
+        if deduped != found:
+            logger.info(
+                f"[FabricPrefs] MERGED pattern preferences: {found} -> {deduped}"
+            )
+        else:
+            logger.info(f"[FabricPrefs] Detected pattern preferences: {deduped}")
+        return deduped
+
+    return patterns
+
+
 def build_fabric_search_criteria(
     query: str,
     params: Dict[str, Any],
@@ -144,6 +174,7 @@ def build_fabric_search_criteria(
         extracted_colors, excluded_colors = _extract_colors(query_lower)
         weight_max = _detect_lightweight_preference(query_lower, weight_max)
         preferred_materials = _detect_materials(query_lower, preferred_materials)
+        patterns = _extract_patterns(query_lower, patterns)
 
     colors = _merge_colors(colors, extracted_colors)
     if excluded_colors:
@@ -187,5 +218,7 @@ def build_fabric_search_criteria(
         filters.append(f"Materialien: {', '.join(preferred_materials)}")
     if weight_max:
         filters.append(f"≤ {weight_max}g/m²")
+    if patterns:
+        filters.append(f"Muster: {', '.join(patterns)}")
 
     return criteria, normalized_state, excluded_colors, filters

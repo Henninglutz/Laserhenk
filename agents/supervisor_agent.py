@@ -214,11 +214,11 @@ class SupervisorAgent:
 
         selection_keywords = [
             "rechtes foto", "linkes foto", "rechts", "links",
-            "zweite", "erste", "foto",
+            "zweite", "erste", "dritte", "dritter", "dritten", "foto",
             "nummer", "nr.", "nr ", "no.", "number",
             "den ersten", "den zweiten", "die erste", "die zweite",
-            "stoff 1", "stoff 2", "#1", "#2",
-            "ein passt", "eins", "zwei"  # "wenn die nr. ein passt"
+            "stoff 1", "stoff 2", "stoff 3", "#1", "#2", "#3", "3.",
+            "ein passt", "eins", "zwei", "drei"  # "wenn die nr. ein passt"
         ]
 
         design_keywords = [
