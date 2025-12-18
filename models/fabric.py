@@ -191,6 +191,28 @@ class FabricChunk(BaseModel):
     model_config = ConfigDict(use_enum_values=True)
 
 
+class SelectedFabricData(BaseModel):
+    """
+    Selected fabric data for DALL-E visualization.
+
+    Structured output that ensures fabric color, pattern, and composition
+    are correctly passed from fabric selection to image generation.
+    """
+
+    fabric_code: Optional[str] = Field(None, description="Selected fabric code (e.g., 'ME4-599.101/167')")
+    color: Optional[str] = Field(None, description="Fabric color (e.g., 'Mittelblau', 'Navy')")
+    pattern: Optional[str] = Field(None, description="Fabric pattern (e.g., 'Uni', 'Fischgrat', 'Struktur')")
+    composition: Optional[str] = Field(None, description="Fabric composition (e.g., '95% Schurwolle | 5% Polyurethane')")
+    texture: Optional[str] = Field(None, description="Fabric texture description (e.g., 'leichte Struktur', 'glatt')")
+    supplier: Optional[str] = Field(None, description="Supplier name (e.g., 'VITALE BARBERIS')")
+
+    # Additional metadata for DALL-E prompt building
+    color_hex: Optional[str] = Field(None, description="Hex color code if available")
+    pattern_description: Optional[str] = Field(None, description="Detailed pattern description for DALL-E")
+
+    model_config = ConfigDict(use_enum_values=True)
+
+
 class OutfitSpec(BaseModel):
     """
     Specification for outfit generation.
