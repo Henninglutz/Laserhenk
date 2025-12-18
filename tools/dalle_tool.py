@@ -257,10 +257,15 @@ class DALLETool:
             # Add explicit vest instruction
             if wants_vest is False:
                 vest_instruction = "\n\nCRITICAL: Show TWO-PIECE suit ONLY (jacket and trousers). NO vest/waistcoat. Two-piece configuration."
+                logger.info("[DALLETool] Adding NO VEST instruction to prompt")
             elif wants_vest is True:
                 vest_instruction = "\n\nCRITICAL: Show THREE-PIECE suit (jacket, vest/waistcoat, and trousers). Include matching vest."
+                logger.info("[DALLETool] Adding WITH VEST instruction to prompt")
+            else:
+                logger.info(f"[DALLETool] No vest preference set (wants_vest={wants_vest})")
 
         # Build final prompt
+        logger.info(f"[DALLETool] Building prompt with: revers={design_preferences.get('revers_type')}, vest_instruction length={len(vest_instruction)}")
         prompt = f"""Create an elegant mood board for a bespoke men's suit in a {scene}.
 
 FABRIC REFERENCE: Show suits made from {fabrics_text}.{design_details}{vest_instruction}

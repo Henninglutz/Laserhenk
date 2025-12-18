@@ -225,9 +225,12 @@ async def _dalle_tool(params: dict, state: HenkGraphState) -> ToolResult:
     if hasattr(session_state, 'wants_vest') and session_state.wants_vest is not None:
         design_prefs["wants_vest"] = session_state.wants_vest
         logging.info(f"[DALLE Tool] Added wants_vest={session_state.wants_vest} to design_prefs")
+    else:
+        logging.info(f"[DALLE Tool] wants_vest not set: hasattr={hasattr(session_state, 'wants_vest')}, value={getattr(session_state, 'wants_vest', None)}")
 
     # Log for debugging
     logging.info(f"[DALLE Tool] Using fabric_data: {fabric_data.model_dump(exclude_none=True)}")
+    logging.info(f"[DALLE Tool] Final design_prefs: {design_prefs}")
 
     # OPTION 1: Use fabric image for composite (if available)
     if fabric_data.image_url and prompt_type == "outfit_visualization":
@@ -554,6 +557,25 @@ async def route_node(state: HenkGraphState) -> HenkGraphState:
         return {"next_step": None, "session_state": session_state}
 
     user_message = _latest_content(state.get("messages", []), "user") or state.get("user_input", "")
+
+    # EMAIL DETECTION (highest priority - needed for CRM lead creation)
+    import re
+    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    email_match = re.search(email_pattern, user_message)
+    if email_match and not session_state.customer.email:
+        email = email_match.group(0)
+        session_state.customer.email = email
+        state["session_state"] = session_state
+        logger.info(f"[RouteNode] Email detected and stored: {email}")
+
+        # If we're in design_henk waiting for email, route back to design_henk
+        if session_state.current_agent == "design_henk":
+            return {
+                "current_agent": "design_henk",
+                "next_step": HandoffAction(kind="agent", name="design_henk", should_continue=True).model_dump(),
+                "session_state": session_state,
+                "metadata": {"email_captured": email},
+            }
 
     # FABRIC FEEDBACK DETECTION
     # Check if we're in HENK1 phase and fabrics were shown but no favorite selected yet

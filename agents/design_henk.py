@@ -184,11 +184,17 @@ class DesignHenkAgent(BaseAgent):
                         design_prefs,
                         state
                     )
+
+                    # Log what was parsed
+                    logger.info(f"[DesignHenk] Parsed design_prefs updates: {updated_prefs}")
+                    logger.info(f"[DesignHenk] Parsed state updates: {state_updates}")
+
                     design_prefs.update(updated_prefs)
 
                     # Also update the session state with parsed preferences
                     for key, value in updated_prefs.items():
                         setattr(state.design_preferences, key, value)
+                        logger.info(f"[DesignHenk] Updated design_preferences.{key} = {value}")
 
                     # Apply state-level updates (like wants_vest)
                     for key, value in state_updates.items():
@@ -230,14 +236,29 @@ class DesignHenkAgent(BaseAgent):
                     should_continue=False,
                 )
 
-        # MOOD BOARD APPROVED - Proceed to CRM lead creation
+        # MOOD BOARD APPROVED - Check email before CRM lead creation
         if state.image_state.mood_board_approved and not has_crm_lead:
-            logger.info("[DesignHenk] Mood board approved, creating CRM lead")
+            logger.info("[DesignHenk] Mood board approved")
 
             # Mark approved image in design preferences
             if state.mood_image_url:
                 state.design_preferences.approved_image = state.mood_image_url
 
+            # CRITICAL: Email is mandatory for CRM lead creation
+            if not state.customer.email:
+                logger.info("[DesignHenk] Email missing, requesting from user")
+                return AgentDecision(
+                    next_agent=None,
+                    message="Perfekt! 🎉\n\n"
+                           "Um Ihre Daten zu sichern und den Termin vorzubereiten, "
+                           "benötige ich noch Ihre **E-Mail-Adresse**.\n\n"
+                           "Bitte geben Sie Ihre E-Mail ein:",
+                    action=None,
+                    should_continue=False,
+                )
+
+            # Email vorhanden, proceed to CRM lead creation
+            logger.info("[DesignHenk] Email present, creating CRM lead")
             return AgentDecision(
                 next_agent=None,
                 message="Perfekt! Ich sichere jetzt Ihre Daten und bereite die Terminvereinbarung vor...",
@@ -245,7 +266,7 @@ class DesignHenkAgent(BaseAgent):
                 action_params={
                     "session_id": state.session_id,
                     "customer_name": state.customer.name or "Interessent",
-                    "customer_email": state.customer.email or "",
+                    "customer_email": state.customer.email,
                     "customer_phone": state.customer.phone or "",
                     "mood_image_url": state.mood_image_url,
                 },
