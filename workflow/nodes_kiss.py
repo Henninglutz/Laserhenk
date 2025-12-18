@@ -244,11 +244,12 @@ async def _dalle_tool(params: dict, state: HenkGraphState) -> ToolResult:
             elif any(kw in ["casual", "leger", "freizeit"] for kw in style_keywords):
                 occasion = "Casual"
 
-        # Generate composite mood board with actual fabric thumbnail
+        # Generate composite mood board with actual fabric thumbnail and design details
         response = await DALLETool().generate_mood_board_with_fabrics(
             fabrics=[fabric_dict],
             occasion=occasion,
             style_keywords=style_keywords,
+            design_preferences=design_prefs,
             session_id=session_id,
         )
 

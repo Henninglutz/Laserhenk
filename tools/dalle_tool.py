@@ -110,19 +110,21 @@ class DALLETool:
         fabrics: List[Dict[str, Any]],
         occasion: str,
         style_keywords: Optional[List[str]] = None,
+        design_preferences: Optional[Dict[str, Any]] = None,
         session_id: Optional[str] = None,
     ) -> DALLEImageResponse:
         """
         Generate mood board with real fabric thumbnails as reference.
 
         IMPORTANT: Creates composite image:
-        1. DALL-E generates mood board based on fabric descriptions + occasion
+        1. DALL-E generates mood board based on fabric descriptions + occasion + design details
         2. Real fabric photos are added as small thumbnails (10% size, bottom right/left)
 
         Args:
             fabrics: List of fabric data dicts (from rag_context)
             occasion: Occasion/setting (e.g., "Hochzeit", "Business")
             style_keywords: Optional style keywords
+            design_preferences: Optional design details (revers_type, shoulder_padding, waistband_type)
             session_id: Optional session ID for caching
 
         Returns:
@@ -137,8 +139,8 @@ class DALLETool:
                 error="No fabrics provided",
             )
 
-        # Build detailed prompt with fabric descriptions
-        prompt = self._build_mood_board_prompt(fabrics[:2], occasion, style_keywords)
+        # Build detailed prompt with fabric descriptions and design details
+        prompt = self._build_mood_board_prompt(fabrics[:2], occasion, style_keywords, design_preferences)
 
         # Generate mood board with DALL-E
         dalle_response = await self.generate_image(
@@ -197,14 +199,16 @@ class DALLETool:
         fabrics: List[Dict[str, Any]],
         occasion: str,
         style_keywords: Optional[List[str]] = None,
+        design_preferences: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
-        Build DALL-E prompt for mood board with fabric descriptions.
+        Build DALL-E prompt for mood board with fabric descriptions and design details.
 
         Args:
             fabrics: Top 2 fabrics from RAG
             occasion: Occasion/setting
             style_keywords: Style keywords
+            design_preferences: Design details (revers_type, shoulder_padding, waistband_type)
 
         Returns:
             Detailed DALL-E prompt
@@ -232,10 +236,26 @@ class DALLETool:
 
         fabrics_text = " and ".join(fabric_descriptions)
 
+        # Extract design preferences if provided
+        design_details = ""
+        if design_preferences:
+            revers = design_preferences.get("revers_type", "")
+            shoulder = design_preferences.get("shoulder_padding", "")
+            waistband = design_preferences.get("waistband_type", "")
+
+            if revers or shoulder or waistband:
+                design_details = "\n\nSUIT DESIGN:"
+                if revers:
+                    design_details += f"\n- Lapel style: {revers}"
+                if shoulder:
+                    design_details += f"\n- Shoulder: {shoulder}"
+                if waistband:
+                    design_details += f"\n- Trouser waistband: {waistband}"
+
         # Build final prompt
         prompt = f"""Create an elegant mood board for a bespoke men's suit in a {scene}.
 
-FABRIC REFERENCE: Show suits made from {fabrics_text}.
+FABRIC REFERENCE: Show suits made from {fabrics_text}.{design_details}
 
 STYLE: {style}, sophisticated, high-quality menswear photography.
 
