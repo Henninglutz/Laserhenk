@@ -129,11 +129,11 @@ class DesignHenkAgent(BaseAgent):
                 should_continue=False,
             )
 
-        # Check if we have a REAL Pipedrive lead (not provisional HENK1_LEAD or MOCK)
-        has_real_crm_lead = (
+        # Check if we have a CRM lead (real Pipedrive OR mock for development)
+        # CRITICAL: MOCK leads are acceptable to prevent infinite loop
+        has_crm_lead = (
             state.customer.crm_lead_id
-            and not state.customer.crm_lead_id.startswith("HENK1_LEAD")
-            and not state.customer.crm_lead_id.startswith("MOCK_CRM")
+            and not state.customer.crm_lead_id.startswith("HENK1_LEAD")  # Only exclude provisional HENK1 leads
         )
 
         # MOOD BOARD ITERATION LOOP (Max 7 iterations)
@@ -178,16 +178,22 @@ class DesignHenkAgent(BaseAgent):
                 if state.image_state.mood_board_feedback:
                     logger.info(f"[DesignHenk] Incorporating user feedback: {state.image_state.mood_board_feedback}")
 
-                    # CRITICAL FIX: Parse feedback and update design_preferences
-                    updated_prefs = self._parse_feedback_and_update_preferences(
+                    # CRITICAL FIX: Parse feedback and update design_preferences + state
+                    updated_prefs, state_updates = self._parse_feedback_and_update_preferences(
                         state.image_state.mood_board_feedback,
-                        design_prefs
+                        design_prefs,
+                        state
                     )
                     design_prefs.update(updated_prefs)
 
                     # Also update the session state with parsed preferences
                     for key, value in updated_prefs.items():
                         setattr(state.design_preferences, key, value)
+
+                    # Apply state-level updates (like wants_vest)
+                    for key, value in state_updates.items():
+                        setattr(state, key, value)
+                        logger.info(f"[DesignHenk] Updated state.{key} = {value}")
 
                     # Add feedback to style keywords for additional context
                     style_keywords.append(f"User feedback: {state.image_state.mood_board_feedback}")
@@ -225,7 +231,7 @@ class DesignHenkAgent(BaseAgent):
                 )
 
         # MOOD BOARD APPROVED - Proceed to CRM lead creation
-        if state.image_state.mood_board_approved and not has_real_crm_lead:
+        if state.image_state.mood_board_approved and not has_crm_lead:
             logger.info("[DesignHenk] Mood board approved, creating CRM lead")
 
             # Mark approved image in design preferences
@@ -247,8 +253,8 @@ class DesignHenkAgent(BaseAgent):
             )
 
         # Design phase complete → hand back to supervisor
-        # Only proceed if we have a REAL Pipedrive lead
-        if has_real_crm_lead:
+        # Only proceed if we have a CRM lead (real or mock)
+        if has_crm_lead:
             return AgentDecision(
                 next_agent=None,
                 message="✅ Design-Phase abgeschlossen!\n\n"
@@ -376,20 +382,22 @@ class DesignHenkAgent(BaseAgent):
         return keywords
 
     def _parse_feedback_and_update_preferences(
-        self, feedback: str, current_prefs: dict
-    ) -> dict:
+        self, feedback: str, current_prefs: dict, state: SessionState
+    ) -> tuple[dict, dict]:
         """
         Parse user feedback and extract design preference changes.
 
         Args:
             feedback: User feedback text
             current_prefs: Current design preferences dict
+            state: Session state for state-level updates
 
         Returns:
-            Dict with updated preference values
+            Tuple of (design_prefs_updates, state_updates)
         """
         feedback_lower = feedback.lower()
         updates = {}
+        state_updates = {}
 
         # Parse lapel/revers type (RAG Spezifikationen)
         if any(word in feedback_lower for word in ["spitzfacon", "spitz facon"]):
@@ -439,8 +447,16 @@ class DesignHenkAgent(BaseAgent):
             updates["waistband_type"] = "glatt"
             logger.info("[DesignHenk] Parsed feedback: waistband_type = glatt")
 
+        # Parse vest preference (state-level update)
+        if any(word in feedback_lower for word in ["ohne weste", "no vest", "kein weste", "zweiteiler", "two-piece"]):
+            state_updates["wants_vest"] = False
+            logger.info("[DesignHenk] Parsed feedback: wants_vest = False (NO VEST)")
+        elif any(word in feedback_lower for word in ["mit weste", "with vest", "dreiteiler", "three-piece"]):
+            state_updates["wants_vest"] = True
+            logger.info("[DesignHenk] Parsed feedback: wants_vest = True (WITH VEST)")
+
         # Log if no updates were parsed
-        if not updates:
+        if not updates and not state_updates:
             logger.info(f"[DesignHenk] No specific design preferences parsed from feedback: {feedback}")
 
-        return updates
+        return updates, state_updates

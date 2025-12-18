@@ -221,6 +221,11 @@ async def _dalle_tool(params: dict, state: HenkGraphState) -> ToolResult:
     prompt_type = params.get("prompt_type", "outfit_visualization")
     session_id = params.get("session_id", session_state.session_id)
 
+    # Add vest preference from session state to design_prefs
+    if hasattr(session_state, 'wants_vest') and session_state.wants_vest is not None:
+        design_prefs["wants_vest"] = session_state.wants_vest
+        logging.info(f"[DALLE Tool] Added wants_vest={session_state.wants_vest} to design_prefs")
+
     # Log for debugging
     logging.info(f"[DALLE Tool] Using fabric_data: {fabric_data.model_dump(exclude_none=True)}")
 
@@ -317,6 +322,14 @@ def _build_outfit_prompt(fabric_data: "SelectedFabricData", design_prefs: dict, 
     revers = design_prefs.get("revers_type", "klassisches Revers")
     shoulder = design_prefs.get("shoulder_padding", "mittlere Schulterpolsterung")
     waistband = design_prefs.get("waistband_type", "klassische Bundfalte")
+    wants_vest = design_prefs.get("wants_vest")
+
+    # Build vest instruction
+    vest_instruction = ""
+    if wants_vest is False:
+        vest_instruction = "\n- Configuration: TWO-PIECE suit (jacket and trousers ONLY, NO vest/waistcoat)"
+    elif wants_vest is True:
+        vest_instruction = "\n- Configuration: THREE-PIECE suit (jacket, vest, and trousers)"
 
     # Build style description
     style = ", ".join(style_keywords) if style_keywords else "elegant, maßgeschneidert"
@@ -335,7 +348,7 @@ The suit should be made from this exact fabric: {fabric_desc}.
 SUIT DESIGN:
 - Lapel style: {revers}
 - Shoulder: {shoulder}
-- Trouser waistband: {waistband}
+- Trouser waistband: {waistband}{vest_instruction}
 
 STYLE: {style}, sophisticated, high-quality menswear photography.
 

@@ -238,10 +238,12 @@ class DALLETool:
 
         # Extract design preferences if provided
         design_details = ""
+        vest_instruction = ""
         if design_preferences:
             revers = design_preferences.get("revers_type", "")
             shoulder = design_preferences.get("shoulder_padding", "")
             waistband = design_preferences.get("waistband_type", "")
+            wants_vest = design_preferences.get("wants_vest")
 
             if revers or shoulder or waistband:
                 design_details = "\n\nSUIT DESIGN:"
@@ -252,10 +254,16 @@ class DALLETool:
                 if waistband:
                     design_details += f"\n- Trouser waistband: {waistband}"
 
+            # Add explicit vest instruction
+            if wants_vest is False:
+                vest_instruction = "\n\nCRITICAL: Show TWO-PIECE suit ONLY (jacket and trousers). NO vest/waistcoat. Two-piece configuration."
+            elif wants_vest is True:
+                vest_instruction = "\n\nCRITICAL: Show THREE-PIECE suit (jacket, vest/waistcoat, and trousers). Include matching vest."
+
         # Build final prompt
         prompt = f"""Create an elegant mood board for a bespoke men's suit in a {scene}.
 
-FABRIC REFERENCE: Show suits made from {fabrics_text}.{design_details}
+FABRIC REFERENCE: Show suits made from {fabrics_text}.{design_details}{vest_instruction}
 
 STYLE: {style}, sophisticated, high-quality menswear photography.
 
