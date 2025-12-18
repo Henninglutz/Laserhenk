@@ -70,6 +70,14 @@ def _extract_colors(query_lower: str) -> Tuple[list[str], list[str]]:
     matched_positions: list[tuple[int, int]] = []
 
     def _is_negated(color_word: str) -> bool:
+        # Check for CONDITIONAL negations (alternatives, not exclusions)
+        # "wenn nicht X", "falls nicht X", "oder nicht X" = alternative, NOT exclusion
+        conditional_pattern = rf"\b(?:wenn|falls|oder)\s+(?:{'|'.join(NEGATION_WORDS)})\s+{re.escape(color_word)}\w*\b"
+        if re.search(conditional_pattern, query_lower):
+            logger.info(f"[FabricPrefs] '{color_word}' is conditional alternative, NOT excluded")
+            return False
+
+        # Regular negation patterns (true exclusions)
         pattern = rf"(?:{'|'.join(NEGATION_WORDS)})(?:\s+\w+){{0,2}}\s+{re.escape(color_word)}\w*"
         return re.search(pattern, query_lower) is not None
 

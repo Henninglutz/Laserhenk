@@ -57,6 +57,7 @@ from typing import Optional
 
 from agents.base import AgentDecision, BaseAgent
 from models.customer import SessionState
+from models.fabric import SelectedFabricData
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +160,7 @@ class DesignHenkAgent(BaseAgent):
                 action="dalle_tool",  # FIXED: was "generate_image", must match TOOL_REGISTRY
                 action_params={
                     "prompt_type": "outfit_visualization",
-                    "fabric_data": fabric_data,
+                    "fabric_data": fabric_data.model_dump(exclude_none=True),  # Convert to dict, exclude None values
                     "design_preferences": design_prefs,
                     "style_keywords": style_keywords,
                     "session_id": state.session_id,
@@ -188,45 +189,71 @@ class DesignHenkAgent(BaseAgent):
             should_continue=False,
         )
 
-    def _extract_fabric_data(self, state: SessionState) -> dict:
+    def _extract_fabric_data(self, state: SessionState) -> SelectedFabricData:
         """
-        Extrahiere Stoffdaten aus HENK1 Payload oder RAG Context.
+        Extrahiere Stoffdaten aus HENK1 Payload oder RAG Context als Structured Output.
 
         Args:
             state: Session State
 
         Returns:
-            Fabric data dict mit colors, patterns, etc.
+            SelectedFabricData - Structured fabric data for DALL-E
         """
-        fabric_data = {}
+        # Priority 1: Use favorite_fabric (user's selection)
+        if state.favorite_fabric:
+            fabric = state.favorite_fabric
+            logger.info(f"[DesignHenkAgent] Using favorite_fabric: {fabric.get('fabric_code')}")
+            return SelectedFabricData(
+                fabric_code=fabric.get("fabric_code"),
+                color=fabric.get("color"),
+                pattern=fabric.get("pattern"),
+                composition=fabric.get("composition"),
+                texture=fabric.get("texture"),
+                supplier=fabric.get("supplier"),
+                image_url=fabric.get("url"),  # ← WICHTIG: Stoffbild URL für Composite
+            )
 
-        # From HENK1 to Design payload
-        if state.henk1_to_design_payload:
-            payload = state.henk1_to_design_payload
-            fabric_data["colors"] = [c.value for c in payload.get("colors", [])]
-            fabric_data["patterns"] = [p.value for p in payload.get("patterns", [])]
-            fabric_data["season"] = payload.get("season")
-            if payload.get("fabric_references"):
-                fabric_data["fabric_references"] = payload.get("fabric_references")
+        # Priority 2: Extract from shown_fabric_images (first shown fabric)
+        if state.shown_fabric_images and len(state.shown_fabric_images) > 0:
+            fabric = state.shown_fabric_images[0]
+            logger.info(f"[DesignHenkAgent] Using first shown fabric: {fabric.get('fabric_code')}")
+            return SelectedFabricData(
+                fabric_code=fabric.get("fabric_code"),
+                color=fabric.get("color"),
+                pattern=fabric.get("pattern"),
+                composition=fabric.get("composition"),
+                texture=fabric.get("texture"),
+                supplier=fabric.get("supplier"),
+                image_url=fabric.get("url"),  # ← WICHTIG: Stoffbild URL für Composite
+            )
 
-        # From RAG context
-        elif state.rag_context and isinstance(state.rag_context, dict) and "fabrics" in state.rag_context:
+        # Priority 3: Extract from RAG context
+        if state.rag_context and isinstance(state.rag_context, dict) and "fabrics" in state.rag_context:
             fabrics = state.rag_context["fabrics"]
             if fabrics and len(fabrics) > 0:
-                # Nehme ersten Stoff als Hauptstoff
                 main_fabric = fabrics[0]
-                fabric_data["colors"] = main_fabric.get("colors", [])
-                fabric_data["patterns"] = main_fabric.get("pattern_types", [])
-                fabric_data["fabric_code"] = main_fabric.get("fabric_code")
-                fabric_data["texture"] = main_fabric.get("texture")
-        elif state.rag_context and isinstance(state.rag_context, dict):
-            suggestions = state.rag_context.get("fabric_suggestions", [])
-            references = [s.get("fabric", {}).get("reference") for s in suggestions if s.get("fabric")]
-            if references:
-                fabric_data["fabric_references"] = references
+                # Try to get image URL from various possible keys
+                image_url = main_fabric.get("image_url") or main_fabric.get("url")
+                if not image_url:
+                    # Try local_image_paths
+                    local_paths = main_fabric.get("local_image_paths", [])
+                    if local_paths:
+                        image_url = local_paths[0]
 
-        logger.info(f"[DesignHenkAgent] Extracted fabric data: {fabric_data}")
-        return fabric_data
+                logger.info(f"[DesignHenkAgent] Using RAG context fabric: {main_fabric.get('fabric_code')}, image_url={image_url}")
+                return SelectedFabricData(
+                    fabric_code=main_fabric.get("fabric_code"),
+                    color=main_fabric.get("color"),
+                    pattern=main_fabric.get("pattern"),
+                    composition=main_fabric.get("composition"),
+                    texture=main_fabric.get("texture"),
+                    supplier=main_fabric.get("supplier"),
+                    image_url=image_url,  # ← WICHTIG: Stoffbild URL für Composite
+                )
+
+        # Fallback: Empty SelectedFabricData
+        logger.warning("[DesignHenkAgent] No fabric data found, returning empty SelectedFabricData")
+        return SelectedFabricData()
 
     def _extract_style_keywords(self, state: SessionState) -> list[str]:
         """

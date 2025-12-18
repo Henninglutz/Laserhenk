@@ -197,22 +197,148 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
 
 
 async def _dalle_tool(params: dict, state: HenkGraphState) -> ToolResult:
+    from models.fabric import SelectedFabricData
+
     session_state = _session_state(state)
 
-    prompt = params.get("prompt") or "Mood Board für ein elegantes Outfit"
-    request = params.get("request")
-    request = request if isinstance(request, DALLEImageRequest) else DALLEImageRequest(prompt=prompt)
+    # Extract structured fabric data
+    fabric_data_raw = params.get("fabric_data", {})
+    if isinstance(fabric_data_raw, dict):
+        fabric_data = SelectedFabricData(**fabric_data_raw)
+    elif isinstance(fabric_data_raw, SelectedFabricData):
+        fabric_data = fabric_data_raw
+    else:
+        fabric_data = SelectedFabricData()
 
-    response = await DALLETool().generate_image(request=request)
+    # Extract design preferences and style keywords
+    design_prefs = params.get("design_preferences", {})
+    style_keywords = params.get("style_keywords", [])
+    prompt_type = params.get("prompt_type", "outfit_visualization")
+    session_id = params.get("session_id", session_state.session_id)
+
+    # Log for debugging
+    logging.info(f"[DALLE Tool] Using fabric_data: {fabric_data.model_dump(exclude_none=True)}")
+
+    # OPTION 1: Use fabric image for composite (if available)
+    if fabric_data.image_url and prompt_type == "outfit_visualization":
+        logging.info(f"[DALLE Tool] Using composite generation with fabric image: {fabric_data.image_url}")
+
+        # Convert SelectedFabricData to fabric dict format expected by generate_mood_board_with_fabrics
+        fabric_dict = {
+            "fabric_code": fabric_data.fabric_code or "SELECTED",
+            "name": f"{fabric_data.color or 'Eleganter'} {fabric_data.pattern or 'Stoff'}",
+            "color": fabric_data.color or "klassisch",
+            "pattern": fabric_data.pattern or "Uni",
+            "composition": fabric_data.composition or "hochwertige Wolle",
+            "supplier": fabric_data.supplier or "Formens",
+            "image_urls": [fabric_data.image_url],  # Expected format: list of URLs
+        }
+
+        # Determine occasion from style keywords or default
+        occasion = "Business"  # Default
+        if style_keywords:
+            if any(kw in ["Hochzeit", "wedding", "festlich"] for kw in style_keywords):
+                occasion = "Hochzeit"
+            elif any(kw in ["Gala", "Abend", "evening"] for kw in style_keywords):
+                occasion = "Gala"
+            elif any(kw in ["casual", "leger", "freizeit"] for kw in style_keywords):
+                occasion = "Casual"
+
+        # Generate composite mood board with actual fabric thumbnail and design details
+        response = await DALLETool().generate_mood_board_with_fabrics(
+            fabrics=[fabric_dict],
+            occasion=occasion,
+            style_keywords=style_keywords,
+            design_preferences=design_prefs,
+            session_id=session_id,
+        )
+
+    # OPTION 2: Text-only prompt (fallback if no fabric image)
+    else:
+        if not fabric_data.image_url:
+            logging.info("[DALLE Tool] No fabric image URL available, using text-only prompt")
+
+        # Build DALL-E prompt with actual fabric data
+        if prompt_type == "outfit_visualization":
+            prompt = _build_outfit_prompt(fabric_data, design_prefs, style_keywords)
+        else:
+            prompt = params.get("prompt") or "Mood Board für ein elegantes Outfit"
+
+        logging.info(f"[DALLE Tool] Generated prompt preview: {prompt[:200]}...")
+
+        request = params.get("request")
+        request = request if isinstance(request, DALLEImageRequest) else DALLEImageRequest(prompt=prompt)
+
+        response = await DALLETool().generate_image(request=request)
+
+    # Store generated image in session state
     image_url = getattr(response, "image_url", None)
     if image_url:
         session_state.mood_image_url = image_url
-        session_state.image_generation_history.append({"image_url": image_url, "type": "dalle"})
+        session_state.image_generation_history.append({"image_url": image_url, "type": "dalle_composite" if fabric_data.image_url else "dalle"})
         state["session_state"] = session_state
 
-    text = response.error if getattr(response, "error", None) else "Hier ist dein Mood Board!"
+    text = response.error if getattr(response, "error", None) else "Hier ist dein Mood Board mit dem gewählten Stoff!"
     metadata = {"image_url": image_url} if image_url else {}
     return ToolResult(text=text, metadata=metadata)
+
+
+def _build_outfit_prompt(fabric_data: "SelectedFabricData", design_prefs: dict, style_keywords: list[str]) -> str:
+    """
+    Build DALL-E prompt for outfit visualization using structured fabric data.
+
+    Args:
+        fabric_data: SelectedFabricData with color, pattern, composition
+        design_prefs: Design preferences (revers_type, shoulder_padding, etc.)
+        style_keywords: Style keywords
+
+    Returns:
+        Detailed DALL-E prompt
+    """
+    # Extract fabric properties
+    color = fabric_data.color or "klassisches Blau"
+    pattern = fabric_data.pattern or "Uni"
+    composition = fabric_data.composition or "hochwertige Wolle"
+    texture = fabric_data.texture or ""
+
+    # Build fabric description
+    fabric_desc = f"{color}"
+    if pattern and pattern.lower() != "plain" and pattern.lower() != "uni":
+        fabric_desc += f" mit {pattern}"
+    if texture:
+        fabric_desc += f" und {texture}"
+
+    # Extract design details
+    revers = design_prefs.get("revers_type", "klassisches Revers")
+    shoulder = design_prefs.get("shoulder_padding", "mittlere Schulterpolsterung")
+    waistband = design_prefs.get("waistband_type", "klassische Bundfalte")
+
+    # Build style description
+    style = ", ".join(style_keywords) if style_keywords else "elegant, maßgeschneidert"
+
+    # Create prompt
+    prompt = f"""Create a high-quality fashion editorial photo of a bespoke men's suit in an elegant professional setting.
+
+FABRIC SPECIFICATION:
+- Color: {color}
+- Pattern: {pattern}
+- Material: {composition}
+- Texture: {texture or 'glatte, edle Struktur'}
+
+The suit should be made from this exact fabric: {fabric_desc}.
+
+SUIT DESIGN:
+- Lapel style: {revers}
+- Shoulder: {shoulder}
+- Trouser waistband: {waistband}
+
+STYLE: {style}, sophisticated, high-quality menswear photography.
+
+COMPOSITION: Professional fashion photography, clean background, natural lighting, focus on fabric detail and suit construction quality.
+
+NOTE: Accurately represent the fabric color ({color}) and pattern ({pattern}) in the visualization."""
+
+    return prompt
 
 
 async def _mark_favorite_fabric(params: dict, state: HenkGraphState) -> ToolResult:

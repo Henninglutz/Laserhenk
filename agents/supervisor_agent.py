@@ -260,6 +260,26 @@ class SupervisorAgent:
             else:
                 logger.info(f"[SupervisorAgent] ❌ No shown_fabric_images in state (empty or None)")
 
+        # Check for REJECTION + NEW COLOR request (e.g., "ne, bitte grün")
+        rejection_keywords = ["ne", "nein", "nicht", "lieber", "besser", "anders", "andere", "stattdessen"]
+        color_keywords = [
+            "rot", "blau", "grün", "grau", "schwarz", "braun", "beige", "weiß",
+            "red", "blue", "green", "grey", "gray", "black", "brown", "beige", "white",
+            "dunkel", "hell", "light", "dark", "marine", "navy", "olive"
+        ]
+
+        has_rejection = any(keyword in text for keyword in rejection_keywords)
+        has_color = any(keyword in text for keyword in color_keywords)
+
+        if state.shown_fabric_images and has_rejection and has_color:
+            logger.info(f"[SupervisorAgent] ✅ Rejection + new color detected: '{text}', routing to HENK1 for new RAG search")
+            return SupervisorDecision(
+                next_destination="henk1",
+                reasoning="Customer rejected shown fabrics and requested different color, need new fabric search",
+                user_message=user_message,
+                confidence=0.90,
+            )
+
         design_phase_active = bool(
             state.favorite_fabric
             or state.henk1_to_design_payload
@@ -300,7 +320,8 @@ class SupervisorAgent:
         ]
         pricing_keywords = ["preis", "kosten", "teuer", "günstig", "price", "cost"]
         comparison_keywords = ["vergleich", "unterschied", "vs", "gegenüber", "compare"]
-        measurement_keywords = ["maß", "messen", "messung", "größen", "size", "measurement"]
+        # FIX: More specific measurement keywords to avoid false matches ("messen" = trade fair)
+        measurement_keywords = ["körpermaß", "körpermaße", "vermessen", "maße nehmen", "measurement", "body scan"]
 
         def _matches(keywords: list[str]) -> bool:
             return any(keyword in text for keyword in keywords)
@@ -402,11 +423,27 @@ class SupervisorAgent:
     def _apply_hard_gates(
         self, decision: SupervisorDecision, assessment: PhaseAssessment
     ) -> SupervisorDecision:
+        # Gate 1: Cannot go to design_henk if henk1 is not complete
         if decision.next_destination == "design_henk" and not assessment.is_henk1_complete:
             decision.next_destination = "henk1"
             decision.reasoning = (
                 f"{decision.reasoning} | HENK1 essentials incomplete, rerouting to henk1"
             )
+
+        # Gate 2: Cannot go to laserhenk if design_henk is not complete
+        if decision.next_destination == "laserhenk" and not assessment.is_design_complete:
+            # Reroute based on what's missing
+            if not assessment.is_henk1_complete:
+                decision.next_destination = "henk1"
+                decision.reasoning = (
+                    f"{decision.reasoning} | HENK1 phase incomplete, rerouting to henk1"
+                )
+            else:
+                decision.next_destination = "design_henk"
+                decision.reasoning = (
+                    f"{decision.reasoning} | Design phase incomplete, rerouting to design_henk"
+                )
+
         return decision
 
     def _format_history(self, history: List[dict]) -> List[dict]:

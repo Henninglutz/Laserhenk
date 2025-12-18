@@ -71,76 +71,110 @@ class DesignPreferences(BaseModel):
     )
 
 
-class SessionState(BaseModel):
-    """Overall session state for LangGraph."""
+class FabricSelectionState(BaseModel):
+    """Consolidated fabric selection and RAG state."""
 
-    session_id: str
-    customer: Customer
-    measurements: Optional[Measurements] = None
-    design_preferences: DesignPreferences = Field(default_factory=DesignPreferences)
-    conversation_history: list[dict] = Field(default_factory=list, description="Message history as list of dicts with role/content/sender")
-    current_agent: Optional[str] = Field(None, description="Current active agent")
-    mood_image_url: Optional[str] = Field(
-        None, description="Generated DALLE mood image"
+    favorite_fabric: Optional[dict] = Field(
+        None,
+        description="User's selected favorite fabric (fabric_code, name, color, image_url)",
+    )
+    shown_fabric_images: list[dict] = Field(
+        default_factory=list,
+        description="History of fabric images shown to user (url, fabric_code, name, timestamp)",
+    )
+    fabric_presentation_history: list[dict] = Field(
+        default_factory=list,
+        description="Chronologische Historie kuratierter Stoff-Duos (mid + luxury)",
     )
     rag_context: Optional[dict] = Field(None, description="Context from RAG database")
-    next_action: Optional[str] = None
-    customer_budget_status: Optional[str] = Field(
-        None, description="Budget status classification (none, range, fixed, unknown)"
-    )
 
-    # RAG query tracking per agent
-    henk1_rag_queried: bool = Field(default=False, description="HENK1 has queried RAG")
-    design_rag_queried: bool = Field(
-        default=False, description="Design HENK has queried RAG"
-    )
 
-    # DALL-E Image Generation tracking
-    henk1_mood_board_shown: bool = Field(
-        default=False, description="HENK1 has shown mood board"
+class ImageGenerationState(BaseModel):
+    """Consolidated image generation state."""
+
+    mood_image_url: Optional[str] = Field(
+        None, description="Currently displayed DALLE mood image"
     )
     image_generation_history: list[dict] = Field(
         default_factory=list,
         description="History of all generated images (url, type, timestamp, approved)",
     )
 
-    # Fabric Images tracking
-    shown_fabric_images: list[dict] = Field(
-        default_factory=list,
-        description="History of fabric images shown to user (url, fabric_code, name, timestamp)",
-    )
+
+class AgentProgressState(BaseModel):
+    """Consolidated agent progress tracking flags."""
+
+    # RAG query tracking
+    henk1_rag_queried: bool = Field(default=False, description="HENK1 has queried RAG")
     henk1_fabrics_shown: bool = Field(
-        default=False, description="Flag ob HENK1 bereits Stoffliste gezeigt hat"
+        default=False, description="HENK1 has shown fabric list to user"
     )
-    fabric_presentation_history: list[dict] = Field(
-        default_factory=list,
-        description="Chronologische Historie kuratierter Stoff-Duos (mid + luxury)",
-    )
-    henk1_contact_declined: bool = Field(
-        default=False, description="Kunde möchte aktuell keine Kontaktanfrage"
-    )
-    favorite_fabric: Optional[dict] = Field(
-        None,
-        description="User's selected favorite fabric (fabric_code, name, color, image_url)",
-    )
-    henk1_suit_choice_prompted: bool = Field(
-        default=False, description="HENK1 hat bereits nach 2/3-Teiler & Weste gefragt"
-    )
-    suit_parts: Optional[str] = Field(
-        default=None, description="'2' für Zweiteiler oder '3' für Dreiteiler"
-    )
-    wants_vest: Optional[bool] = Field(
-        default=None, description="Ob der Kunde eine Weste möchte"
-    )
-    henk1_cut_confirmed: bool = Field(
-        default=False, description="Schnitt (2/3-Teiler + Weste) ist bestätigt"
+    design_rag_queried: bool = Field(
+        default=False, description="Design HENK has queried RAG"
     )
 
+    # Image generation tracking
+    henk1_mood_board_shown: bool = Field(
+        default=False, description="HENK1 has shown mood board"
+    )
+
+    # User interaction tracking
+    henk1_contact_declined: bool = Field(
+        default=False, description="User declined contact request"
+    )
+    henk1_suit_choice_prompted: bool = Field(
+        default=False, description="HENK1 asked about 2/3-piece suit"
+    )
+    henk1_cut_confirmed: bool = Field(
+        default=False, description="Suit cut (2/3-piece + vest) confirmed"
+    )
+
+    # Suit configuration
+    suit_parts: Optional[str] = Field(
+        default=None, description="'2' for 2-piece or '3' for 3-piece"
+    )
+    wants_vest: Optional[bool] = Field(
+        default=None, description="Whether customer wants a vest"
+    )
+
+
+class SessionState(BaseModel):
+    """
+    Overall session state for LangGraph.
+
+    Refactored to use consolidated sub-states for better organization.
+    """
+
+    # Core identifiers
+    session_id: str
+    customer: Customer
+
+    # Domain models (already well-structured)
+    measurements: Optional[Measurements] = None
+    design_preferences: DesignPreferences = Field(default_factory=DesignPreferences)
+
+    # Consolidated states (NEW - grouped by domain)
+    fabric_state: FabricSelectionState = Field(default_factory=FabricSelectionState)
+    image_state: ImageGenerationState = Field(default_factory=ImageGenerationState)
+    progress: AgentProgressState = Field(default_factory=AgentProgressState)
+
+    # Conversation and routing
+    conversation_history: list[dict] = Field(
+        default_factory=list,
+        description="Message history as list of dicts with role/content/sender",
+    )
+    current_agent: Optional[str] = Field(None, description="Current active agent")
+    next_action: Optional[str] = None
+
+    # Budget tracking
+    customer_budget_status: Optional[str] = Field(
+        None, description="Budget status classification (none, range, fixed, unknown)"
+    )
+
+    # Handoff payloads (structured agent handoffs)
     handoffs: dict[str, dict] = Field(
         default_factory=dict, description="Structured agent handoffs"
     )
-
-    # Handoff Payloads (tracking inter-agent data transfer)
     henk1_to_design_payload: Optional[dict] = Field(
         None, description="HENK1 → Design HENK handoff data"
     )
@@ -150,6 +184,137 @@ class SessionState(BaseModel):
     laser_to_hitl_payload: Optional[dict] = Field(
         None, description="LASERHENK → HITL handoff data"
     )
+
+    # BACKWARD COMPATIBILITY: Properties for legacy access patterns
+    @property
+    def favorite_fabric(self) -> Optional[dict]:
+        """Legacy access to fabric_state.favorite_fabric."""
+        return self.fabric_state.favorite_fabric
+
+    @favorite_fabric.setter
+    def favorite_fabric(self, value: Optional[dict]):
+        """Legacy setter for fabric_state.favorite_fabric."""
+        self.fabric_state.favorite_fabric = value
+
+    @property
+    def shown_fabric_images(self) -> list[dict]:
+        """Legacy access to fabric_state.shown_fabric_images."""
+        return self.fabric_state.shown_fabric_images
+
+    @property
+    def rag_context(self) -> Optional[dict]:
+        """Legacy access to fabric_state.rag_context."""
+        return self.fabric_state.rag_context
+
+    @rag_context.setter
+    def rag_context(self, value: Optional[dict]):
+        """Legacy setter for fabric_state.rag_context."""
+        self.fabric_state.rag_context = value
+
+    @property
+    def mood_image_url(self) -> Optional[str]:
+        """Legacy access to image_state.mood_image_url."""
+        return self.image_state.mood_image_url
+
+    @mood_image_url.setter
+    def mood_image_url(self, value: Optional[str]):
+        """Legacy setter for image_state.mood_image_url."""
+        self.image_state.mood_image_url = value
+
+    @property
+    def image_generation_history(self) -> list[dict]:
+        """Legacy access to image_state.image_generation_history."""
+        return self.image_state.image_generation_history
+
+    @property
+    def henk1_rag_queried(self) -> bool:
+        """Legacy access to progress.henk1_rag_queried."""
+        return self.progress.henk1_rag_queried
+
+    @henk1_rag_queried.setter
+    def henk1_rag_queried(self, value: bool):
+        """Legacy setter for progress.henk1_rag_queried."""
+        self.progress.henk1_rag_queried = value
+
+    @property
+    def henk1_fabrics_shown(self) -> bool:
+        """Legacy access to progress.henk1_fabrics_shown."""
+        return self.progress.henk1_fabrics_shown
+
+    @henk1_fabrics_shown.setter
+    def henk1_fabrics_shown(self, value: bool):
+        """Legacy setter for progress.henk1_fabrics_shown."""
+        self.progress.henk1_fabrics_shown = value
+
+    @property
+    def design_rag_queried(self) -> bool:
+        """Legacy access to progress.design_rag_queried."""
+        return self.progress.design_rag_queried
+
+    @design_rag_queried.setter
+    def design_rag_queried(self, value: bool):
+        """Legacy setter for progress.design_rag_queried."""
+        self.progress.design_rag_queried = value
+
+    @property
+    def henk1_mood_board_shown(self) -> bool:
+        """Legacy access to progress.henk1_mood_board_shown."""
+        return self.progress.henk1_mood_board_shown
+
+    @henk1_mood_board_shown.setter
+    def henk1_mood_board_shown(self, value: bool):
+        """Legacy setter for progress.henk1_mood_board_shown."""
+        self.progress.henk1_mood_board_shown = value
+
+    @property
+    def henk1_contact_declined(self) -> bool:
+        """Legacy access to progress.henk1_contact_declined."""
+        return self.progress.henk1_contact_declined
+
+    @henk1_contact_declined.setter
+    def henk1_contact_declined(self, value: bool):
+        """Legacy setter for progress.henk1_contact_declined."""
+        self.progress.henk1_contact_declined = value
+
+    @property
+    def henk1_suit_choice_prompted(self) -> bool:
+        """Legacy access to progress.henk1_suit_choice_prompted."""
+        return self.progress.henk1_suit_choice_prompted
+
+    @henk1_suit_choice_prompted.setter
+    def henk1_suit_choice_prompted(self, value: bool):
+        """Legacy setter for progress.henk1_suit_choice_prompted."""
+        self.progress.henk1_suit_choice_prompted = value
+
+    @property
+    def suit_parts(self) -> Optional[str]:
+        """Legacy access to progress.suit_parts."""
+        return self.progress.suit_parts
+
+    @suit_parts.setter
+    def suit_parts(self, value: Optional[str]):
+        """Legacy setter for progress.suit_parts."""
+        self.progress.suit_parts = value
+
+    @property
+    def wants_vest(self) -> Optional[bool]:
+        """Legacy access to progress.wants_vest."""
+        return self.progress.wants_vest
+
+    @wants_vest.setter
+    def wants_vest(self, value: Optional[bool]):
+        """Legacy setter for progress.wants_vest."""
+        self.progress.wants_vest = value
+
+    @property
+    def henk1_cut_confirmed(self) -> bool:
+        """Legacy access to progress.henk1_cut_confirmed."""
+        return self.progress.henk1_cut_confirmed
+
+    @henk1_cut_confirmed.setter
+    def henk1_cut_confirmed(self, value: bool):
+        """Legacy setter for progress.henk1_cut_confirmed."""
+        self.progress.henk1_cut_confirmed = value
 
     # Lead capture tracking
     henk1_contact_requested: bool = Field(

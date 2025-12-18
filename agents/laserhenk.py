@@ -43,15 +43,14 @@ class LaserHenkAgent(BaseAgent):
 
         # Placeholder: Request SAIA measurement
         if not state.measurements:
+            # FIX: Stop infinite loop - wait for user input or tool execution
+            # TODO: Implement SAIA measurement tool in TOOL_REGISTRY
             return AgentDecision(
-                next_agent="laserhenk",
-                message="Requesting 3D measurement via SAIA",
-                action="request_saia_measurement",
-                action_params={
-                    "customer_id": state.customer.customer_id,
-                    "scan_type": "full_body",
-                },
-                should_continue=True,
+                next_agent=None,
+                message="Um mit der Maßerfassung fortzufahren, benötigen wir ein 3D-Scan. Bitte kontaktiere uns für einen Termin.",
+                action=None,
+                action_params=None,
+                should_continue=False,  # FIXED: Was True, causing infinite loop
             )
 
         # Measurements complete → hand back to supervisor

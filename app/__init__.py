@@ -72,6 +72,23 @@ def create_app() -> Flask:
             from flask import redirect
             return redirect(f'https://via.placeholder.com/400x300?text={filename}', code=302)
 
+    # Generated Images - serve DALL-E generated mood boards
+    @app.route('/static/generated_images/<path:filename>')
+    def serve_generated_image(filename):
+        """Serve DALL-E generated images from generated_images/."""
+        from flask import send_from_directory
+        import os
+
+        # Path to generated images directory
+        images_dir = os.path.join(app.root_path, '..', 'generated_images')
+        images_dir = os.path.abspath(images_dir)
+
+        try:
+            return send_from_directory(images_dir, filename)
+        except FileNotFoundError:
+            from flask import abort
+            abort(404)
+
     # Root - serve static frontend
     @app.route('/')
     def index():

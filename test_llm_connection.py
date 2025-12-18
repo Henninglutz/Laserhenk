@@ -64,8 +64,7 @@ async def test_llm_connection():
     print("3️⃣ Teste HENK1 Agent...")
     try:
         from agents.henk1 import Henk1Agent
-        from models.graph_state import SessionState
-        from models.customer import Customer
+        from models.customer import SessionState, Customer
 
         # Erstelle minimalen Session-State
         customer = Customer(customer_id="test_123")

@@ -1195,7 +1195,27 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
             "nochmal",
             "andere muster",
         ]
-        return any(trigger in text for trigger in triggers)
+
+        # Check for explicit triggers
+        if any(trigger in text for trigger in triggers):
+            return True
+
+        # Check for REJECTION + COLOR (e.g., "ne, bitte grün")
+        rejection_keywords = ["ne", "nein", "nicht", "lieber", "besser"]
+        color_keywords = [
+            "rot", "blau", "grün", "grau", "schwarz", "braun", "beige",
+            "red", "blue", "green", "grey", "gray", "black", "brown",
+            "dunkel", "hell", "marine", "navy", "olive"
+        ]
+
+        has_rejection = any(keyword in text for keyword in rejection_keywords)
+        has_color = any(keyword in text for keyword in color_keywords)
+
+        if has_rejection and has_color:
+            logger.info(f"[HENK1] Rejection + color detected in '{text}', triggering new fabric search")
+            return True
+
+        return False
 
     def _extract_suit_choice(self, user_input: str) -> Optional[dict]:
         """Parse simple suit variant (2/3-teiler) and vest preference."""
