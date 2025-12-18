@@ -403,7 +403,7 @@ class DesignHenkAgent(BaseAgent):
         if any(word in feedback_lower for word in ["spitzfacon", "spitz facon"]):
             updates["revers_type"] = "Spitzfacon"
             logger.info("[DesignHenk] Parsed feedback: revers_type = Spitzfacon")
-        elif any(word in feedback_lower for word in ["fallendes facon", "fallend facon", "falling lapel"]):
+        elif any(word in feedback_lower for word in ["fallendes facon", "fallend facon", "fallendes revers", "fallend revers", "falling lapel"]):
             updates["revers_type"] = "fallendes Facon"
             logger.info("[DesignHenk] Parsed feedback: revers_type = fallendes Facon")
         elif any(word in feedback_lower for word in ["stehkragen", "stand collar", "mandarin"]):

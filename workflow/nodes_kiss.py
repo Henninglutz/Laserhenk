@@ -643,20 +643,19 @@ async def route_node(state: HenkGraphState) -> HenkGraphState:
             }
 
     # APPOINTMENT LOCATION DETECTION
-    # Check if we're asking about appointment location and have real CRM lead
+    # Check if we're asking about appointment location and have CRM lead (real or mock)
     if (
         session_state.customer.crm_lead_id
-        and not session_state.customer.crm_lead_id.startswith("HENK1_LEAD")
-        and not session_state.customer.crm_lead_id.startswith("MOCK_CRM")
+        and not session_state.customer.crm_lead_id.startswith("HENK1_LEAD")  # Only exclude provisional leads
         and not session_state.customer.appointment_preferences
     ):
         user_message_lower = user_message.lower().strip()
 
         # Check for location keywords
         location = None
-        if any(word in user_message_lower for word in ["zu hause", "zuhause", "daheim", "bei mir", "home"]):
+        if any(word in user_message_lower for word in ["zu hause", "zuhause", "daheim", "bei mir", "home", "bei mir zu hause"]):
             location = "Kunde zu Hause"
-        elif any(word in user_message_lower for word in ["büro", "office", "arbeit", "firma"]):
+        elif any(word in user_message_lower for word in ["büro", "office", "arbeit", "firma", "im büro", "ins büro"]):
             location = "Im Büro"
 
         if location:
@@ -676,6 +675,18 @@ async def route_node(state: HenkGraphState) -> HenkGraphState:
             fabric_pattern = fabric_info.get("pattern", "")
             fabric_composition = fabric_info.get("composition", "")
 
+            # Extract customer info
+            customer_name = session_state.customer.name or "Interessent"
+            customer_email = session_state.customer.email or "Noch nicht angegeben"
+            customer_phone = session_state.customer.phone or "Noch nicht angegeben"
+
+            # CRM Lead info
+            crm_lead_id = session_state.customer.crm_lead_id or "N/A"
+            is_mock = crm_lead_id.startswith("MOCK_CRM")
+
+            # Vest preference
+            vest_text = "Zweiteiler (ohne Weste)" if session_state.wants_vest is False else "Dreiteiler (mit Weste)" if session_state.wants_vest is True else "Zweiteiler"
+
             summary_message = f"""✅ **Perfekt! Hier ist Ihre Zusammenfassung:**
 
 📋 **Ihr maßgeschneiderter Anzug**
@@ -691,10 +702,17 @@ async def route_node(state: HenkGraphState) -> HenkGraphState:
 • Revers: {session_state.design_preferences.revers_type or 'Spitzrevers'}
 • Schulter: {session_state.design_preferences.shoulder_padding or 'mittel'} Polsterung
 • Hosenbund: {session_state.design_preferences.waistband_type or 'Bundfalte'}
+• Konfiguration: {vest_text}
 
 **Anlass:** {getattr(session_state.henk1_to_design_payload, 'occasion', None) or 'Business'}
 
-📍 **Nächster Schritt: Maßerfassung**
+👤 **Kundendaten für Henning:**
+• Name: {customer_name}
+• E-Mail: {customer_email}
+• Telefon: {customer_phone}
+• CRM Lead: {crm_lead_id}{'  (Dev-Modus)' if is_mock else ''}
+
+📍 **Nächster Schritt: Maßerfassung mit Henning**
 • Ort: {location}
 • Henning bringt Stoffmuster mit
 • Dauer: ca. 30-45 Minuten
