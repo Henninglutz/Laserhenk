@@ -221,6 +221,17 @@ class SupervisorAgent:
             "ein passt", "eins", "zwei"  # "wenn die nr. ein passt"
         ]
 
+        design_keywords = [
+            "revers",
+            "stegrevers",
+            "spitzrevers",
+            "schalkragen",
+            "schulter",
+            "polster",
+            "bundfalte",
+            "futter",
+        ]
+
         # DEBUG: Log fabric selection check
         logger.info(f"[SupervisorAgent] Checking fabric selection: text='{text}', shown_fabric_images={len(state.shown_fabric_images) if state.shown_fabric_images else 0}")
 
@@ -237,6 +248,25 @@ class SupervisorAgent:
                 logger.info(f"[SupervisorAgent] ❌ No fabric selection keyword found in '{text}'")
             else:
                 logger.info(f"[SupervisorAgent] ❌ No shown_fabric_images in state (empty or None)")
+
+        design_phase_active = bool(
+            state.favorite_fabric
+            or state.henk1_to_design_payload
+            or state.henk1_fabrics_shown
+            or state.design_preferences.revers_type
+        )
+
+        if design_phase_active and any(keyword in text for keyword in design_keywords):
+            logger.info(
+                "[SupervisorAgent] ✅ Design preference detected: '%s' matches design keywords, routing to DESIGN_HENK",
+                text,
+            )
+            return SupervisorDecision(
+                next_destination="design_henk",
+                reasoning="Detected design preference update during design phase",
+                user_message=user_message,
+                confidence=0.93,
+            )
 
         color_hint = None
         if state.design_preferences.preferred_colors:
