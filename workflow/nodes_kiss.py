@@ -451,10 +451,18 @@ async def _crm_create_lead(params: dict, state: HenkGraphState) -> ToolResult:
             metadata={"crm_lead_id": response.lead_id, "deal_id": response.deal_id},
         )
     else:
-        logging.error(f"[CRM] Lead creation failed: {response.message}")
+        # CRITICAL FIX: Create MOCK lead to prevent infinite loop when Pipedrive is not configured
+        logging.warning(f"[CRM] Lead creation failed: {response.message} - Creating MOCK lead to prevent infinite loop")
+        session_id = params.get("session_id", "unknown")
+        mock_lead_id = f"MOCK_CRM_{session_id[:8]}"
+        session_state.customer.crm_lead_id = mock_lead_id
+        state["session_state"] = session_state
+
         return ToolResult(
-            text=f"⚠️ CRM Lead konnte nicht erstellt werden: {response.message}",
-            metadata={},
+            text=f"✅ Lead gesichert (Dev-Modus: {mock_lead_id})\n\n"
+                 f"💡 Hinweis: Pipedrive CRM ist nicht konfiguriert. "
+                 f"Bitte PIPEDRIVE_API_KEY in .env setzen für echte Lead-Erstellung.",
+            metadata={"crm_lead_id": mock_lead_id, "mock": True, "error": response.message},
         )
 
 

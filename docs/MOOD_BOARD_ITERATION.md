@@ -263,13 +263,111 @@ logger.info(f"[RouteNode] Mood board feedback from user: {user_message}")
 state.image_state.mood_board_iteration_count += 1
 ```
 
+## DALL-E Prompt Anpassung
+
+### Wo der Prompt angepasst werden kann
+
+**Hauptdatei:** `tools/dalle_tool.py`
+
+**Methode:** `_build_mood_board_prompt()` (Zeilen 197-269)
+
+Diese Methode baut den DALL-E Prompt für Moodboard-Generierung auf und enthält:
+
+#### 1. Occasion-basierte Szenen (Zeile 217-224)
+```python
+occasion_scenes = {
+    "Hochzeit": "elegant wedding reception venue with soft natural lighting, romantic garden setting",
+    "Business": "modern executive office with floor-to-ceiling windows, professional corporate environment",
+    "Gala": "luxury ballroom with chandeliers, sophisticated evening event atmosphere",
+    "Casual": "contemporary urban lifestyle setting, natural daylight",
+}
+```
+
+**Anpassung:** Neue Anlässe hinzufügen oder bestehende Szenen-Beschreibungen ändern.
+
+#### 2. Prompt-Struktur (Zeile 256-266)
+```python
+prompt = f"""Create an elegant mood board for a bespoke men's suit in a {scene}.
+
+FABRIC REFERENCE: Show suits made from {fabrics_text}.{design_details}
+
+STYLE: {style}, sophisticated, high-quality menswear photography.
+
+COMPOSITION: Professional fashion editorial style, clean layout, luxurious atmosphere.
+
+SETTING: {occasion} - create the appropriate ambiance and backdrop.
+
+NOTE: Leave bottom-right corner clear (for fabric swatches overlay)."""
+```
+
+**Anpassungen möglich:**
+- Einleitungstext ändern ("Create an elegant mood board...")
+- Stil-Direktiven anpassen ("sophisticated, high-quality menswear photography")
+- Komposition-Anweisungen erweitern
+- Zusätzliche Constraints hinzufügen (z.B. "focus on details", "show full suit")
+
+#### 3. Design-Präferenzen Integration (Zeile 239-253)
+```python
+if design_preferences:
+    revers = design_preferences.get("revers_type", "")
+    shoulder = design_preferences.get("shoulder_padding", "")
+    waistband = design_preferences.get("waistband_type", "")
+
+    if revers or shoulder or waistband:
+        design_details = "\n\nSUIT DESIGN:"
+        if revers:
+            design_details += f"\n- Lapel style: {revers}"
+        if shoulder:
+            design_details += f"\n- Shoulder: {shoulder}"
+        if waistband:
+            design_details += f"\n- Trouser waistband: {waistband}"
+```
+
+**Anpassung:** Zusätzliche Design-Details hinzufügen (z.B. Knopfanzahl, Taschenstil)
+
+### Beispiel: Prompt für Business-Anzug
+
+**Input:**
+- Occasion: "Business"
+- Fabric: "Dunkelblau, Uni, feine Wolle"
+- Design: Spitzrevers, mittlere Schulter, Bundfalte
+- Style: "elegant, modern"
+
+**Generierter Prompt:**
+```
+Create an elegant mood board for a bespoke men's suit in a modern executive office with floor-to-ceiling windows, professional corporate environment.
+
+FABRIC REFERENCE: Show suits made from Dunkelblau Uni fabric in feine Wolle.
+
+SUIT DESIGN:
+- Lapel style: Spitzrevers
+- Shoulder: mittel
+- Trouser waistband: Bundfalte
+
+STYLE: elegant, modern, sophisticated, high-quality menswear photography.
+
+COMPOSITION: Professional fashion editorial style, clean layout, luxurious atmosphere.
+
+SETTING: Business - create the appropriate ambiance and backdrop.
+
+NOTE: Leave bottom-right corner clear (for fabric swatches overlay).
+```
+
+### Tipps für Prompt-Optimierung
+
+1. **Spezifität:** Je präziser die Beschreibung, desto besser das Ergebnis
+2. **Keywords:** DALL-E reagiert gut auf "professional photography", "editorial style", "luxury"
+3. **Constraints:** "Leave corner clear" verhindert überfüllte Kompositionen
+4. **Fabric Details:** Farbe + Muster + Material = beste Ergebnisse
+5. **Scene Setting:** Detaillierte Szenen-Beschreibungen verbessern Atmosphäre
+
 ## Zukünftige Erweiterungen
 
 - [ ] A/B Testing: Mehrere Varianten gleichzeitig generieren
-- [ ] Detailliertes Feedback-Parsing mit LLM
+- [x] Detailliertes Feedback-Parsing mit Keyword-Erkennung (implementiert)
 - [ ] Sentiment-Analyse für bessere Approval-Erkennung
 - [ ] Image-to-Image Editing statt kompletter Re-Generation
-- [ ] Verbesserte Prompt-Anpassung basierend auf User-Feedback
+- [x] Verbesserte Prompt-Anpassung basierend auf User-Feedback (implementiert)
 
 ## Siehe auch
 
