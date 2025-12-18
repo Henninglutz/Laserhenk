@@ -213,7 +213,7 @@ class SupervisorAgent:
             )
 
         selection_keywords = [
-            "rechtes foto", "linkes foto", "rechts", "links",
+            "rechtes foto", "rechte", "rechter", "linkes foto", "rechts", "links",
             "zweite", "erste", "dritte", "dritter", "dritten", "foto",
             "nummer", "nr.", "nr ", "no.", "number",
             "den ersten", "den zweiten", "die erste", "die zweite",
@@ -235,8 +235,19 @@ class SupervisorAgent:
         # DEBUG: Log fabric selection check
         logger.info(f"[SupervisorAgent] Checking fabric selection: text='{text}', shown_fabric_images={len(state.shown_fabric_images) if state.shown_fabric_images else 0}")
 
-        if state.shown_fabric_images and any(keyword in text for keyword in selection_keywords):
-            logger.info(f"[SupervisorAgent] ✅ Fabric selection detected: '{text}' matches keywords, routing to HENK1")
+        fabric_codes = [img.get("fabric_code", "").lower() for img in (state.shown_fabric_images or [])]
+
+        code_match = next(
+            (
+                idx
+                for idx, code in enumerate(fabric_codes)
+                if code and code in text
+            ),
+            None,
+        )
+
+        if state.shown_fabric_images and (code_match is not None or any(keyword in text for keyword in selection_keywords)):
+            logger.info(f"[SupervisorAgent] ✅ Fabric selection detected: '{text}' matches keywords/codes, routing to HENK1")
             return SupervisorDecision(
                 next_destination="henk1",
                 reasoning="Detected fabric selection, routing back to henk1/design flow",

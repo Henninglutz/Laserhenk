@@ -59,3 +59,25 @@ def test_pre_route_accepts_third_fabric_selection(message):
 
     assert decision is not None
     assert decision.next_destination == "henk1"
+
+
+@pytest.mark.parametrize(
+    "message, expected_index",
+    [
+        ("34m1000 der bitte", 0),
+        ("der rechte Stoff", 1),
+    ],
+)
+def test_pre_route_accepts_fabric_codes_and_positions(message, expected_index):
+    agent = SupervisorAgent()
+    state = make_state(
+        shown_fabric_images=[
+            {"fabric_code": "34M1000"},
+            {"fabric_code": "98T1027"},
+        ]
+    )
+
+    decision = agent._pre_route(message, state)
+
+    assert decision is not None
+    assert decision.next_destination == "henk1"

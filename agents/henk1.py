@@ -152,7 +152,7 @@ class Henk1Agent(BaseAgent):
         if self._detect_contact_decline(user_input):
             state.henk1_contact_declined = True
 
-        fabric_choice = self._detect_fabric_choice(user_input)
+        fabric_choice = self._detect_fabric_choice(user_input, state.shown_fabric_images)
         if fabric_choice is not None and state.shown_fabric_images:
             logger.info("[HENK1] Detected fabric choice: %s", fabric_choice)
             selected_index = min(
@@ -1113,12 +1113,39 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
             "message": message,
         }
 
-    def _detect_fabric_choice(self, user_input: str) -> Optional[int]:
+    def _detect_fabric_choice(
+        self, user_input: str, shown_fabric_images: Optional[list[dict]] = None
+    ) -> Optional[int]:
         text = (user_input or "").lower()
         if not text:
             return None
 
-        right_keywords = ["rechts", "zweite", "rechtsen", "rechtsen?", "2", "zweiter", "zweiten"]
+        shown_fabric_images = shown_fabric_images or []
+
+        code_match = next(
+            (
+                idx
+                for idx, img in enumerate(shown_fabric_images)
+                if img.get("fabric_code")
+                and img.get("fabric_code", "").lower() in text
+            ),
+            None,
+        )
+
+        if code_match is not None:
+            return code_match
+
+        right_keywords = [
+            "rechts",
+            "rechte",
+            "rechter",
+            "zweite",
+            "rechtsen",
+            "rechtsen?",
+            "2",
+            "zweiter",
+            "zweiten",
+        ]
         left_keywords = ["links", "erste", "1", "ersten", "linke"]
 
         ordinal_map = {
