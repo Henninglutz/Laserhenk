@@ -270,10 +270,10 @@ NOTE: Leave bottom-right corner clear (for fabric swatches overlay)."""
 
     def _download_image(self, url: str) -> Image.Image:
         """
-        Download image from URL.
+        Download image from URL or load from local filesystem.
 
         Args:
-            url: Image URL
+            url: Image URL (absolute HTTP/HTTPS URL or relative local path)
 
         Returns:
             PIL Image
@@ -281,6 +281,20 @@ NOTE: Leave bottom-right corner clear (for fabric swatches overlay)."""
         if Image is None:
             raise RuntimeError("Pillow not installed; cannot download images")
 
+        # Handle relative fabric paths (e.g., /fabrics/images/60T1003.jpg)
+        if url.startswith("/fabrics/"):
+            # Convert to local filesystem path
+            project_root = Path(__file__).parent.parent
+            local_path = project_root / "storage" / url.lstrip("/")
+
+            if local_path.exists():
+                logger.info(f"[DALLETool] Loading fabric image from local path: {local_path}")
+                return Image.open(local_path)
+            else:
+                logger.warning(f"[DALLETool] Local fabric image not found: {local_path}")
+                raise FileNotFoundError(f"Fabric image not found: {local_path}")
+
+        # Handle absolute URLs (http://, https://)
         response = requests.get(url, timeout=30)
         response.raise_for_status()
         return Image.open(io.BytesIO(response.content))
