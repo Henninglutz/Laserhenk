@@ -1,6 +1,7 @@
 """Hilfsfunktionen für Stoffsuche-Präferenzen."""
 
 import logging
+import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from models.customer import SessionState
@@ -9,13 +10,19 @@ from models.fabric import FabricSearchCriteria
 logger = logging.getLogger(__name__)
 
 GERMAN_COLOR_MAP: Dict[str, str] = {
+    "rot": "red",
+    "weinrot": "burgundy",
+    "bordeaux": "burgundy",
+    "burgunder": "burgundy",
     "dunkelblau": "dark blue",
     "hellblau": "light blue",
     "blau": "blue",
     "marine": "navy",
     "navy": "navy",
     "dunkelgrau": "dark grey",
+    "dunkel grau": "dark grey",
     "hellgrau": "light grey",
+    "hell grau": "light grey",
     "grau": "grey",
     "schwarz": "black",
     "dunkelbraun": "dark brown",
@@ -28,6 +35,8 @@ GERMAN_COLOR_MAP: Dict[str, str] = {
     "olive": "olive",
 }
 
+NEGATION_WORDS = ["nicht", "ohne", "kein", "keine", "keinen", "keiner", "keines", "keinem"]
+
 LIGHT_KEYWORDS = ["leicht", "luftig", "sommer", "sommerlich", "leichter"]
 LIGHTWEIGHT_THRESHOLD = 250
 
@@ -37,6 +46,15 @@ MATERIAL_KEYWORDS = {
     "baumwolle": "cotton",
     "cotton": "cotton",
     "chino": "cotton",
+}
+
+# Mapping gängiger Muster-Begriffe auf konsistente Pattern-Labels
+PATTERN_KEYWORDS = {
+    "fischgrat": "herringbone",
+    "fischgrät": "herringbone",
+    "fischgrätmuster": "herringbone",
+    "herringbone": "herringbone",
+    "herring bone": "herringbone",
 }
 
 
@@ -51,16 +69,19 @@ def _extract_colors(query_lower: str) -> Tuple[list[str], list[str]]:
     extracted_colors: list[str] = []
     matched_positions: list[tuple[int, int]] = []
 
+    def _is_negated(color_word: str) -> bool:
+        pattern = rf"(?:{'|'.join(NEGATION_WORDS)})(?:\s+\w+){{0,2}}\s+{re.escape(color_word)}\w*"
+        return re.search(pattern, query_lower) is not None
+
     for german, english in GERMAN_COLOR_MAP.items():
-        if f"nicht {german}" in query_lower or f"kein {german}" in query_lower or f"nicht {english}" in query_lower:
+        negated = _is_negated(german) or _is_negated(english)
+        if negated:
             excluded_colors.append(english)
 
-        if german in query_lower and not (
-            f"nicht {german}" in query_lower or f"kein {german}" in query_lower
-        ):
-            pos = query_lower.find(german)
+        for match in re.finditer(rf"\b{re.escape(german)}\w*\b", query_lower):
+            pos = match.start()
             overlaps = any(not (pos + len(german) <= start or pos >= end) for start, end in matched_positions)
-            if not overlaps:
+            if not overlaps and not negated:
                 extracted_colors.append(english)
                 matched_positions.append((pos, pos + len(german)))
 
@@ -102,6 +123,25 @@ def _detect_materials(query_lower: str, preferred_materials: Optional[Iterable[s
     return None
 
 
+def _extract_patterns(query_lower: str, patterns: list[str]) -> list[str]:
+    found = list(patterns)
+    for keyword, normalized in PATTERN_KEYWORDS.items():
+        if keyword in query_lower:
+            found.append(normalized)
+
+    if found:
+        deduped = list(dict.fromkeys(found))
+        if deduped != found:
+            logger.info(
+                f"[FabricPrefs] MERGED pattern preferences: {found} -> {deduped}"
+            )
+        else:
+            logger.info(f"[FabricPrefs] Detected pattern preferences: {deduped}")
+        return deduped
+
+    return patterns
+
+
 def build_fabric_search_criteria(
     query: str,
     params: Dict[str, Any],
@@ -114,8 +154,15 @@ def build_fabric_search_criteria(
     """
 
     normalized_state = _normalize_session_state(session_state)
-    colors = params.get("colors", []) or []
-    patterns = params.get("patterns", []) or []
+    raw_colors = params.get("colors") or params.get("color") or []
+    if isinstance(raw_colors, str):
+        colors = [raw_colors]
+    else:
+        colors = raw_colors or []
+    colors = [c.strip().lower() for c in colors if c]
+
+    raw_patterns = params.get("patterns", []) or []
+    patterns = [raw_patterns] if isinstance(raw_patterns, str) else raw_patterns
     weight_max = params.get("weight_max")
     preferred_materials = params.get("preferred_materials") or params.get("materials")
 
@@ -127,8 +174,12 @@ def build_fabric_search_criteria(
         extracted_colors, excluded_colors = _extract_colors(query_lower)
         weight_max = _detect_lightweight_preference(query_lower, weight_max)
         preferred_materials = _detect_materials(query_lower, preferred_materials)
+        patterns = _extract_patterns(query_lower, patterns)
 
     colors = _merge_colors(colors, extracted_colors)
+    if excluded_colors:
+        excluded_lower = {c.lower() for c in excluded_colors}
+        colors = [c for c in colors if c.lower() not in excluded_lower]
 
     if not colors and normalized_state and normalized_state.design_preferences:
         stored_colors = normalized_state.design_preferences.preferred_colors
@@ -167,5 +218,7 @@ def build_fabric_search_criteria(
         filters.append(f"Materialien: {', '.join(preferred_materials)}")
     if weight_max:
         filters.append(f"≤ {weight_max}g/m²")
+    if patterns:
+        filters.append(f"Muster: {', '.join(patterns)}")
 
     return criteria, normalized_state, excluded_colors, filters

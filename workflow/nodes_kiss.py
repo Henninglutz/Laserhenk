@@ -182,8 +182,13 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
         )
 
     formatted = "**Passende Stoffe für dich:**\n\n" + "".join(
-        f"{idx}. {getattr(rec.fabric, 'name', None) or 'Hochwertiger Stoff'} (Code: {getattr(rec.fabric, 'fabric_code', None)}) - "
-        f"Farbe: {getattr(rec.fabric, 'color', None) or 'Klassisch'}, Muster: {getattr(rec.fabric, 'pattern', None) or 'Uni'}\n"
+        (
+            f"{idx}. {getattr(rec.fabric, 'name', None) or 'Hochwertiger Stoff'} "
+            f"(Code: {getattr(rec.fabric, 'fabric_code', None)}) - "
+            f"Farbe: {getattr(rec.fabric, 'color', None) or 'Klassisch'}, "
+            f"Muster: {getattr(rec.fabric, 'pattern', None) or 'Uni'}, "
+            f"Material: {getattr(rec.fabric, 'composition', None) or 'Edle Wollmischung'}\n"
+        )
         for idx, rec in enumerate(recommendations[:5], 1)
     )
 

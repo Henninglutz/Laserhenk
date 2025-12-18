@@ -106,7 +106,7 @@ function addMessage(role, content, imageUrl = null, fabricImages = null){
     fabricContainer.style.marginTop = "10px";
     fabricContainer.style.flexWrap = "wrap";
 
-    fabricImages.forEach((fabric) => {
+    fabricImages.forEach((fabric, idx) => {
       const fabricCard = document.createElement("div");
       fabricCard.style.flex = "1";
       fabricCard.style.minWidth = "200px";
@@ -115,15 +115,26 @@ function addMessage(role, content, imageUrl = null, fabricImages = null){
       fabricCard.style.borderRadius = "8px";
       fabricCard.style.padding = "10px";
       fabricCard.style.backgroundColor = "#f9f9f9";
+      fabricCard.style.position = "relative";
 
       // Fabric image
+      const imageFrame = document.createElement("div");
+      imageFrame.style.position = "relative";
+
       const img = document.createElement("img");
       img.src = fabric.url;
-      img.alt = fabric.name || "Fabric";
+      img.alt = `${fabric.fabric_code || fabric.name || "Fabric"} Vorschau`;
       img.style.width = "100%";
       img.style.borderRadius = "4px";
       img.style.marginBottom = "8px";
-      fabricCard.appendChild(img);
+      imageFrame.appendChild(img);
+
+      const badge = document.createElement("div");
+      badge.className = "fabric-label";
+      badge.textContent = `${idx + 1}. ${fabric.fabric_code || "Stoff"}`;
+      imageFrame.appendChild(badge);
+
+      fabricCard.appendChild(imageFrame);
 
       // Fabric details
       const details = document.createElement("div");
