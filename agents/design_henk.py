@@ -210,6 +210,7 @@ class DesignHenkAgent(BaseAgent):
                 composition=fabric.get("composition"),
                 texture=fabric.get("texture"),
                 supplier=fabric.get("supplier"),
+                image_url=fabric.get("url"),  # ← WICHTIG: Stoffbild URL für Composite
             )
 
         # Priority 2: Extract from shown_fabric_images (first shown fabric)
@@ -223,6 +224,7 @@ class DesignHenkAgent(BaseAgent):
                 composition=fabric.get("composition"),
                 texture=fabric.get("texture"),
                 supplier=fabric.get("supplier"),
+                image_url=fabric.get("url"),  # ← WICHTIG: Stoffbild URL für Composite
             )
 
         # Priority 3: Extract from RAG context
@@ -230,7 +232,15 @@ class DesignHenkAgent(BaseAgent):
             fabrics = state.rag_context["fabrics"]
             if fabrics and len(fabrics) > 0:
                 main_fabric = fabrics[0]
-                logger.info(f"[DesignHenkAgent] Using RAG context fabric: {main_fabric.get('fabric_code')}")
+                # Try to get image URL from various possible keys
+                image_url = main_fabric.get("image_url") or main_fabric.get("url")
+                if not image_url:
+                    # Try local_image_paths
+                    local_paths = main_fabric.get("local_image_paths", [])
+                    if local_paths:
+                        image_url = local_paths[0]
+
+                logger.info(f"[DesignHenkAgent] Using RAG context fabric: {main_fabric.get('fabric_code')}, image_url={image_url}")
                 return SelectedFabricData(
                     fabric_code=main_fabric.get("fabric_code"),
                     color=main_fabric.get("color"),
@@ -238,6 +248,7 @@ class DesignHenkAgent(BaseAgent):
                     composition=main_fabric.get("composition"),
                     texture=main_fabric.get("texture"),
                     supplier=main_fabric.get("supplier"),
+                    image_url=image_url,  # ← WICHTIG: Stoffbild URL für Composite
                 )
 
         # Fallback: Empty SelectedFabricData

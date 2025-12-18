@@ -206,6 +206,9 @@ class SelectedFabricData(BaseModel):
     texture: Optional[str] = Field(None, description="Fabric texture description (e.g., 'leichte Struktur', 'glatt')")
     supplier: Optional[str] = Field(None, description="Supplier name (e.g., 'VITALE BARBERIS')")
 
+    # Image URL for composite generation
+    image_url: Optional[str] = Field(None, description="URL to actual fabric image (for composite)")
+
     # Additional metadata for DALL-E prompt building
     color_hex: Optional[str] = Field(None, description="Hex color code if available")
     pattern_description: Optional[str] = Field(None, description="Detailed pattern description for DALL-E")

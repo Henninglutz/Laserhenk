@@ -214,28 +214,70 @@ async def _dalle_tool(params: dict, state: HenkGraphState) -> ToolResult:
     design_prefs = params.get("design_preferences", {})
     style_keywords = params.get("style_keywords", [])
     prompt_type = params.get("prompt_type", "outfit_visualization")
-
-    # Build DALL-E prompt with actual fabric data
-    if prompt_type == "outfit_visualization":
-        prompt = _build_outfit_prompt(fabric_data, design_prefs, style_keywords)
-    else:
-        prompt = params.get("prompt") or "Mood Board für ein elegantes Outfit"
+    session_id = params.get("session_id", session_state.session_id)
 
     # Log for debugging
     logging.info(f"[DALLE Tool] Using fabric_data: {fabric_data.model_dump(exclude_none=True)}")
-    logging.info(f"[DALLE Tool] Generated prompt preview: {prompt[:200]}...")
 
-    request = params.get("request")
-    request = request if isinstance(request, DALLEImageRequest) else DALLEImageRequest(prompt=prompt)
+    # OPTION 1: Use fabric image for composite (if available)
+    if fabric_data.image_url and prompt_type == "outfit_visualization":
+        logging.info(f"[DALLE Tool] Using composite generation with fabric image: {fabric_data.image_url}")
 
-    response = await DALLETool().generate_image(request=request)
+        # Convert SelectedFabricData to fabric dict format expected by generate_mood_board_with_fabrics
+        fabric_dict = {
+            "fabric_code": fabric_data.fabric_code or "SELECTED",
+            "name": f"{fabric_data.color or 'Eleganter'} {fabric_data.pattern or 'Stoff'}",
+            "color": fabric_data.color or "klassisch",
+            "pattern": fabric_data.pattern or "Uni",
+            "composition": fabric_data.composition or "hochwertige Wolle",
+            "supplier": fabric_data.supplier or "Formens",
+            "image_urls": [fabric_data.image_url],  # Expected format: list of URLs
+        }
+
+        # Determine occasion from style keywords or default
+        occasion = "Business"  # Default
+        if style_keywords:
+            if any(kw in ["Hochzeit", "wedding", "festlich"] for kw in style_keywords):
+                occasion = "Hochzeit"
+            elif any(kw in ["Gala", "Abend", "evening"] for kw in style_keywords):
+                occasion = "Gala"
+            elif any(kw in ["casual", "leger", "freizeit"] for kw in style_keywords):
+                occasion = "Casual"
+
+        # Generate composite mood board with actual fabric thumbnail
+        response = await DALLETool().generate_mood_board_with_fabrics(
+            fabrics=[fabric_dict],
+            occasion=occasion,
+            style_keywords=style_keywords,
+            session_id=session_id,
+        )
+
+    # OPTION 2: Text-only prompt (fallback if no fabric image)
+    else:
+        if not fabric_data.image_url:
+            logging.info("[DALLE Tool] No fabric image URL available, using text-only prompt")
+
+        # Build DALL-E prompt with actual fabric data
+        if prompt_type == "outfit_visualization":
+            prompt = _build_outfit_prompt(fabric_data, design_prefs, style_keywords)
+        else:
+            prompt = params.get("prompt") or "Mood Board für ein elegantes Outfit"
+
+        logging.info(f"[DALLE Tool] Generated prompt preview: {prompt[:200]}...")
+
+        request = params.get("request")
+        request = request if isinstance(request, DALLEImageRequest) else DALLEImageRequest(prompt=prompt)
+
+        response = await DALLETool().generate_image(request=request)
+
+    # Store generated image in session state
     image_url = getattr(response, "image_url", None)
     if image_url:
         session_state.mood_image_url = image_url
-        session_state.image_generation_history.append({"image_url": image_url, "type": "dalle"})
+        session_state.image_generation_history.append({"image_url": image_url, "type": "dalle_composite" if fabric_data.image_url else "dalle"})
         state["session_state"] = session_state
 
-    text = response.error if getattr(response, "error", None) else "Hier ist dein Mood Board!"
+    text = response.error if getattr(response, "error", None) else "Hier ist dein Mood Board mit dem gewählten Stoff!"
     metadata = {"image_url": image_url} if image_url else {}
     return ToolResult(text=text, metadata=metadata)
 
