@@ -129,6 +129,13 @@ class DesignHenkAgent(BaseAgent):
                 should_continue=False,
             )
 
+        # Check if we have a REAL Pipedrive lead (not provisional HENK1_LEAD or MOCK)
+        has_real_crm_lead = (
+            state.customer.crm_lead_id
+            and not state.customer.crm_lead_id.startswith("HENK1_LEAD")
+            and not state.customer.crm_lead_id.startswith("MOCK_CRM")
+        )
+
         # MOOD BOARD ITERATION LOOP (Max 7 iterations)
         # Check if mood board needs to be generated or re-generated
         if not state.image_state.mood_board_approved:
@@ -206,7 +213,7 @@ class DesignHenkAgent(BaseAgent):
                 )
 
         # MOOD BOARD APPROVED - Proceed to CRM lead creation
-        if state.image_state.mood_board_approved and not state.customer.crm_lead_id:
+        if state.image_state.mood_board_approved and not has_real_crm_lead:
             logger.info("[DesignHenk] Mood board approved, creating CRM lead")
 
             # Mark approved image in design preferences
@@ -228,7 +235,8 @@ class DesignHenkAgent(BaseAgent):
             )
 
         # Design phase complete → hand back to supervisor
-        if state.customer.crm_lead_id:
+        # Only proceed if we have a REAL Pipedrive lead
+        if has_real_crm_lead:
             return AgentDecision(
                 next_agent=None,
                 message="✅ Design-Phase abgeschlossen!\n\n"

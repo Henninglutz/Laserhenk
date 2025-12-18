@@ -148,9 +148,10 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
         pattern = fabric_dict.get("pattern") or "Uni"
         composition = fabric_dict.get("composition") or "Hochwertige Wollmischung"
         supplier = fabric_dict.get("supplier") or "Formens"
+        weight = fabric_dict.get("weight_g_m2")  # Grammatur
 
         # Log extracted data for debugging
-        logging.info(f"[RAG] Building fabric_image for {fabric_code}: name={name!r}, color={color!r}, pattern={pattern!r}")
+        logging.info(f"[RAG] Building fabric_image for {fabric_code}: name={name!r}, color={color!r}, pattern={pattern!r}, weight={weight}")
 
         fabric_images.append(
             {
@@ -161,9 +162,10 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
                 "pattern": pattern,
                 "composition": composition,
                 "supplier": supplier,
+                "weight_g_m2": weight,
             }
         )
-        if len(fabric_images) >= 2:
+        if len(fabric_images) >= 5:  # Show 5 fabrics
             break
 
     if hasattr(session_state, "shown_fabric_images"):
@@ -185,11 +187,12 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
 
     formatted = "**Passende Stoffe für dich:**\n\n" + "".join(
         (
-            f"{idx}. {getattr(rec.fabric, 'name', None) or 'Hochwertiger Stoff'} "
-            f"(Code: {getattr(rec.fabric, 'fabric_code', None)}) - "
-            f"Farbe: {getattr(rec.fabric, 'color', None) or 'Klassisch'}, "
-            f"Muster: {getattr(rec.fabric, 'pattern', None) or 'Uni'}, "
-            f"Material: {getattr(rec.fabric, 'composition', None) or 'Edle Wollmischung'}\n"
+            f"{idx}. **{getattr(rec.fabric, 'name', None) or 'Hochwertiger Stoff'}** "
+            f"(Ref: {getattr(rec.fabric, 'fabric_code', None)})\n"
+            f"   • Farbe: {getattr(rec.fabric, 'color', None) or 'Klassisch'}\n"
+            f"   • Muster: {getattr(rec.fabric, 'pattern', None) or 'Uni'}\n"
+            f"   • Material: {getattr(rec.fabric, 'composition', None) or 'Edle Wollmischung'}\n"
+            f"   • Grammatur: {getattr(rec.fabric, 'weight_g_m2', None) or 'N/A'} g/m²\n\n"
         )
         for idx, rec in enumerate(recommendations[:5], 1)
     )
@@ -529,6 +532,43 @@ async def route_node(state: HenkGraphState) -> HenkGraphState:
 
     user_message = _latest_content(state.get("messages", []), "user") or state.get("user_input", "")
 
+    # FABRIC FEEDBACK DETECTION
+    # Check if we're in HENK1 phase and fabrics were shown but no favorite selected yet
+    if (
+        session_state.current_agent == "henk1"
+        and session_state.henk1_fabrics_shown
+        and not session_state.favorite_fabric
+        and len(session_state.shown_fabric_images) > 0
+    ):
+        user_message_lower = user_message.lower().strip()
+
+        # Check for fabric feedback keywords (color/pattern changes)
+        fabric_feedback_keywords = [
+            "zu hell", "zu dunkel", "heller", "dunkler", "andere farbe",
+            "anderes muster", "einfarbig", "gemustert", "uni", "kariert",
+            "gestreift", "anders", "nicht passend", "andere stoffe",
+        ]
+
+        if any(keyword in user_message_lower for keyword in fabric_feedback_keywords):
+            logger.info(f"[RouteNode] Fabric feedback detected: {user_message}")
+            # Reset fabric shown flag to allow new RAG search
+            session_state.henk1_fabrics_shown = False
+            state["session_state"] = session_state
+
+            # Route back to HENK1 with RAG tool action
+            return {
+                "current_agent": "henk1",
+                "next_step": HandoffAction(
+                    kind="tool",
+                    name="rag_tool",
+                    params={"query": user_message, "colors": [], "patterns": []},
+                    should_continue=True,
+                    return_to_agent="henk1",
+                ).model_dump(),
+                "session_state": session_state,
+                "metadata": {"fabric_feedback": user_message},
+            }
+
     # MOOD BOARD APPROVAL DETECTION
     # Check if we're in Design HENK phase waiting for mood board approval
     if (
@@ -577,6 +617,76 @@ async def route_node(state: HenkGraphState) -> HenkGraphState:
                 "next_step": HandoffAction(kind="agent", name="design_henk", should_continue=True).model_dump(),
                 "session_state": session_state,
                 "metadata": {"mood_board_feedback": user_message},
+            }
+
+    # APPOINTMENT LOCATION DETECTION
+    # Check if we're asking about appointment location and have real CRM lead
+    if (
+        session_state.customer.crm_lead_id
+        and not session_state.customer.crm_lead_id.startswith("HENK1_LEAD")
+        and not session_state.customer.crm_lead_id.startswith("MOCK_CRM")
+        and not session_state.customer.appointment_preferences
+    ):
+        user_message_lower = user_message.lower().strip()
+
+        # Check for location keywords
+        location = None
+        if any(word in user_message_lower for word in ["zu hause", "zuhause", "daheim", "bei mir", "home"]):
+            location = "Kunde zu Hause"
+        elif any(word in user_message_lower for word in ["büro", "office", "arbeit", "firma"]):
+            location = "Im Büro"
+
+        if location:
+            logger.info(f"[RouteNode] Appointment location detected: {location}")
+            # Store appointment preferences
+            session_state.customer.appointment_preferences = {
+                "location": location,
+                "notes": "Henning bringt Stoffmuster mit zur Maßerfassung",
+            }
+            state["session_state"] = session_state
+
+            # Generate summary message
+            fabric_info = session_state.favorite_fabric or {}
+            fabric_name = fabric_info.get("name", "Ausgewählter Stoff")
+            fabric_code = fabric_info.get("fabric_code", "N/A")
+            fabric_color = fabric_info.get("color", "")
+            fabric_pattern = fabric_info.get("pattern", "")
+            fabric_composition = fabric_info.get("composition", "")
+
+            summary_message = f"""✅ **Perfekt! Hier ist Ihre Zusammenfassung:**
+
+📋 **Ihr maßgeschneiderter Anzug**
+━━━━━━━━━━━━━━━━━━━━━━
+
+**Stoff:**
+• {fabric_name} (Ref: {fabric_code})
+• Farbe: {fabric_color}
+• Muster: {fabric_pattern}
+• Material: {fabric_composition}
+
+**Design:**
+• Revers: {session_state.design_preferences.revers_type or 'Spitzrevers'}
+• Schulter: {session_state.design_preferences.shoulder_padding or 'mittel'} Polsterung
+• Hosenbund: {session_state.design_preferences.waistband_type or 'Bundfalte'}
+
+**Anlass:** {getattr(session_state.henk1_to_design_payload, 'occasion', None) or 'Business'}
+
+📍 **Nächster Schritt: Maßerfassung**
+• Ort: {location}
+• Henning bringt Stoffmuster mit
+• Dauer: ca. 30-45 Minuten
+
+Ich bestätige Ihren Termin und sende Ihnen alle Details per E-Mail zu."""
+
+            messages = list(state.get("messages", []))
+            messages.append({"role": "assistant", "content": summary_message, "sender": "design_henk"})
+
+            return {
+                "messages": messages,
+                "session_state": session_state,
+                "awaiting_user_input": True,
+                "next_step": None,
+                "metadata": {"appointment_confirmed": True, "location": location},
             }
 
     decision: SupervisorDecision = await SUPERVISOR.decide_next_step(
