@@ -263,6 +263,8 @@ COMPOSITION: Professional fashion editorial style, clean layout, luxurious atmos
 
 SETTING: {occasion} - create the appropriate ambiance and backdrop.
 
+IMPORTANT: Realistic photograph only - NOT illustration, NOT drawing, NOT sketch. High-quality professional photography with natural lighting and photorealistic details.
+
 NOTE: Leave bottom-right corner clear (for fabric swatches overlay)."""
 
         logger.info(f"[DALLETool] Generated prompt: {prompt[:200]}...")

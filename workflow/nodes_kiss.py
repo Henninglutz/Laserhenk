@@ -341,6 +341,8 @@ STYLE: {style}, sophisticated, high-quality menswear photography.
 
 COMPOSITION: Professional fashion photography, clean background, natural lighting, focus on fabric detail and suit construction quality.
 
+IMPORTANT: Realistic photograph only - NOT illustration, NOT drawing, NOT sketch. High-quality professional photography with photorealistic details and natural lighting.
+
 NOTE: Accurately represent the fabric color ({color}) and pattern ({pattern}) in the visualization."""
 
     return prompt

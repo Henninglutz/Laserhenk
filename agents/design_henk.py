@@ -391,16 +391,31 @@ class DesignHenkAgent(BaseAgent):
         feedback_lower = feedback.lower()
         updates = {}
 
-        # Parse lapel/revers type
-        if any(word in feedback_lower for word in ["normales revers", "normal lapel", "klassisches revers"]):
-            updates["revers_type"] = "Stegrevers"
-            logger.info("[DesignHenk] Parsed feedback: revers_type = Stegrevers")
-        elif any(word in feedback_lower for word in ["spitzrevers", "peak lapel", "spitz"]):
-            updates["revers_type"] = "Spitzrevers"
-            logger.info("[DesignHenk] Parsed feedback: revers_type = Spitzrevers")
+        # Parse lapel/revers type (RAG Spezifikationen)
+        if any(word in feedback_lower for word in ["spitzfacon", "spitz facon"]):
+            updates["revers_type"] = "Spitzfacon"
+            logger.info("[DesignHenk] Parsed feedback: revers_type = Spitzfacon")
+        elif any(word in feedback_lower for word in ["fallendes facon", "fallend facon", "falling lapel"]):
+            updates["revers_type"] = "fallendes Facon"
+            logger.info("[DesignHenk] Parsed feedback: revers_type = fallendes Facon")
+        elif any(word in feedback_lower for word in ["stehkragen", "stand collar", "mandarin"]):
+            updates["revers_type"] = "Stehkragen"
+            logger.info("[DesignHenk] Parsed feedback: revers_type = Stehkragen")
+        elif any(word in feedback_lower for word in ["ohne revers", "no lapel", "kein revers"]):
+            updates["revers_type"] = "Ohne Revers"
+            logger.info("[DesignHenk] Parsed feedback: revers_type = Ohne Revers")
         elif any(word in feedback_lower for word in ["schalkragen", "shawl collar", "schal"]):
             updates["revers_type"] = "Schalkragen"
             logger.info("[DesignHenk] Parsed feedback: revers_type = Schalkragen")
+        elif any(word in feedback_lower for word in ["dinner jacket", "smoking", "tuxedo"]):
+            updates["revers_type"] = "Dinner Jacket"
+            logger.info("[DesignHenk] Parsed feedback: revers_type = Dinner Jacket")
+        elif any(word in feedback_lower for word in ["normales revers", "normal lapel", "klassisches revers", "stegrevers"]):
+            updates["revers_type"] = "Stegrevers"
+            logger.info("[DesignHenk] Parsed feedback: revers_type = Stegrevers")
+        elif any(word in feedback_lower for word in ["spitzrevers", "peak lapel"]):
+            updates["revers_type"] = "Spitzrevers"
+            logger.info("[DesignHenk] Parsed feedback: revers_type = Spitzrevers")
 
         # Parse shoulder padding
         if any(word in feedback_lower for word in ["keine schulter", "no shoulder", "ohne polster", "ungepolstert"]):
