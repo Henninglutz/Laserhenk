@@ -86,27 +86,19 @@ class DesignHenkAgent(BaseAgent):
 
     async def process(self, state: SessionState) -> AgentDecision:
         """
-        Process design preferences and lead securing.
+        Process design preferences and lead securing with mood board iteration loop.
+
+        Flow:
+        1. Collect design preferences
+        2. Generate mood board
+        3. Wait for user approval or feedback
+        4. Iterate up to 7 times based on feedback
+        5. After approval: Create CRM lead and schedule appointment
+        6. Handoff to LASERHENK
 
         Returns:
             AgentDecision with next steps
         """
-        # Hier würde die LLM-Logik für Design-Abfrage stehen
-        # Für jetzt: Struktur-Placeholder
-
-        # Check if we need to query RAG for design options
-        # DISABLED: Design RAG not implemented yet, skip for now
-        # if not state.design_rag_queried:
-        #     return AgentDecision(
-        #         next_agent="design_henk",
-        #         message="Querying RAG for design options",
-        #         action="rag_tool",  # FIXED: was "query_rag"
-        #         action_params={
-        #             "query": "Design options: Revers, Futter, Schulter, Bund"
-        #         },
-        #         should_continue=True,
-        #     )
-
         # TEMPORARY: Mark as queried to skip infinite loop
         if not state.design_rag_queried:
             state.design_rag_queried = True
@@ -137,55 +129,120 @@ class DesignHenkAgent(BaseAgent):
                 should_continue=False,
             )
 
-        # Generate mood image with DALLE
-        if not state.mood_image_url:
-            logger.info("[DesignHenkAgent] Triggering DALL-E image generation")
+        # MOOD BOARD ITERATION LOOP (Max 7 iterations)
+        # Check if mood board needs to be generated or re-generated
+        if not state.image_state.mood_board_approved:
+            # Check if we've hit the iteration limit
+            if state.image_state.mood_board_iteration_count >= 7:
+                logger.warning("[DesignHenk] Max iterations (7) reached for mood board")
+                # Force approval and continue
+                state.image_state.mood_board_approved = True
+                return AgentDecision(
+                    next_agent=None,
+                    message="Ich verstehe, dass das Moodbild noch nicht perfekt ist. "
+                           "Wir haben das Maximum an Iterationen erreicht, aber keine Sorge - "
+                           "beim persönlichen Termin können wir alle Details noch genau besprechen!\n\n"
+                           "Lass uns jetzt mit der Terminvereinbarung fortfahren.",
+                    action=None,
+                    should_continue=False,
+                )
 
-            # Prepare fabric data from HENK1 payload or RAG context
-            fabric_data = self._extract_fabric_data(state)
+            # Generate or re-generate mood board
+            if not state.mood_image_url or state.image_state.mood_board_feedback:
+                logger.info(f"[DesignHenk] Generating mood board (iteration {state.image_state.mood_board_iteration_count + 1}/7)")
 
-            # Prepare design preferences
-            design_prefs = {
-                "revers_type": state.design_preferences.revers_type,
-                "shoulder_padding": state.design_preferences.shoulder_padding,
-                "waistband_type": state.design_preferences.waistband_type,
-            }
+                # Increment iteration counter
+                state.image_state.mood_board_iteration_count += 1
 
-            # Extract style keywords
-            style_keywords = self._extract_style_keywords(state)
+                # Prepare fabric data from HENK1 payload or RAG context
+                fabric_data = self._extract_fabric_data(state)
+
+                # Prepare design preferences
+                design_prefs = {
+                    "revers_type": state.design_preferences.revers_type,
+                    "shoulder_padding": state.design_preferences.shoulder_padding,
+                    "waistband_type": state.design_preferences.waistband_type,
+                }
+
+                # Extract style keywords
+                style_keywords = self._extract_style_keywords(state)
+
+                # Include user feedback in prompt if available
+                if state.image_state.mood_board_feedback:
+                    logger.info(f"[DesignHenk] Incorporating user feedback: {state.image_state.mood_board_feedback}")
+                    # Add feedback to style keywords for prompt adjustment
+                    style_keywords.append(f"User feedback: {state.image_state.mood_board_feedback}")
+                    # Clear feedback after incorporating
+                    state.image_state.mood_board_feedback = None
+
+                iteration_msg = f"(Iteration {state.image_state.mood_board_iteration_count}/7)" if state.image_state.mood_board_iteration_count > 1 else ""
+
+                return AgentDecision(
+                    next_agent=None,
+                    message=f"Generiere Ihr Outfit-Moodbild {iteration_msg}...",
+                    action="dalle_tool",
+                    action_params={
+                        "prompt_type": "outfit_visualization",
+                        "fabric_data": fabric_data.model_dump(exclude_none=True),
+                        "design_preferences": design_prefs,
+                        "style_keywords": style_keywords,
+                        "session_id": state.session_id,
+                    },
+                    should_continue=True,
+                )
+
+            # Mood board generated, waiting for user approval
+            if state.mood_image_url and not state.image_state.mood_board_approved:
+                iterations_left = 7 - state.image_state.mood_board_iteration_count
+                return AgentDecision(
+                    next_agent=None,
+                    message=f"Hier ist Ihr Moodbild für den maßgeschneiderten Anzug! 👔\n\n"
+                           f"**Gefällt Ihnen die Richtung?**\n\n"
+                           f"✅ Wenn ja, sagen Sie 'Ja', 'Genehmigt' oder 'Perfekt'\n"
+                           f"🔄 Wenn Sie Änderungen wünschen, beschreiben Sie einfach, was anders sein soll\n\n"
+                           f"Sie können noch bis zu {iterations_left} Änderungen vornehmen.",
+                    action=None,
+                    should_continue=False,
+                )
+
+        # MOOD BOARD APPROVED - Proceed to CRM lead creation
+        if state.image_state.mood_board_approved and not state.customer.crm_lead_id:
+            logger.info("[DesignHenk] Mood board approved, creating CRM lead")
+
+            # Mark approved image in design preferences
+            if state.mood_image_url:
+                state.design_preferences.approved_image = state.mood_image_url
 
             return AgentDecision(
                 next_agent=None,
-                message="Generiere Ihr Outfit-Moodbild...",
-                action="dalle_tool",  # FIXED: was "generate_image", must match TOOL_REGISTRY
+                message="Perfekt! Ich sichere jetzt Ihre Daten und bereite die Terminvereinbarung vor...",
+                action="crm_create_lead",
                 action_params={
-                    "prompt_type": "outfit_visualization",
-                    "fabric_data": fabric_data.model_dump(exclude_none=True),  # Convert to dict, exclude None values
-                    "design_preferences": design_prefs,
-                    "style_keywords": style_keywords,
                     "session_id": state.session_id,
+                    "customer_name": state.customer.name or "Interessent",
+                    "customer_email": state.customer.email or "",
+                    "customer_phone": state.customer.phone or "",
+                    "mood_image_url": state.mood_image_url,
                 },
                 should_continue=True,
             )
 
-        # Mandatory: Leadsicherung mit CRM**
-        if not state.customer.crm_lead_id:
-            # TODO: Replace with actual CRM API call
-            # For now: Mock CRM ID to prevent infinite loop
-            state.customer.crm_lead_id = f"MOCK_CRM_{state.session_id[:8]}"
-
+        # Design phase complete → hand back to supervisor
+        if state.customer.crm_lead_id:
             return AgentDecision(
                 next_agent=None,
-                message="Lead secured in CRM (mock)",
-                action=None,
+                message="✅ Design-Phase abgeschlossen!\n\n"
+                       "Als nächstes vereinbaren wir einen Termin mit Henning für die Maßerfassung. "
+                       "Bevorzugen Sie einen Termin bei Ihnen zu Hause oder im Büro?",
+                action="complete_design_phase",
                 should_continue=False,
             )
 
-        # Design phase complete → hand back to supervisor
+        # Fallback
         return AgentDecision(
             next_agent=None,
-            message="Design phase complete, lead secured",
-            action="complete_design_phase",
+            message="Design phase in progress...",
+            action=None,
             should_continue=False,
         )
 

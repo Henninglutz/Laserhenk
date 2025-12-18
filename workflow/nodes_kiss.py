@@ -7,6 +7,8 @@ from typing import Any, Callable, Dict, Optional
 
 from pydantic import BaseModel, Field
 
+logger = logging.getLogger(__name__)
+
 from agents.design_henk import DesignHenkAgent
 from agents.henk1 import Henk1Agent
 from agents.laserhenk import LaserHenkAgent
@@ -411,12 +413,99 @@ async def _show_fabric_images(params: dict, state: HenkGraphState) -> ToolResult
     return ToolResult(text=message, metadata={"fabric_images": fabrics_with_images})
 
 
+async def _crm_create_lead(params: dict, state: HenkGraphState) -> ToolResult:
+    """Create CRM lead in Pipedrive."""
+    from tools.crm_tool import CRMTool
+    from models.tools import CRMLeadCreate
+
+    session_state = _session_state(state)
+
+    # Extract customer data
+    customer_name = params.get("customer_name") or session_state.customer.name or "Interessent"
+    customer_email = params.get("customer_email") or session_state.customer.email
+    customer_phone = params.get("customer_phone") or session_state.customer.phone
+
+    # Prepare lead data
+    lead_data = CRMLeadCreate(
+        customer_name=customer_name,
+        email=customer_email,
+        phone=customer_phone,
+        notes=f"Mood board: {params.get('mood_image_url', 'N/A')}",
+        deal_value=2000.0,  # Default suit value, can be adjusted
+    )
+
+    # Create lead
+    crm_tool = CRMTool()
+    response = await crm_tool.create_lead(lead_data)
+
+    if response.success:
+        # Store CRM lead ID in session state
+        session_state.customer.crm_lead_id = response.lead_id
+        state["session_state"] = session_state
+
+        return ToolResult(
+            text=f"✅ Lead erfolgreich im CRM gesichert (ID: {response.lead_id})",
+            metadata={"crm_lead_id": response.lead_id, "deal_id": response.deal_id},
+        )
+    else:
+        logging.error(f"[CRM] Lead creation failed: {response.message}")
+        return ToolResult(
+            text=f"⚠️ CRM Lead konnte nicht erstellt werden: {response.message}",
+            metadata={},
+        )
+
+
+async def _crm_create_appointment(params: dict, state: HenkGraphState) -> ToolResult:
+    """Create appointment in Pipedrive."""
+    from tools.crm_tool import CRMTool
+    from models.tools import CRMAppointmentCreate
+
+    session_state = _session_state(state)
+
+    # Ensure CRM lead exists
+    if not session_state.customer.crm_lead_id:
+        return ToolResult(
+            text="Fehler: CRM Lead muss zuerst erstellt werden",
+            metadata={},
+        )
+
+    # Extract appointment data
+    appointment_data = CRMAppointmentCreate(
+        person_id=session_state.customer.crm_lead_id,
+        subject=params.get("subject", "Maßerfassung für maßgeschneiderten Anzug"),
+        due_date=params.get("due_date"),
+        due_time=params.get("due_time", "14:00"),
+        duration=params.get("duration", "01:30"),
+        location=params.get("location"),
+        note=params.get("note", f"Kunde: {session_state.customer.name}"),
+        deal_id=params.get("deal_id"),
+    )
+
+    # Create appointment
+    crm_tool = CRMTool()
+    response = await crm_tool.create_appointment(appointment_data)
+
+    if response.success:
+        return ToolResult(
+            text=f"✅ Termin erfolgreich erstellt (ID: {response.appointment_id})",
+            metadata={"appointment_id": response.appointment_id},
+        )
+    else:
+        logging.error(f"[CRM] Appointment creation failed: {response.message}")
+        return ToolResult(
+            text=f"⚠️ Termin konnte nicht erstellt werden: {response.message}",
+            metadata={},
+        )
+
+
 TOOL_REGISTRY: Dict[str, Callable[[dict, HenkGraphState], Any]] = {
     "rag_tool": _rag_tool,
     "dalle_mood_board": _dalle_tool,
     "dalle_tool": _dalle_tool,
     "mark_favorite_fabric": _mark_favorite_fabric,
     "show_fabric_images": _show_fabric_images,
+    "crm_create_lead": _crm_create_lead,
+    "crm_create_appointment": _crm_create_appointment,
 }
 
 
@@ -439,6 +528,56 @@ async def route_node(state: HenkGraphState) -> HenkGraphState:
         return {"next_step": None, "session_state": session_state}
 
     user_message = _latest_content(state.get("messages", []), "user") or state.get("user_input", "")
+
+    # MOOD BOARD APPROVAL DETECTION
+    # Check if we're in Design HENK phase waiting for mood board approval
+    if (
+        session_state.current_agent == "design_henk"
+        and session_state.mood_image_url
+        and not session_state.image_state.mood_board_approved
+    ):
+        user_message_lower = user_message.lower().strip()
+
+        # Check for approval keywords
+        approval_keywords = [
+            "ja", "yes", "genehmigt", "approved", "perfekt", "perfect",
+            "super", "toll", "gefällt mir", "passt", "ok", "okay",
+            "bestätigt", "confirmed", "genau so", "stimmt",
+        ]
+
+        if any(keyword in user_message_lower for keyword in approval_keywords):
+            # User approved the mood board
+            logger.info("[RouteNode] Mood board approved by user")
+            session_state.image_state.mood_board_approved = True
+            state["session_state"] = session_state
+
+            # Route back to Design HENK to continue with CRM lead creation
+            return {
+                "current_agent": "design_henk",
+                "next_step": HandoffAction(kind="agent", name="design_henk", should_continue=True).model_dump(),
+                "session_state": session_state,
+                "metadata": {"mood_board_approved": True},
+            }
+
+        # Check for rejection/feedback keywords
+        feedback_keywords = [
+            "nein", "no", "nicht", "anders", "ändern", "anpassen",
+            "change", "modify", "andere", "lieber", "stattdessen",
+        ]
+
+        if any(keyword in user_message_lower for keyword in feedback_keywords) or len(user_message) > 20:
+            # User wants changes - store feedback
+            logger.info(f"[RouteNode] Mood board feedback from user: {user_message}")
+            session_state.image_state.mood_board_feedback = user_message
+            state["session_state"] = session_state
+
+            # Route back to Design HENK to regenerate
+            return {
+                "current_agent": "design_henk",
+                "next_step": HandoffAction(kind="agent", name="design_henk", should_continue=True).model_dump(),
+                "session_state": session_state,
+                "metadata": {"mood_board_feedback": user_message},
+            }
 
     decision: SupervisorDecision = await SUPERVISOR.decide_next_step(
         user_message=user_message,
