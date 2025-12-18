@@ -260,6 +260,26 @@ class SupervisorAgent:
             else:
                 logger.info(f"[SupervisorAgent] ❌ No shown_fabric_images in state (empty or None)")
 
+        # Check for REJECTION + NEW COLOR request (e.g., "ne, bitte grün")
+        rejection_keywords = ["ne", "nein", "nicht", "lieber", "besser", "anders", "andere", "stattdessen"]
+        color_keywords = [
+            "rot", "blau", "grün", "grau", "schwarz", "braun", "beige", "weiß",
+            "red", "blue", "green", "grey", "gray", "black", "brown", "beige", "white",
+            "dunkel", "hell", "light", "dark", "marine", "navy", "olive"
+        ]
+
+        has_rejection = any(keyword in text for keyword in rejection_keywords)
+        has_color = any(keyword in text for keyword in color_keywords)
+
+        if state.shown_fabric_images and has_rejection and has_color:
+            logger.info(f"[SupervisorAgent] ✅ Rejection + new color detected: '{text}', routing to HENK1 for new RAG search")
+            return SupervisorDecision(
+                next_destination="henk1",
+                reasoning="Customer rejected shown fabrics and requested different color, need new fabric search",
+                user_message=user_message,
+                confidence=0.90,
+            )
+
         design_phase_active = bool(
             state.favorite_fabric
             or state.henk1_to_design_payload
