@@ -31,6 +31,9 @@ class Customer(BaseModel):
     customer_type: CustomerType = CustomerType.NEW
     has_measurements: bool = False
     crm_lead_id: Optional[str] = Field(None, description="PIPEDRIVE CRM Lead ID")
+    appointment_preferences: Optional[dict] = Field(
+        None, description="Structured appointment data (location, date_preference, etc.)"
+    )
 
 
 class Measurements(BaseModel):
@@ -98,6 +101,15 @@ class ImageGenerationState(BaseModel):
     image_generation_history: list[dict] = Field(
         default_factory=list,
         description="History of all generated images (url, type, timestamp, approved)",
+    )
+    mood_board_iteration_count: int = Field(
+        default=0, description="Number of mood board iterations (max 7)"
+    )
+    mood_board_approved: bool = Field(
+        default=False, description="User has approved the mood board"
+    )
+    mood_board_feedback: Optional[str] = Field(
+        None, description="User feedback for mood board iteration"
     )
 
 

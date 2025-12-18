@@ -422,17 +422,14 @@ class Henk1Agent(BaseAgent):
         """Identify missing Bedarfsermittlung-Infos before Stoffe gezeigt werden."""
         gaps: list[str] = []
 
-        # CRITICAL: Only require colors and timing - occasion and style can be asked AFTER showing fabrics
+        # CRITICAL: Only require colors - timing can be asked AFTER showing fabrics
         if not needs.get("colors"):
             gaps.append("welche Farbe(n) du willst")
-        if not needs.get("timing_hint"):
-            gaps.append("wann du den Anzug brauchst (Termin oder Zeitraum)")
 
-        # Optional: Ask for these AFTER fabrics are shown
-        # if not needs.get("occasion"):
-        #     gaps.append("für welchen Anlass der Anzug gedacht ist")
-        # if not needs.get("style_keywords"):
-        #     gaps.append("ob du es klassisch oder modern magst")
+        # Optional: Timing is nice-to-have but not blocking
+        # Can be asked after fabrics are shown
+        # if not needs.get("timing_hint"):
+        #     gaps.append("wann du den Anzug brauchst (Termin oder Zeitraum)")
 
         return gaps
 

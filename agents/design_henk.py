@@ -86,27 +86,19 @@ class DesignHenkAgent(BaseAgent):
 
     async def process(self, state: SessionState) -> AgentDecision:
         """
-        Process design preferences and lead securing.
+        Process design preferences and lead securing with mood board iteration loop.
+
+        Flow:
+        1. Collect design preferences
+        2. Generate mood board
+        3. Wait for user approval or feedback
+        4. Iterate up to 7 times based on feedback
+        5. After approval: Create CRM lead and schedule appointment
+        6. Handoff to LASERHENK
 
         Returns:
             AgentDecision with next steps
         """
-        # Hier würde die LLM-Logik für Design-Abfrage stehen
-        # Für jetzt: Struktur-Placeholder
-
-        # Check if we need to query RAG for design options
-        # DISABLED: Design RAG not implemented yet, skip for now
-        # if not state.design_rag_queried:
-        #     return AgentDecision(
-        #         next_agent="design_henk",
-        #         message="Querying RAG for design options",
-        #         action="rag_tool",  # FIXED: was "query_rag"
-        #         action_params={
-        #             "query": "Design options: Revers, Futter, Schulter, Bund"
-        #         },
-        #         should_continue=True,
-        #     )
-
         # TEMPORARY: Mark as queried to skip infinite loop
         if not state.design_rag_queried:
             state.design_rag_queried = True
@@ -137,55 +129,167 @@ class DesignHenkAgent(BaseAgent):
                 should_continue=False,
             )
 
-        # Generate mood image with DALLE
-        if not state.mood_image_url:
-            logger.info("[DesignHenkAgent] Triggering DALL-E image generation")
+        # Check if we have a CRM lead (real Pipedrive OR mock for development)
+        # CRITICAL: MOCK leads are acceptable to prevent infinite loop
+        has_crm_lead = (
+            state.customer.crm_lead_id
+            and not state.customer.crm_lead_id.startswith("HENK1_LEAD")  # Only exclude provisional HENK1 leads
+        )
 
-            # Prepare fabric data from HENK1 payload or RAG context
-            fabric_data = self._extract_fabric_data(state)
+        # MOOD BOARD ITERATION LOOP (Max 7 iterations)
+        # Check if mood board needs to be generated or re-generated
+        if not state.image_state.mood_board_approved:
+            # Check if we've hit the iteration limit
+            if state.image_state.mood_board_iteration_count >= 7:
+                logger.warning("[DesignHenk] Max iterations (7) reached for mood board")
+                # Force approval and continue
+                state.image_state.mood_board_approved = True
+                return AgentDecision(
+                    next_agent=None,
+                    message="Ich verstehe, dass das Moodbild noch nicht perfekt ist. "
+                           "Wir haben das Maximum an Iterationen erreicht, aber keine Sorge - "
+                           "beim persönlichen Termin können wir alle Details noch genau besprechen!\n\n"
+                           "Lass uns jetzt mit der Terminvereinbarung fortfahren.",
+                    action=None,
+                    should_continue=False,
+                )
 
-            # Prepare design preferences
-            design_prefs = {
-                "revers_type": state.design_preferences.revers_type,
-                "shoulder_padding": state.design_preferences.shoulder_padding,
-                "waistband_type": state.design_preferences.waistband_type,
-            }
+            # Generate or re-generate mood board
+            if not state.mood_image_url or state.image_state.mood_board_feedback:
+                logger.info(f"[DesignHenk] Generating mood board (iteration {state.image_state.mood_board_iteration_count + 1}/7)")
 
-            # Extract style keywords
-            style_keywords = self._extract_style_keywords(state)
+                # Increment iteration counter
+                state.image_state.mood_board_iteration_count += 1
 
+                # Prepare fabric data from HENK1 payload or RAG context
+                fabric_data = self._extract_fabric_data(state)
+
+                # Prepare design preferences
+                design_prefs = {
+                    "revers_type": state.design_preferences.revers_type,
+                    "shoulder_padding": state.design_preferences.shoulder_padding,
+                    "waistband_type": state.design_preferences.waistband_type,
+                }
+
+                # Extract style keywords
+                style_keywords = self._extract_style_keywords(state)
+
+                # Include user feedback in prompt if available
+                if state.image_state.mood_board_feedback:
+                    logger.info(f"[DesignHenk] Incorporating user feedback: {state.image_state.mood_board_feedback}")
+
+                    # CRITICAL FIX: Parse feedback and update design_preferences + state
+                    updated_prefs, state_updates = self._parse_feedback_and_update_preferences(
+                        state.image_state.mood_board_feedback,
+                        design_prefs,
+                        state
+                    )
+
+                    # Log what was parsed
+                    logger.info(f"[DesignHenk] Parsed design_prefs updates: {updated_prefs}")
+                    logger.info(f"[DesignHenk] Parsed state updates: {state_updates}")
+
+                    design_prefs.update(updated_prefs)
+
+                    # Also update the session state with parsed preferences
+                    for key, value in updated_prefs.items():
+                        setattr(state.design_preferences, key, value)
+                        logger.info(f"[DesignHenk] Updated design_preferences.{key} = {value}")
+
+                    # Apply state-level updates (like wants_vest)
+                    for key, value in state_updates.items():
+                        setattr(state, key, value)
+                        logger.info(f"[DesignHenk] Updated state.{key} = {value}")
+
+                    # Add feedback to style keywords for additional context
+                    style_keywords.append(f"User feedback: {state.image_state.mood_board_feedback}")
+                    # Clear feedback after incorporating
+                    state.image_state.mood_board_feedback = None
+
+                iteration_msg = f"(Iteration {state.image_state.mood_board_iteration_count}/7)" if state.image_state.mood_board_iteration_count > 1 else ""
+
+                return AgentDecision(
+                    next_agent=None,
+                    message=f"Generiere Ihr Outfit-Moodbild {iteration_msg}...",
+                    action="dalle_tool",
+                    action_params={
+                        "prompt_type": "outfit_visualization",
+                        "fabric_data": fabric_data.model_dump(exclude_none=True),
+                        "design_preferences": design_prefs,
+                        "style_keywords": style_keywords,
+                        "session_id": state.session_id,
+                    },
+                    should_continue=True,
+                )
+
+            # Mood board generated, waiting for user approval
+            if state.mood_image_url and not state.image_state.mood_board_approved:
+                iterations_left = 7 - state.image_state.mood_board_iteration_count
+                return AgentDecision(
+                    next_agent=None,
+                    message=f"Hier ist Ihr Moodbild für den maßgeschneiderten Anzug! 👔\n\n"
+                           f"**Gefällt Ihnen die Richtung?**\n\n"
+                           f"✅ Wenn ja, sagen Sie 'Ja', 'Genehmigt' oder 'Perfekt'\n"
+                           f"🔄 Wenn Sie Änderungen wünschen, beschreiben Sie einfach, was anders sein soll\n\n"
+                           f"Sie können noch bis zu {iterations_left} Änderungen vornehmen.",
+                    action=None,
+                    should_continue=False,
+                )
+
+        # MOOD BOARD APPROVED - Check email before CRM lead creation
+        if state.image_state.mood_board_approved and not has_crm_lead:
+            logger.info("[DesignHenk] Mood board approved")
+
+            # Mark approved image in design preferences
+            if state.mood_image_url:
+                state.design_preferences.approved_image = state.mood_image_url
+
+            # CRITICAL: Email is mandatory for CRM lead creation
+            if not state.customer.email:
+                logger.info("[DesignHenk] Email missing, requesting from user")
+                return AgentDecision(
+                    next_agent=None,
+                    message="Perfekt! 🎉\n\n"
+                           "Um Ihre Daten zu sichern und den Termin vorzubereiten, "
+                           "benötige ich noch Ihre **E-Mail-Adresse**.\n\n"
+                           "Bitte geben Sie Ihre E-Mail ein:",
+                    action=None,
+                    should_continue=False,
+                )
+
+            # Email vorhanden, proceed to CRM lead creation
+            logger.info("[DesignHenk] Email present, creating CRM lead")
             return AgentDecision(
                 next_agent=None,
-                message="Generiere Ihr Outfit-Moodbild...",
-                action="dalle_tool",  # FIXED: was "generate_image", must match TOOL_REGISTRY
+                message="Perfekt! Ich sichere jetzt Ihre Daten und bereite die Terminvereinbarung vor...",
+                action="crm_create_lead",
                 action_params={
-                    "prompt_type": "outfit_visualization",
-                    "fabric_data": fabric_data.model_dump(exclude_none=True),  # Convert to dict, exclude None values
-                    "design_preferences": design_prefs,
-                    "style_keywords": style_keywords,
                     "session_id": state.session_id,
+                    "customer_name": state.customer.name or "Interessent",
+                    "customer_email": state.customer.email,
+                    "customer_phone": state.customer.phone or "",
+                    "mood_image_url": state.mood_image_url,
                 },
                 should_continue=True,
             )
 
-        # Mandatory: Leadsicherung mit CRM**
-        if not state.customer.crm_lead_id:
-            # TODO: Replace with actual CRM API call
-            # For now: Mock CRM ID to prevent infinite loop
-            state.customer.crm_lead_id = f"MOCK_CRM_{state.session_id[:8]}"
-
+        # Design phase complete → hand back to supervisor
+        # Only proceed if we have a CRM lead (real or mock)
+        if has_crm_lead:
             return AgentDecision(
                 next_agent=None,
-                message="Lead secured in CRM (mock)",
-                action=None,
+                message="✅ Design-Phase abgeschlossen!\n\n"
+                       "Als nächstes vereinbaren wir einen Termin mit Henning für die Maßerfassung. "
+                       "Bevorzugen Sie einen Termin bei Ihnen zu Hause oder im Büro?",
+                action="complete_design_phase",
                 should_continue=False,
             )
 
-        # Design phase complete → hand back to supervisor
+        # Fallback
         return AgentDecision(
             next_agent=None,
-            message="Design phase complete, lead secured",
-            action="complete_design_phase",
+            message="Design phase in progress...",
+            action=None,
             should_continue=False,
         )
 
@@ -297,3 +401,83 @@ class DesignHenkAgent(BaseAgent):
 
         logger.info(f"[DesignHenkAgent] Extracted style keywords: {keywords}")
         return keywords
+
+    def _parse_feedback_and_update_preferences(
+        self, feedback: str, current_prefs: dict, state: SessionState
+    ) -> tuple[dict, dict]:
+        """
+        Parse user feedback and extract design preference changes.
+
+        Args:
+            feedback: User feedback text
+            current_prefs: Current design preferences dict
+            state: Session state for state-level updates
+
+        Returns:
+            Tuple of (design_prefs_updates, state_updates)
+        """
+        feedback_lower = feedback.lower()
+        updates = {}
+        state_updates = {}
+
+        # Parse lapel/revers type (RAG Spezifikationen)
+        if any(word in feedback_lower for word in ["spitzfacon", "spitz facon"]):
+            updates["revers_type"] = "Spitzfacon"
+            logger.info("[DesignHenk] Parsed feedback: revers_type = Spitzfacon")
+        elif any(word in feedback_lower for word in ["fallendes facon", "fallend facon", "fallendes revers", "fallend revers", "falling lapel"]):
+            updates["revers_type"] = "fallendes Facon"
+            logger.info("[DesignHenk] Parsed feedback: revers_type = fallendes Facon")
+        elif any(word in feedback_lower for word in ["stehkragen", "stand collar", "mandarin"]):
+            updates["revers_type"] = "Stehkragen"
+            logger.info("[DesignHenk] Parsed feedback: revers_type = Stehkragen")
+        elif any(word in feedback_lower for word in ["ohne revers", "no lapel", "kein revers"]):
+            updates["revers_type"] = "Ohne Revers"
+            logger.info("[DesignHenk] Parsed feedback: revers_type = Ohne Revers")
+        elif any(word in feedback_lower for word in ["schalkragen", "shawl collar", "schal"]):
+            updates["revers_type"] = "Schalkragen"
+            logger.info("[DesignHenk] Parsed feedback: revers_type = Schalkragen")
+        elif any(word in feedback_lower for word in ["dinner jacket", "smoking", "tuxedo"]):
+            updates["revers_type"] = "Dinner Jacket"
+            logger.info("[DesignHenk] Parsed feedback: revers_type = Dinner Jacket")
+        elif any(word in feedback_lower for word in ["normales revers", "normal lapel", "klassisches revers", "stegrevers"]):
+            updates["revers_type"] = "Stegrevers"
+            logger.info("[DesignHenk] Parsed feedback: revers_type = Stegrevers")
+        elif any(word in feedback_lower for word in ["spitzrevers", "peak lapel"]):
+            updates["revers_type"] = "Spitzrevers"
+            logger.info("[DesignHenk] Parsed feedback: revers_type = Spitzrevers")
+
+        # Parse shoulder padding
+        if any(word in feedback_lower for word in ["keine schulter", "no shoulder", "ohne polster", "ungepolstert"]):
+            updates["shoulder_padding"] = "keine"
+            logger.info("[DesignHenk] Parsed feedback: shoulder_padding = keine")
+        elif any(word in feedback_lower for word in ["leichte schulter", "light shoulder", "wenig polster"]):
+            updates["shoulder_padding"] = "leicht"
+            logger.info("[DesignHenk] Parsed feedback: shoulder_padding = leicht")
+        elif any(word in feedback_lower for word in ["mittlere schulter", "medium shoulder", "mittel"]):
+            updates["shoulder_padding"] = "mittel"
+            logger.info("[DesignHenk] Parsed feedback: shoulder_padding = mittel")
+        elif any(word in feedback_lower for word in ["starke schulter", "strong shoulder", "stark gepolstert"]):
+            updates["shoulder_padding"] = "stark"
+            logger.info("[DesignHenk] Parsed feedback: shoulder_padding = stark")
+
+        # Parse waistband type
+        if any(word in feedback_lower for word in ["bundfalte", "pleated", "mit falte", "falten"]):
+            updates["waistband_type"] = "bundfalte"
+            logger.info("[DesignHenk] Parsed feedback: waistband_type = bundfalte")
+        elif any(word in feedback_lower for word in ["glatt", "flat front", "ohne falte", "keine falte"]):
+            updates["waistband_type"] = "glatt"
+            logger.info("[DesignHenk] Parsed feedback: waistband_type = glatt")
+
+        # Parse vest preference (state-level update)
+        if any(word in feedback_lower for word in ["ohne weste", "no vest", "kein weste", "zweiteiler", "two-piece"]):
+            state_updates["wants_vest"] = False
+            logger.info("[DesignHenk] Parsed feedback: wants_vest = False (NO VEST)")
+        elif any(word in feedback_lower for word in ["mit weste", "with vest", "dreiteiler", "three-piece"]):
+            state_updates["wants_vest"] = True
+            logger.info("[DesignHenk] Parsed feedback: wants_vest = True (WITH VEST)")
+
+        # Log if no updates were parsed
+        if not updates and not state_updates:
+            logger.info(f"[DesignHenk] No specific design preferences parsed from feedback: {feedback}")
+
+        return updates, state_updates

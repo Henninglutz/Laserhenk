@@ -7,6 +7,8 @@ from typing import Any, Callable, Dict, Optional
 
 from pydantic import BaseModel, Field
 
+logger = logging.getLogger(__name__)
+
 from agents.design_henk import DesignHenkAgent
 from agents.henk1 import Henk1Agent
 from agents.laserhenk import LaserHenkAgent
@@ -146,9 +148,10 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
         pattern = fabric_dict.get("pattern") or "Uni"
         composition = fabric_dict.get("composition") or "Hochwertige Wollmischung"
         supplier = fabric_dict.get("supplier") or "Formens"
+        weight = fabric_dict.get("weight_g_m2")  # Grammatur
 
         # Log extracted data for debugging
-        logging.info(f"[RAG] Building fabric_image for {fabric_code}: name={name!r}, color={color!r}, pattern={pattern!r}")
+        logging.info(f"[RAG] Building fabric_image for {fabric_code}: name={name!r}, color={color!r}, pattern={pattern!r}, weight={weight}")
 
         fabric_images.append(
             {
@@ -159,9 +162,10 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
                 "pattern": pattern,
                 "composition": composition,
                 "supplier": supplier,
+                "weight_g_m2": weight,
             }
         )
-        if len(fabric_images) >= 2:
+        if len(fabric_images) >= 5:  # Show 5 fabrics
             break
 
     if hasattr(session_state, "shown_fabric_images"):
@@ -183,11 +187,12 @@ async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
 
     formatted = "**Passende Stoffe für dich:**\n\n" + "".join(
         (
-            f"{idx}. {getattr(rec.fabric, 'name', None) or 'Hochwertiger Stoff'} "
-            f"(Code: {getattr(rec.fabric, 'fabric_code', None)}) - "
-            f"Farbe: {getattr(rec.fabric, 'color', None) or 'Klassisch'}, "
-            f"Muster: {getattr(rec.fabric, 'pattern', None) or 'Uni'}, "
-            f"Material: {getattr(rec.fabric, 'composition', None) or 'Edle Wollmischung'}\n"
+            f"{idx}. **{getattr(rec.fabric, 'name', None) or 'Hochwertiger Stoff'}** "
+            f"(Ref: {getattr(rec.fabric, 'fabric_code', None)})\n"
+            f"   • Farbe: {getattr(rec.fabric, 'color', None) or 'Klassisch'}\n"
+            f"   • Muster: {getattr(rec.fabric, 'pattern', None) or 'Uni'}\n"
+            f"   • Material: {getattr(rec.fabric, 'composition', None) or 'Edle Wollmischung'}\n"
+            f"   • Grammatur: {getattr(rec.fabric, 'weight_g_m2', None) or 'N/A'} g/m²\n\n"
         )
         for idx, rec in enumerate(recommendations[:5], 1)
     )
@@ -216,8 +221,16 @@ async def _dalle_tool(params: dict, state: HenkGraphState) -> ToolResult:
     prompt_type = params.get("prompt_type", "outfit_visualization")
     session_id = params.get("session_id", session_state.session_id)
 
+    # Add vest preference from session state to design_prefs
+    if hasattr(session_state, 'wants_vest') and session_state.wants_vest is not None:
+        design_prefs["wants_vest"] = session_state.wants_vest
+        logging.info(f"[DALLE Tool] Added wants_vest={session_state.wants_vest} to design_prefs")
+    else:
+        logging.info(f"[DALLE Tool] wants_vest not set: hasattr={hasattr(session_state, 'wants_vest')}, value={getattr(session_state, 'wants_vest', None)}")
+
     # Log for debugging
     logging.info(f"[DALLE Tool] Using fabric_data: {fabric_data.model_dump(exclude_none=True)}")
+    logging.info(f"[DALLE Tool] Final design_prefs: {design_prefs}")
 
     # OPTION 1: Use fabric image for composite (if available)
     if fabric_data.image_url and prompt_type == "outfit_visualization":
@@ -312,6 +325,14 @@ def _build_outfit_prompt(fabric_data: "SelectedFabricData", design_prefs: dict, 
     revers = design_prefs.get("revers_type", "klassisches Revers")
     shoulder = design_prefs.get("shoulder_padding", "mittlere Schulterpolsterung")
     waistband = design_prefs.get("waistband_type", "klassische Bundfalte")
+    wants_vest = design_prefs.get("wants_vest")
+
+    # Build vest instruction
+    vest_instruction = ""
+    if wants_vest is False:
+        vest_instruction = "\n- Configuration: TWO-PIECE suit (jacket and trousers ONLY, NO vest/waistcoat)"
+    elif wants_vest is True:
+        vest_instruction = "\n- Configuration: THREE-PIECE suit (jacket, vest, and trousers)"
 
     # Build style description
     style = ", ".join(style_keywords) if style_keywords else "elegant, maßgeschneidert"
@@ -330,11 +351,13 @@ The suit should be made from this exact fabric: {fabric_desc}.
 SUIT DESIGN:
 - Lapel style: {revers}
 - Shoulder: {shoulder}
-- Trouser waistband: {waistband}
+- Trouser waistband: {waistband}{vest_instruction}
 
 STYLE: {style}, sophisticated, high-quality menswear photography.
 
 COMPOSITION: Professional fashion photography, clean background, natural lighting, focus on fabric detail and suit construction quality.
+
+IMPORTANT: Realistic photograph only - NOT illustration, NOT drawing, NOT sketch. High-quality professional photography with photorealistic details and natural lighting.
 
 NOTE: Accurately represent the fabric color ({color}) and pattern ({pattern}) in the visualization."""
 
@@ -411,12 +434,107 @@ async def _show_fabric_images(params: dict, state: HenkGraphState) -> ToolResult
     return ToolResult(text=message, metadata={"fabric_images": fabrics_with_images})
 
 
+async def _crm_create_lead(params: dict, state: HenkGraphState) -> ToolResult:
+    """Create CRM lead in Pipedrive."""
+    from tools.crm_tool import CRMTool
+    from models.tools import CRMLeadCreate
+
+    session_state = _session_state(state)
+
+    # Extract customer data
+    customer_name = params.get("customer_name") or session_state.customer.name or "Interessent"
+    customer_email = params.get("customer_email") or session_state.customer.email
+    customer_phone = params.get("customer_phone") or session_state.customer.phone
+
+    # Prepare lead data
+    lead_data = CRMLeadCreate(
+        customer_name=customer_name,
+        email=customer_email,
+        phone=customer_phone,
+        notes=f"Mood board: {params.get('mood_image_url', 'N/A')}",
+        deal_value=2000.0,  # Default suit value, can be adjusted
+    )
+
+    # Create lead
+    crm_tool = CRMTool()
+    response = await crm_tool.create_lead(lead_data)
+
+    if response.success:
+        # Store CRM lead ID in session state
+        session_state.customer.crm_lead_id = response.lead_id
+        state["session_state"] = session_state
+
+        return ToolResult(
+            text=f"✅ Lead erfolgreich im CRM gesichert (ID: {response.lead_id})",
+            metadata={"crm_lead_id": response.lead_id, "deal_id": response.deal_id},
+        )
+    else:
+        # CRITICAL FIX: Create MOCK lead to prevent infinite loop when Pipedrive is not configured
+        logging.warning(f"[CRM] Lead creation failed: {response.message} - Creating MOCK lead to prevent infinite loop")
+        session_id = params.get("session_id", "unknown")
+        mock_lead_id = f"MOCK_CRM_{session_id[:8]}"
+        session_state.customer.crm_lead_id = mock_lead_id
+        state["session_state"] = session_state
+
+        return ToolResult(
+            text=f"✅ Lead gesichert (Dev-Modus: {mock_lead_id})\n\n"
+                 f"💡 Hinweis: Pipedrive CRM ist nicht konfiguriert. "
+                 f"Bitte PIPEDRIVE_API_KEY in .env setzen für echte Lead-Erstellung.",
+            metadata={"crm_lead_id": mock_lead_id, "mock": True, "error": response.message},
+        )
+
+
+async def _crm_create_appointment(params: dict, state: HenkGraphState) -> ToolResult:
+    """Create appointment in Pipedrive."""
+    from tools.crm_tool import CRMTool
+    from models.tools import CRMAppointmentCreate
+
+    session_state = _session_state(state)
+
+    # Ensure CRM lead exists
+    if not session_state.customer.crm_lead_id:
+        return ToolResult(
+            text="Fehler: CRM Lead muss zuerst erstellt werden",
+            metadata={},
+        )
+
+    # Extract appointment data
+    appointment_data = CRMAppointmentCreate(
+        person_id=session_state.customer.crm_lead_id,
+        subject=params.get("subject", "Maßerfassung für maßgeschneiderten Anzug"),
+        due_date=params.get("due_date"),
+        due_time=params.get("due_time", "14:00"),
+        duration=params.get("duration", "01:30"),
+        location=params.get("location"),
+        note=params.get("note", f"Kunde: {session_state.customer.name}"),
+        deal_id=params.get("deal_id"),
+    )
+
+    # Create appointment
+    crm_tool = CRMTool()
+    response = await crm_tool.create_appointment(appointment_data)
+
+    if response.success:
+        return ToolResult(
+            text=f"✅ Termin erfolgreich erstellt (ID: {response.appointment_id})",
+            metadata={"appointment_id": response.appointment_id},
+        )
+    else:
+        logging.error(f"[CRM] Appointment creation failed: {response.message}")
+        return ToolResult(
+            text=f"⚠️ Termin konnte nicht erstellt werden: {response.message}",
+            metadata={},
+        )
+
+
 TOOL_REGISTRY: Dict[str, Callable[[dict, HenkGraphState], Any]] = {
     "rag_tool": _rag_tool,
     "dalle_mood_board": _dalle_tool,
     "dalle_tool": _dalle_tool,
     "mark_favorite_fabric": _mark_favorite_fabric,
     "show_fabric_images": _show_fabric_images,
+    "crm_create_lead": _crm_create_lead,
+    "crm_create_appointment": _crm_create_appointment,
 }
 
 
@@ -439,6 +557,200 @@ async def route_node(state: HenkGraphState) -> HenkGraphState:
         return {"next_step": None, "session_state": session_state}
 
     user_message = _latest_content(state.get("messages", []), "user") or state.get("user_input", "")
+
+    # EMAIL DETECTION (highest priority - needed for CRM lead creation)
+    import re
+    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    email_match = re.search(email_pattern, user_message)
+    if email_match and not session_state.customer.email:
+        email = email_match.group(0)
+        session_state.customer.email = email
+        state["session_state"] = session_state
+        logger.info(f"[RouteNode] Email detected and stored: {email}")
+
+        # If we're in design_henk waiting for email, route back to design_henk
+        if session_state.current_agent == "design_henk":
+            return {
+                "current_agent": "design_henk",
+                "next_step": HandoffAction(kind="agent", name="design_henk", should_continue=True).model_dump(),
+                "session_state": session_state,
+                "metadata": {"email_captured": email},
+            }
+
+    # FABRIC FEEDBACK DETECTION
+    # Check if we're in HENK1 phase and fabrics were shown but no favorite selected yet
+    if (
+        session_state.current_agent == "henk1"
+        and session_state.henk1_fabrics_shown
+        and not session_state.favorite_fabric
+        and len(session_state.shown_fabric_images) > 0
+    ):
+        user_message_lower = user_message.lower().strip()
+
+        # Check for fabric feedback keywords (color/pattern changes)
+        fabric_feedback_keywords = [
+            "zu hell", "zu dunkel", "heller", "dunkler", "andere farbe",
+            "anderes muster", "einfarbig", "gemustert", "uni", "kariert",
+            "gestreift", "anders", "nicht passend", "andere stoffe",
+        ]
+
+        if any(keyword in user_message_lower for keyword in fabric_feedback_keywords):
+            logger.info(f"[RouteNode] Fabric feedback detected: {user_message}")
+            # Reset fabric shown flag to allow new RAG search
+            session_state.henk1_fabrics_shown = False
+            state["session_state"] = session_state
+
+            # Route back to HENK1 with RAG tool action
+            return {
+                "current_agent": "henk1",
+                "next_step": HandoffAction(
+                    kind="tool",
+                    name="rag_tool",
+                    params={"query": user_message, "colors": [], "patterns": []},
+                    should_continue=True,
+                    return_to_agent="henk1",
+                ).model_dump(),
+                "session_state": session_state,
+                "metadata": {"fabric_feedback": user_message},
+            }
+
+    # MOOD BOARD APPROVAL DETECTION
+    # Check if we're in Design HENK phase waiting for mood board approval
+    if (
+        session_state.current_agent == "design_henk"
+        and session_state.mood_image_url
+        and not session_state.image_state.mood_board_approved
+    ):
+        user_message_lower = user_message.lower().strip()
+
+        # Check for approval keywords
+        approval_keywords = [
+            "ja", "yes", "genehmigt", "approved", "perfekt", "perfect",
+            "super", "toll", "gefällt mir", "passt", "ok", "okay",
+            "bestätigt", "confirmed", "genau so", "stimmt",
+        ]
+
+        if any(keyword in user_message_lower for keyword in approval_keywords):
+            # User approved the mood board
+            logger.info("[RouteNode] Mood board approved by user")
+            session_state.image_state.mood_board_approved = True
+            state["session_state"] = session_state
+
+            # Route back to Design HENK to continue with CRM lead creation
+            return {
+                "current_agent": "design_henk",
+                "next_step": HandoffAction(kind="agent", name="design_henk", should_continue=True).model_dump(),
+                "session_state": session_state,
+                "metadata": {"mood_board_approved": True},
+            }
+
+        # Check for rejection/feedback keywords
+        feedback_keywords = [
+            "nein", "no", "nicht", "anders", "ändern", "anpassen",
+            "change", "modify", "andere", "lieber", "stattdessen",
+        ]
+
+        if any(keyword in user_message_lower for keyword in feedback_keywords) or len(user_message) > 20:
+            # User wants changes - store feedback
+            logger.info(f"[RouteNode] Mood board feedback from user: {user_message}")
+            session_state.image_state.mood_board_feedback = user_message
+            state["session_state"] = session_state
+
+            # Route back to Design HENK to regenerate
+            return {
+                "current_agent": "design_henk",
+                "next_step": HandoffAction(kind="agent", name="design_henk", should_continue=True).model_dump(),
+                "session_state": session_state,
+                "metadata": {"mood_board_feedback": user_message},
+            }
+
+    # APPOINTMENT LOCATION DETECTION
+    # Check if we're asking about appointment location and have CRM lead (real or mock)
+    if (
+        session_state.customer.crm_lead_id
+        and not session_state.customer.crm_lead_id.startswith("HENK1_LEAD")  # Only exclude provisional leads
+        and not session_state.customer.appointment_preferences
+    ):
+        user_message_lower = user_message.lower().strip()
+
+        # Check for location keywords
+        location = None
+        if any(word in user_message_lower for word in ["zu hause", "zuhause", "daheim", "bei mir", "home", "bei mir zu hause"]):
+            location = "Kunde zu Hause"
+        elif any(word in user_message_lower for word in ["büro", "office", "arbeit", "firma", "im büro", "ins büro"]):
+            location = "Im Büro"
+
+        if location:
+            logger.info(f"[RouteNode] Appointment location detected: {location}")
+            # Store appointment preferences
+            session_state.customer.appointment_preferences = {
+                "location": location,
+                "notes": "Henning bringt Stoffmuster mit zur Maßerfassung",
+            }
+            state["session_state"] = session_state
+
+            # Generate summary message
+            fabric_info = session_state.favorite_fabric or {}
+            fabric_name = fabric_info.get("name", "Ausgewählter Stoff")
+            fabric_code = fabric_info.get("fabric_code", "N/A")
+            fabric_color = fabric_info.get("color", "")
+            fabric_pattern = fabric_info.get("pattern", "")
+            fabric_composition = fabric_info.get("composition", "")
+
+            # Extract customer info
+            customer_name = session_state.customer.name or "Interessent"
+            customer_email = session_state.customer.email or "Noch nicht angegeben"
+            customer_phone = session_state.customer.phone or "Noch nicht angegeben"
+
+            # CRM Lead info
+            crm_lead_id = session_state.customer.crm_lead_id or "N/A"
+            is_mock = crm_lead_id.startswith("MOCK_CRM")
+
+            # Vest preference
+            vest_text = "Zweiteiler (ohne Weste)" if session_state.wants_vest is False else "Dreiteiler (mit Weste)" if session_state.wants_vest is True else "Zweiteiler"
+
+            summary_message = f"""✅ **Perfekt! Hier ist Ihre Zusammenfassung:**
+
+📋 **Ihr maßgeschneiderter Anzug**
+━━━━━━━━━━━━━━━━━━━━━━
+
+**Stoff:**
+• {fabric_name} (Ref: {fabric_code})
+• Farbe: {fabric_color}
+• Muster: {fabric_pattern}
+• Material: {fabric_composition}
+
+**Design:**
+• Revers: {session_state.design_preferences.revers_type or 'Spitzrevers'}
+• Schulter: {session_state.design_preferences.shoulder_padding or 'mittel'} Polsterung
+• Hosenbund: {session_state.design_preferences.waistband_type or 'Bundfalte'}
+• Konfiguration: {vest_text}
+
+**Anlass:** {getattr(session_state.henk1_to_design_payload, 'occasion', None) or 'Business'}
+
+👤 **Kundendaten für Henning:**
+• Name: {customer_name}
+• E-Mail: {customer_email}
+• Telefon: {customer_phone}
+• CRM Lead: {crm_lead_id}{'  (Dev-Modus)' if is_mock else ''}
+
+📍 **Nächster Schritt: Maßerfassung mit Henning**
+• Ort: {location}
+• Henning bringt Stoffmuster mit
+• Dauer: ca. 30-45 Minuten
+
+Ich bestätige Ihren Termin und sende Ihnen alle Details per E-Mail zu."""
+
+            messages = list(state.get("messages", []))
+            messages.append({"role": "assistant", "content": summary_message, "sender": "design_henk"})
+
+            return {
+                "messages": messages,
+                "session_state": session_state,
+                "awaiting_user_input": True,
+                "next_step": None,
+                "metadata": {"appointment_confirmed": True, "location": location},
+            }
 
     decision: SupervisorDecision = await SUPERVISOR.decide_next_step(
         user_message=user_message,
