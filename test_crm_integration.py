@@ -189,13 +189,16 @@ async def main():
     # Test 2: Initialization
     crm_tool = await test_crm_tool_initialization()
 
-    # Test 3: MOCK lead
+    # Test 3: MOCK lead (MUST run before real API tests to avoid side effects)
     await test_lead_creation_without_api()
 
-    # Test 4: Real lead (if API key configured)
+    # Test 4 & 5: Real lead tests (if API key configured)
+    # NOTE: We need to re-initialize CRMTool after Test 3 removed the API key
     if has_api_key:
-        await test_lead_creation_with_api(crm_tool)
-        await test_duplicate_detection(crm_tool)
+        # Re-create CRMTool with API key restored
+        crm_tool_with_api = CRMTool()
+        await test_lead_creation_with_api(crm_tool_with_api)
+        await test_duplicate_detection(crm_tool_with_api)
     else:
         print("\n" + "="*60)
         print("⚠️  Real Pipedrive tests skipped (no API key)")
