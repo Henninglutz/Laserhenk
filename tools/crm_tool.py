@@ -114,6 +114,14 @@ class CRMTool:
                 message='Pipedrive API key not configured',
             )
 
+        # Validate email (required for Pipedrive person creation)
+        if not lead_data.email:
+            return CRMLeadResponse(
+                lead_id='no_email',
+                success=False,
+                message='Email ist erforderlich für CRM Lead-Erstellung',
+            )
+
         try:
             # Check if person exists
             person = self.client.get_person_by_email(lead_data.email)

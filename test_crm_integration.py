@@ -135,10 +135,46 @@ async def test_lead_creation_with_api(crm_tool: CRMTool):
         print(f"❌ ERROR: {e}")
 
 
-async def test_duplicate_detection(crm_tool: CRMTool):
-    """Test 5: Duplicate email detection."""
+async def test_email_validation(crm_tool: CRMTool):
+    """Test 5: Email validation (missing email)."""
     print("\n" + "="*60)
-    print("TEST 5: Duplicate Detection")
+    print("TEST 5: Email Validation")
+    print("="*60)
+
+    if not crm_tool.client:
+        print("⏭️  SKIPPED: No API key configured")
+        return
+
+    # Try to create lead without email
+    lead_data = CRMLeadCreate(
+        customer_name="No Email User",
+        email=None,  # ← No email!
+        phone="+49 123 456789",
+        deal_value=1000.0,
+    )
+
+    print(f"Creating lead WITHOUT email: {lead_data.customer_name}")
+
+    try:
+        response = await crm_tool.create_lead(lead_data)
+        print(f"Success: {response.success}")
+        print(f"Lead ID: {response.lead_id}")
+        print(f"Message: {response.message}")
+
+        # Email validation should reject the request
+        assert not response.success, "Expected success=False for missing email"
+        assert response.lead_id == "no_email", f"Expected lead_id='no_email', got '{response.lead_id}'"
+
+        print("✅ Email validation works - lead creation rejected without email")
+
+    except Exception as e:
+        print(f"❌ Unexpected exception: {type(e).__name__}: {e}")
+
+
+async def test_duplicate_detection(crm_tool: CRMTool):
+    """Test 6: Duplicate email detection."""
+    print("\n" + "="*60)
+    print("TEST 6: Duplicate Detection")
     print("="*60)
 
     if not crm_tool.client:
@@ -192,12 +228,13 @@ async def main():
     # Test 3: MOCK lead (MUST run before real API tests to avoid side effects)
     await test_lead_creation_without_api()
 
-    # Test 4 & 5: Real lead tests (if API key configured)
+    # Test 4-6: Real lead tests (if API key configured)
     # NOTE: We need to re-initialize CRMTool after Test 3 removed the API key
     if has_api_key:
         # Re-create CRMTool with API key restored
         crm_tool_with_api = CRMTool()
         await test_lead_creation_with_api(crm_tool_with_api)
+        await test_email_validation(crm_tool_with_api)
         await test_duplicate_detection(crm_tool_with_api)
     else:
         print("\n" + "="*60)
