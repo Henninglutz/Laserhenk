@@ -93,6 +93,15 @@ class DesignHenkAgent(BaseAgent):
         """Initialize Design HENK Agent."""
         super().__init__("design_henk")
 
+        # Initialize OpenAI client for LLM conversations
+        self.client = None
+        if AsyncOpenAI is not None and os.environ.get("OPENAI_API_KEY"):
+            try:
+                self.client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+                logger.info("[DesignHenk] ✅ OpenAI client initialized")
+            except Exception as exc:
+                logger.warning("[DesignHenk] OpenAI client initialization failed: %s", exc)
+
     async def process(self, state: SessionState) -> AgentDecision:
         """
         Process design preferences and lead securing with mood board iteration loop.
@@ -120,20 +129,20 @@ class DesignHenkAgent(BaseAgent):
         )
 
         if not preferences_complete:
-            # TODO: Replace with actual LLM conversation to collect preferences
-            # For now: Mock data to prevent infinite loop
+            # Use LLM for flexible conversation about design preferences
+            llm_response = await self._process_with_llm(
+                state,
+                context_message="Der Kunde hat einen Stoff ausgewählt. Frage jetzt nach Design-Präferenzen (Revers, Schultern, Hosenbund)."
+            )
+
+            # Set default values to prevent infinite loop (will be overridden by user feedback)
             state.design_preferences.revers_type = "Spitzrevers"
             state.design_preferences.shoulder_padding = "mittel"
             state.design_preferences.waistband_type = "bundfalte"
 
             return AgentDecision(
                 next_agent=None,
-                message="Perfekt! Lass uns jetzt über die Details deines Anzugs sprechen.\n\n"
-                       "Ich würde gerne ein paar Fragen zum Schnitt stellen:\n\n"
-                       "1️⃣ **Revers-Stil**: Bevorzugst du klassische Spitzrevers oder moderne Stegrevers?\n"
-                       "2️⃣ **Schulterpolster**: Wie ausgeprägt soll die Schulter sein? (keine, leicht, mittel, stark)\n"
-                       "3️⃣ **Hosenbund**: Mit Bundfalte oder glatt?\n\n"
-                       "Sag mir einfach, was dir gefällt!",
+                message=llm_response,
                 action=None,
                 should_continue=False,
             )
@@ -321,13 +330,16 @@ class DesignHenkAgent(BaseAgent):
             # Mood board generated, waiting for user approval
             if state.mood_image_url and not state.image_state.mood_board_approved:
                 iterations_left = 7 - state.image_state.mood_board_iteration_count
+
+                # Use LLM for flexible, charming mood board presentation
+                llm_response = await self._process_with_llm(
+                    state,
+                    context_message=f"Das Moodbild wurde generiert. Präsentiere es dem Kunden charmant und frage, ob es ihm gefällt. Erwähne, dass noch {iterations_left} Änderungen möglich sind."
+                )
+
                 return AgentDecision(
                     next_agent=None,
-                    message=f"Hier ist Ihr Moodbild für den maßgeschneiderten Anzug! 👔\n\n"
-                           f"**Gefällt Ihnen die Richtung?**\n\n"
-                           f"✅ Wenn ja, sagen Sie 'Ja', 'Genehmigt' oder 'Perfekt'\n"
-                           f"🔄 Wenn Sie Änderungen wünschen, beschreiben Sie einfach, was anders sein soll\n\n"
-                           f"Sie können noch bis zu {iterations_left} Änderungen vornehmen.",
+                    message=llm_response,
                     action=None,
                     should_continue=False,
                 )
@@ -343,12 +355,16 @@ class DesignHenkAgent(BaseAgent):
             # CRITICAL: Email is mandatory for CRM lead creation
             if not state.customer.email:
                 logger.info("[DesignHenk] Email missing, requesting from user")
+
+                # Use LLM for charming email request
+                llm_response = await self._process_with_llm(
+                    state,
+                    context_message="Das Moodbild wurde genehmigt! Gratuliere dem Kunden und frage charmant nach seiner E-Mail-Adresse, um den Termin vorzubereiten."
+                )
+
                 return AgentDecision(
                     next_agent=None,
-                    message="Perfekt! 🎉\n\n"
-                           "Um Ihre Daten zu sichern und den Termin vorzubereiten, "
-                           "benötige ich noch Ihre **E-Mail-Adresse**.\n\n"
-                           "Bitte geben Sie Ihre E-Mail ein:",
+                    message=llm_response,
                     action=None,
                     should_continue=False,
                 )
@@ -372,11 +388,15 @@ class DesignHenkAgent(BaseAgent):
         # Design phase complete → hand back to supervisor
         # Only proceed if we have a CRM lead (real or mock)
         if has_crm_lead:
+            # Use LLM for charming phase completion and appointment request
+            llm_response = await self._process_with_llm(
+                state,
+                context_message="Design-Phase erfolgreich abgeschlossen! Gratuliere dem Kunden und frage, ob er den Termin lieber zu Hause oder im Büro haben möchte."
+            )
+
             return AgentDecision(
                 next_agent=None,
-                message="✅ Design-Phase abgeschlossen!\n\n"
-                       "Als nächstes vereinbaren wir einen Termin mit Henning für die Maßerfassung. "
-                       "Bevorzugen Sie einen Termin bei Ihnen zu Hause oder im Büro?",
+                message=llm_response,
                 action="complete_design_phase",
                 should_continue=False,
             )
@@ -562,3 +582,142 @@ Extract keywords related to:
                 exc,
             )
             return []
+
+    def _get_system_prompt(self, state: SessionState) -> str:
+        """Build system prompt for Design Henk based on current context."""
+        # Build context information
+        fabric_info = ""
+        if state.favorite_fabric:
+            fabric = state.favorite_fabric
+            fabric_info = f"\n- Stoff: {fabric.get('fabric_code')} ({fabric.get('color')}, {fabric.get('pattern')})"
+
+        design_info = ""
+        if state.design_preferences:
+            prefs = []
+            if state.design_preferences.lapel_style:
+                prefs.append(f"Revers: {state.design_preferences.lapel_style}")
+            if state.design_preferences.shoulder_padding:
+                prefs.append(f"Schulter: {state.design_preferences.shoulder_padding}")
+            if state.design_preferences.trouser_front:
+                prefs.append(f"Hose: {state.design_preferences.trouser_front}")
+            if state.wants_vest is not None:
+                prefs.append("mit Weste" if state.wants_vest else "ohne Weste")
+            if prefs:
+                design_info = f"\n- Bisherige Präferenzen: {', '.join(prefs)}"
+
+        iteration_info = ""
+        if state.image_state.mood_board_iteration_count > 0:
+            iteration_info = f"\n- Moodbild-Iteration: {state.image_state.mood_board_iteration_count}/7"
+
+        return f"""Du bist Design HENK, der kreative Design-Spezialist bei LASERHENK.
+
+Deine Aufgabe - DESIGN-BERATUNG & VISUALISIERUNG:
+
+🎨 DEINE ROLLE:
+- Du bist charmant, kreativ und detailversessen
+- Du hilfst dem Kunden, seinen perfekten Anzug zu visualisieren
+- Du stellst Fragen zu Schnitt-Details (Revers, Schultern, Hose, etc.)
+- Du erstellst Moodbilder basierend auf seinen Wünschen
+- Du iterierst bis der Kunde zufrieden ist (max. 7 Iterationen)
+
+📊 AKTUELLER STATUS:{fabric_info}{design_info}{iteration_info}
+
+💬 GESPRÄCHSFÜHRUNG:
+- Sei herzlich, persönlich und begeisternd
+- Nutze lockere Sprache ("du", emoji 🎩✨)
+- Erkläre Design-Optionen verständlich
+- Reagiere auf ALLE Kundenfragen (Preis, Lieferzeit, Details, etc.)
+- Gehe auf Feedback ein und passe das Moodbild an
+
+🎯 DESIGN-DETAILS ZU KLÄREN:
+1. Revers-Stil (Spitzrevers, Stegrevers, Schalkragen)
+2. Schulterpolsterung (keine, leicht, mittel, stark)
+3. Hosenbund (Bundfalte, glatt)
+4. Weste (ja/nein)
+5. Weitere Präferenzen (Knopfanzahl, Taschenstil)
+
+📸 MOODBILD-ITERATION:
+- Nach jedem Feedback: Erkläre kurz, was du änderst
+- Sei positiv und motivierend
+- Zeige Verständnis für Kundenwünsche
+- Wenn zufrieden → Lead sichern & Termin vereinbaren
+
+💰 PREISE (wenn gefragt):
+- Einstieg: ab 899€ (2-Teiler, Standardstoffe)
+- Premium: 1.200-2.500€ (hochwertige Stoffe, mehr Details)
+- Luxus: 2.500€+ (exklusive Stoffe, alle Details)
+- Hinweis: "Genauer Preis wird im persönlichen Termin besprochen"
+
+⏱️ LIEFERZEIT (wenn gefragt):
+- Standardproduktion: 4-6 Wochen
+- Express: 2-3 Wochen (gegen Aufpreis)
+- Bei Termindruck: "Wir finden eine Lösung!"
+
+Wichtig: Antworte IMMER auf Deutsch, kurz, charmant und hilfreich!"""
+
+    async def _process_with_llm(
+        self, state: SessionState, context_message: str = ""
+    ) -> str:
+        """
+        Process user message with LLM for flexible, context-aware responses.
+
+        Args:
+            state: Session state
+            context_message: Optional context message to prepend
+
+        Returns:
+            LLM response string
+        """
+        if not self.client:
+            # Fallback if no client available
+            return "Lass uns über die Design-Details deines Anzugs sprechen!"
+
+        # Get latest user message
+        user_input = ""
+        for msg in reversed(state.conversation_history):
+            if isinstance(msg, dict) and msg.get("role") == "user":
+                user_input = msg.get("content", "")
+                break
+
+        # Build conversation context
+        messages = [
+            {"role": "system", "content": self._get_system_prompt(state)},
+        ]
+
+        # Add context message if provided
+        if context_message:
+            messages.append({"role": "system", "content": f"CONTEXT: {context_message}"})
+
+        # Add conversation history (last 10 messages)
+        for msg in state.conversation_history[-10:]:
+            if isinstance(msg, dict):
+                role = "assistant" if msg.get("sender") in ["design_henk", "system"] else "user"
+                content = msg.get("content", "")
+                if content:
+                    messages.append({"role": role, "content": content})
+
+        # Add current user input if not already in history
+        if user_input and not any(
+            isinstance(m, dict) and m.get("role") == "user" and m.get("content") == user_input
+            for m in messages
+        ):
+            messages.append({"role": "user", "content": user_input})
+
+        try:
+            response = await self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=0.7,
+            )
+            llm_response = response.choices[0].message.content
+
+            logger.info(
+                "[DesignHenk] ✅ LLM response generated (%d chars)",
+                len(llm_response)
+            )
+
+            return llm_response
+
+        except Exception as exc:
+            logger.warning("[DesignHenk] LLM call failed: %s", exc)
+            return "Lass uns über die Design-Details deines Anzugs sprechen!"
