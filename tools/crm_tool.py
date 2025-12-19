@@ -4,7 +4,13 @@ import os
 from typing import Optional
 
 import requests
-from models.tools import CRMLeadCreate, CRMLeadResponse, CRMLeadUpdate
+from models.tools import (
+    CRMAppointmentCreate,
+    CRMAppointmentResponse,
+    CRMLeadCreate,
+    CRMLeadResponse,
+    CRMLeadUpdate,
+)
 
 
 class PipedriveClient:
@@ -197,4 +203,57 @@ class CRMTool:
                 lead_id=update_data.lead_id,
                 success=False,
                 message=f'Fehler beim Aktualisieren: {str(e)}',
+            )
+
+    async def create_appointment(
+        self, appointment_data: CRMAppointmentCreate
+    ) -> CRMAppointmentResponse:
+        """
+        Create appointment in Pipedrive (activities).
+
+        Args:
+            appointment_data: Appointment data
+
+        Returns:
+            CRM appointment response
+        """
+        if not self.client:
+            return CRMAppointmentResponse(
+                appointment_id=None,
+                success=False,
+                message='Pipedrive API key not configured',
+            )
+
+        try:
+            payload = {
+                "subject": appointment_data.subject,
+                "person_id": appointment_data.person_id,
+                "due_date": appointment_data.due_date,
+                "due_time": appointment_data.due_time,
+                "duration": appointment_data.duration,
+                "location": appointment_data.location,
+                "note": appointment_data.note,
+                "deal_id": appointment_data.deal_id,
+            }
+            result = self.client._request("POST", "activities", json=payload)
+            activity = result.get("data", {}) if isinstance(result, dict) else {}
+            appointment_id = str(activity.get("id")) if activity.get("id") else None
+
+            if appointment_id:
+                return CRMAppointmentResponse(
+                    appointment_id=appointment_id,
+                    success=True,
+                    message="Termin erfolgreich erstellt",
+                )
+
+            return CRMAppointmentResponse(
+                appointment_id=None,
+                success=False,
+                message="Termin konnte nicht erstellt werden",
+            )
+        except Exception as e:
+            return CRMAppointmentResponse(
+                appointment_id=None,
+                success=False,
+                message=f"Fehler beim Erstellen des Termins: {str(e)}",
             )

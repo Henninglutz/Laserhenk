@@ -77,6 +77,27 @@ class CRMLeadResponse(BaseModel):
     data: Optional[dict] = None
 
 
+class CRMAppointmentCreate(BaseModel):
+    """Create new appointment/activity in PIPEDRIVE."""
+
+    person_id: str
+    subject: str
+    due_date: Optional[str] = None
+    due_time: Optional[str] = None
+    duration: Optional[str] = None
+    location: Optional[str] = None
+    note: Optional[str] = None
+    deal_id: Optional[str] = None
+
+
+class CRMAppointmentResponse(BaseModel):
+    """Response from CRM appointment operations."""
+
+    appointment_id: Optional[str] = None
+    success: bool
+    message: Optional[str] = None
+
+
 # ============================================================================
 # DALLE Image Generation Tool Models
 # ============================================================================

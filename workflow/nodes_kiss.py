@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import re
+from datetime import date, timedelta
 from typing import Any, Callable, Dict, Optional
 
 from pydantic import BaseModel, Field
@@ -93,6 +95,52 @@ def _latest_content(messages: list, role: str) -> str:
         if parsed.get("role") == normalized_role:
             return str(parsed.get("content", "")).strip()
     return ""
+
+
+def _parse_appointment_date(message: str) -> Optional[str]:
+    if not message:
+        return None
+
+    lowered = message.lower()
+    today = date.today()
+
+    if "übermorgen" in lowered:
+        return (today + timedelta(days=2)).isoformat()
+    if "morgen" in lowered:
+        return (today + timedelta(days=1)).isoformat()
+
+    match_iso = re.search(r"\b(\d{4})-(\d{2})-(\d{2})\b", message)
+    if match_iso:
+        return f"{match_iso.group(1)}-{match_iso.group(2)}-{match_iso.group(3)}"
+
+    match_dmy = re.search(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b", message)
+    if match_dmy:
+        day, month, year = match_dmy.groups()
+        return f"{year}-{int(month):02d}-{int(day):02d}"
+
+    match_dm = re.search(r"\b(\d{1,2})\.(\d{1,2})\b", message)
+    if match_dm:
+        day, month = match_dm.groups()
+        return f"{today.year}-{int(month):02d}-{int(day):02d}"
+
+    return None
+
+
+def _parse_appointment_time(message: str) -> Optional[str]:
+    if not message:
+        return None
+
+    match_time = re.search(r"\b([01]?\d|2[0-3])[:.](\d{2})\b", message)
+    if match_time:
+        hour, minute = match_time.groups()
+        return f"{int(hour):02d}:{minute}"
+
+    match_hour = re.search(r"\bum\s*([01]?\d|2[0-3])\s*uhr\b", message.lower())
+    if match_hour:
+        hour = match_hour.group(1)
+        return f"{int(hour):02d}:00"
+
+    return None
 
 
 async def _rag_tool(params: dict, state: HenkGraphState) -> ToolResult:
@@ -686,31 +734,89 @@ async def route_node(state: HenkGraphState) -> HenkGraphState:
                 "metadata": {"mood_board_feedback": user_message},
             }
 
-    # APPOINTMENT LOCATION DETECTION
-    # Check if we're asking about appointment location and have CRM lead (real or mock)
+    # APPOINTMENT LOCATION + DATE/TIME DETECTION
     if (
         session_state.customer.crm_lead_id
-        and not session_state.customer.crm_lead_id.startswith("HENK1_LEAD")  # Only exclude provisional leads
-        and not session_state.customer.appointment_preferences
+        and not session_state.customer.crm_lead_id.startswith("HENK1_LEAD")
     ):
+        prefs = session_state.customer.appointment_preferences or {}
         user_message_lower = user_message.lower().strip()
 
-        # Check for location keywords
-        location = None
-        if any(word in user_message_lower for word in ["zu hause", "zuhause", "daheim", "bei mir", "home", "bei mir zu hause"]):
-            location = "Kunde zu Hause"
-        elif any(word in user_message_lower for word in ["büro", "office", "arbeit", "firma", "im büro", "ins büro"]):
-            location = "Im Büro"
+        location = prefs.get("location")
+        if not location:
+            if any(word in user_message_lower for word in ["zu hause", "zuhause", "daheim", "bei mir", "home", "bei mir zu hause"]):
+                location = "Kunde zu Hause"
+            elif any(word in user_message_lower for word in ["büro", "office", "arbeit", "firma", "im büro", "ins büro"]):
+                location = "Im Büro"
 
-        if location:
-            logger.info(f"[RouteNode] Appointment location detected: {location}")
-            # Store appointment preferences
+        due_date = prefs.get("due_date") or _parse_appointment_date(user_message)
+        due_time = prefs.get("due_time") or _parse_appointment_time(user_message)
+
+        if location or due_date or due_time:
+            logger.info(
+                "[RouteNode] Appointment info detected: location=%s, date=%s, time=%s",
+                location,
+                due_date,
+                due_time,
+            )
+
             session_state.customer.appointment_preferences = {
                 "location": location,
+                "due_date": due_date,
+                "due_time": due_time,
                 "notes": "Henning bringt Stoffmuster mit zur Maßerfassung",
             }
             state["session_state"] = session_state
 
+        missing = []
+        if not location:
+            missing.append("Ort (bei Ihnen zu Hause oder im Büro)")
+        if not due_date:
+            missing.append("Datum (z. B. 12.02. oder 2025-02-12)")
+        if not due_time:
+            missing.append("Uhrzeit (z. B. 14:30 oder um 14 Uhr)")
+
+        if missing:
+            prompt = "Für die Terminplanung brauche ich noch:\n\n" + "\n".join(
+                f"• {item}" for item in missing
+            )
+            messages = list(state.get("messages", []))
+            messages.append({"role": "assistant", "content": prompt, "sender": "design_henk"})
+
+            return {
+                "messages": messages,
+                "session_state": session_state,
+                "awaiting_user_input": True,
+                "next_step": None,
+                "metadata": {"appointment_pending": True},
+            }
+
+        if location and due_date and due_time and not prefs.get("appointment_created"):
+            session_state.customer.appointment_preferences["appointment_created"] = True
+            state["session_state"] = session_state
+
+            return {
+                "session_state": session_state,
+                "current_agent": session_state.current_agent or "design_henk",
+                "next_step": HandoffAction(
+                    kind="tool",
+                    name="crm_create_appointment",
+                    params={
+                        "subject": "Maßerfassung für maßgeschneiderten Anzug",
+                        "due_date": due_date,
+                        "due_time": due_time,
+                        "duration": "01:00",
+                        "location": location,
+                        "note": "Maßerfassung mit Henning. Bitte Stoffmuster mitbringen.",
+                    },
+                    should_continue=True,
+                    return_to_agent=session_state.current_agent,
+                ).model_dump(),
+                "awaiting_user_input": False,
+                "metadata": {"appointment_requested": True},
+            }
+
+        if location and due_date and due_time:
             # Generate summary message
             fabric_info = session_state.favorite_fabric or {}
             fabric_name = fabric_info.get("name", "Ausgewählter Stoff")
@@ -758,6 +864,8 @@ async def route_node(state: HenkGraphState) -> HenkGraphState:
 
 📍 **Nächster Schritt: Maßerfassung mit Henning**
 • Ort: {location}
+• Datum: {due_date}
+• Uhrzeit: {due_time}
 • Henning bringt Stoffmuster mit
 • Dauer: ca. 30-45 Minuten
 
@@ -978,4 +1086,3 @@ async def _run_agent_step(agent: Any, action: HandoffAction, state: HenkGraphSta
 
     logging.info(f"[AgentStep] Final updates: awaiting_user_input={updates['awaiting_user_input']}, next_step={updates.get('next_step')}")
     return updates
-
