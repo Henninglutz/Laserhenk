@@ -52,7 +52,21 @@ class PipedriveClient:
             timeout=30,
         )
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"Unexpected Pipedrive response type for {endpoint}: {type(data).__name__}"
+            )
+        return data
+
+    @staticmethod
+    def _extract_data(payload: dict, context: str) -> dict:
+        data = payload.get("data")
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"Unexpected Pipedrive data payload for {context}: {type(data).__name__}"
+            )
+        return data
 
     def create_person(self, name: str, email: str, phone: Optional[str] = None) -> dict:
         """Create person."""
@@ -60,24 +74,37 @@ class PipedriveClient:
         if phone:
             data['phone'] = [phone]
         result = self._request('POST', 'persons', json=data)
-        return result.get('data', {})
+        return self._extract_data(result, "create_person")
 
     def get_person_by_email(self, email: str) -> Optional[dict]:
         """Find person by email."""
         result = self._request('GET', 'persons/search', params={'term': email, 'fields': 'email'})
-        items = result.get('data', {}).get('items', [])
+        data = result.get("data", {})
+        if not isinstance(data, dict):
+            return None
+        items = data.get("items", [])
+        if not isinstance(items, list):
+            return None
         for item in items:
-            person = item.get('item', {})
-            emails = person.get('emails', [])
-            if any(e.get('value', '').lower() == email.lower() for e in emails):
-                return person
+            if not isinstance(item, dict):
+                continue
+            person = item.get("item")
+            if not isinstance(person, dict):
+                continue
+            emails = person.get("emails") or person.get("email") or []
+            if isinstance(emails, str):
+                emails = [emails]
+            for entry in emails:
+                value = entry.get("value", "") if isinstance(entry, dict) else str(entry)
+                if value.lower() == email.lower():
+                    return person
         return None
 
     def create_deal(self, title: str, person_id: int, value: float, currency: str = 'EUR') -> dict:
         """Create deal."""
         data = {'title': title, 'person_id': person_id, 'value': value, 'currency': currency}
         result = self._request('POST', 'deals', json=data)
-        return result.get('data', {})
+        return self._extract_data(result, "create_deal")
 
 
 class CRMTool:
