@@ -52,7 +52,9 @@ BEISPIEL-ABLAUF:
 8. Weiter zu LASERHENK für Finalisierung
 """
 
+import json
 import logging
+import os
 from typing import Optional
 
 from agents.base import AgentDecision, BaseAgent
@@ -60,6 +62,11 @@ from agents.design_patch_agent import DesignPatchAgent
 from models.customer import SessionState
 from models.fabric import SelectedFabricData
 from models.patches import apply_design_preferences_patch
+
+try:
+    from openai import AsyncOpenAI
+except ModuleNotFoundError:
+    AsyncOpenAI = None
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +188,7 @@ class DesignHenkAgent(BaseAgent):
                 if state.image_state.mood_board_feedback:
                     logger.info(f"[DesignHenk] Incorporating user feedback: {state.image_state.mood_board_feedback}")
 
+                    # Extract structured patches from feedback
                     patch_agent = DesignPatchAgent()
                     decision = await patch_agent.extract_patch_decision(
                         user_message=state.image_state.mood_board_feedback,
@@ -193,38 +201,73 @@ class DesignHenkAgent(BaseAgent):
                         decision.model_dump_json(),
                     )
 
-                    applied_fields = []
-                    updated_preferences = apply_design_preferences_patch(
-                        state.design_preferences, decision.patch
+                    # Apply patches to design preferences
+                    if decision.confidence > 0.5:
+                        applied_fields = []
+                        updated_preferences = apply_design_preferences_patch(
+                            state.design_preferences, decision.patch
+                        )
+
+                        for field_name in updated_preferences.model_fields:
+                            new_value = getattr(updated_preferences, field_name)
+                            old_value = getattr(state.design_preferences, field_name)
+                            if new_value != old_value:
+                                applied_fields.append(field_name)
+                                logger.info(
+                                    "[DesignHenk] 🔄 Updated %s: %s → %s",
+                                    field_name,
+                                    old_value,
+                                    new_value,
+                                )
+
+                        state.design_preferences = updated_preferences
+
+                        # Update wants_vest in root state
+                        if decision.patch.wants_vest is not None:
+                            state.wants_vest = decision.patch.wants_vest
+                            applied_fields.append("wants_vest")
+                            logger.info(
+                                "[DesignHenk] 🔄 Updated wants_vest: %s",
+                                state.wants_vest,
+                            )
+
+                        logger.info(
+                            "[DesignHenk] ✅ Applied %d fields from PatchDecision: %s",
+                            len(applied_fields),
+                            applied_fields,
+                        )
+
+                        # Update design_prefs dict for DALLE
+                        design_prefs.update(
+                            {
+                                "revers_type": state.design_preferences.revers_type,
+                                "shoulder_padding": state.design_preferences.shoulder_padding,
+                                "waistband_type": state.design_preferences.waistband_type,
+                                "jacket_front": state.design_preferences.jacket_front,
+                                "lapel_style": state.design_preferences.lapel_style,
+                                "lapel_roll": state.design_preferences.lapel_roll,
+                                "trouser_front": state.design_preferences.trouser_front,
+                            }
+                        )
+                    else:
+                        logger.warning(
+                            "[DesignHenk] ⚠️ Low confidence (%.2f), not applying patches",
+                            decision.confidence,
+                        )
+
+                    # Extract style keywords from feedback using LLM
+                    feedback_keywords = await self._extract_style_keywords_from_feedback(
+                        state.image_state.mood_board_feedback
                     )
 
-                    for field_name in updated_preferences.model_fields:
-                        new_value = getattr(updated_preferences, field_name)
-                        old_value = getattr(state.design_preferences, field_name)
-                        if new_value != old_value:
-                            applied_fields.append(field_name)
+                    # Merge with existing style keywords
+                    if feedback_keywords:
+                        style_keywords.extend(feedback_keywords)
+                        logger.info(
+                            "[DesignHenk] 🎨 Merged style keywords: %s",
+                            style_keywords,
+                        )
 
-                    state.design_preferences = updated_preferences
-
-                    if decision.patch.wants_vest is not None:
-                        state.wants_vest = decision.patch.wants_vest
-                        applied_fields.append("wants_vest")
-
-                    logger.info(
-                        "[DesignHenk] Applied fields from PatchDecision: %s",
-                        applied_fields,
-                    )
-
-                    design_prefs.update(
-                        {
-                            "revers_type": state.design_preferences.revers_type,
-                            "shoulder_padding": state.design_preferences.shoulder_padding,
-                            "waistband_type": state.design_preferences.waistband_type,
-                        }
-                    )
-
-                    # Add feedback to style keywords for additional context
-                    style_keywords.append(f"User feedback: {state.image_state.mood_board_feedback}")
                     # Clear feedback after incorporating
                     state.image_state.mood_board_feedback = None
 
@@ -423,3 +466,68 @@ class DesignHenkAgent(BaseAgent):
 
         logger.info(f"[DesignHenkAgent] Extracted style keywords: {keywords}")
         return keywords
+
+    async def _extract_style_keywords_from_feedback(self, feedback: str) -> list[str]:
+        """
+        Extract style keywords from raw user feedback using LLM.
+
+        Args:
+            feedback: User feedback message
+
+        Returns:
+            List of extracted style keywords
+        """
+        if not feedback or AsyncOpenAI is None or not os.environ.get("OPENAI_API_KEY"):
+            return []
+
+        try:
+            client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
+            system_prompt = """Extract style keywords from German user feedback for a bespoke suit.
+
+IMPORTANT: Return ONLY a JSON object with a "keywords" array. No explanations.
+
+Examples:
+Input: "modern, leicht, italienisch"
+Output: {"keywords": ["modern", "light", "italian"]}
+
+Input: "klassischer Schnitt, elegant, business"
+Output: {"keywords": ["classic", "elegant", "business"]}
+
+Input: "ohne Futter ohne Polster, aufgesetzte Taschen"
+Output: {"keywords": ["unlined", "unpadded", "patch pockets"]}
+
+Extract keywords related to:
+- Style (classic, modern, contemporary)
+- Construction (lightweight, structured, soft)
+- Regional influence (Italian, British, American)
+- Occasion (business, formal, casual)
+- Design details (patch pockets, unlined, etc.)"""
+
+            response = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": feedback}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.3,
+            )
+
+            data = json.loads(response.choices[0].message.content)
+            keywords = data.get("keywords", [])
+
+            logger.info(
+                "[DesignHenkAgent] ✅ Extracted %d style keywords from feedback: %s",
+                len(keywords),
+                keywords,
+            )
+
+            return keywords
+
+        except Exception as exc:
+            logger.warning(
+                "[DesignHenkAgent] Style keyword extraction failed: %s",
+                exc,
+            )
+            return []
