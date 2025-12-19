@@ -398,7 +398,39 @@ NOTE: Leave bottom-right corner clear (for fabric swatches overlay)."""
         style_keywords = ", ".join(params.style_keywords) if params.style_keywords else "minimal, refined"
         notes_text = "\n".join(f"- {note}" for note in notes_for_prompt) if notes_for_prompt else ""
 
-        prompt = f"""Create a photorealistic product sheet of a male model wearing a bespoke tailored outfit.\n\nSTYLE GOAL:\n- Clean product sheet layout, minimal typography, no visible text overlays\n- Neutral background, studio lighting, sharp garment details\n- The model wears the garment; realistic photography only\n\nOUTFIT DETAILS:\n- Jacket type: {jacket.type}\n- Lapel: {jacket.lapel}\n- Buttons: {jacket.buttons}\n- Fit: {jacket.fit or 'tailored'}\n- Trousers: {trousers.type} (rise: {trousers.rise or 'mid'})\n- Vest/waistcoat: {'included' if vest.enabled else 'not included'}\n- Shirt: {shirt.collar or 'spread'} collar, color {shirt.color or 'white'}\n- Neckwear: {neckwear.type} ({neckwear.color or 'classic'})\n- Occasion: {params.occasion or 'formal'}\n\nFABRIC GUIDANCE:\n- Color hint: {request.fabric.color or 'classic tone'}\n- Pattern hint: {request.fabric.pattern or 'solid'}\n- Composition: {request.fabric.composition or 'fine wool'}\n\nIMPORTANT:\n- Do NOT attempt to replicate any specific fabric pattern; the real fabric reference will be overlaid separately.\n- Leave the bottom 10% of the image visually calm and uncluttered for a fabric overlay.\n- Avoid busy props; focus on the garment.\n\nSTYLE KEYWORDS: {style_keywords}\n{notes_text}\n"""\n\n        return prompt
+        prompt = f"""Create a photorealistic product sheet of a male model wearing a bespoke tailored outfit.
+
+STYLE GOAL:
+- Clean product sheet layout, minimal typography, no visible text overlays
+- Neutral background, studio lighting, sharp garment details
+- The model wears the garment; realistic photography only
+
+OUTFIT DETAILS:
+- Jacket type: {jacket.type}
+- Lapel: {jacket.lapel}
+- Buttons: {jacket.buttons}
+- Fit: {jacket.fit or 'tailored'}
+- Trousers: {trousers.type} (rise: {trousers.rise or 'mid'})
+- Vest/waistcoat: {'included' if vest.enabled else 'not included'}
+- Shirt: {shirt.collar or 'spread'} collar, color {shirt.color or 'white'}
+- Neckwear: {neckwear.type} ({neckwear.color or 'classic'})
+- Occasion: {params.occasion or 'formal'}
+
+FABRIC GUIDANCE:
+- Color hint: {request.fabric.color or 'classic tone'}
+- Pattern hint: {request.fabric.pattern or 'solid'}
+- Composition: {request.fabric.composition or 'fine wool'}
+
+IMPORTANT:
+- Do NOT attempt to replicate any specific fabric pattern; the real fabric reference will be overlaid separately.
+- Leave the bottom 10% of the image visually calm and uncluttered for a fabric overlay.
+- Avoid busy props; focus on the garment.
+
+STYLE KEYWORDS: {style_keywords}
+{notes_text}
+"""
+
+        return prompt
 
     def _download_image(self, url: str) -> Image.Image:
         """
