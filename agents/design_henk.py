@@ -231,6 +231,37 @@ class DesignHenkAgent(BaseAgent):
                                 state.wants_vest,
                             )
 
+                        # Handle fabric switching if requested
+                        if decision.patch.requested_fabric_code:
+                            requested_code = decision.patch.requested_fabric_code
+                            logger.info(
+                                "[DesignHenk] 🎨 User requested fabric change to: %s",
+                                requested_code,
+                            )
+
+                            # Search for fabric in shown_fabric_images
+                            fabric_found = False
+                            if state.shown_fabric_images:
+                                for fabric in state.shown_fabric_images:
+                                    if fabric.get("fabric_code") == requested_code:
+                                        # Update favorite_fabric to new selection
+                                        old_fabric = state.favorite_fabric.get("fabric_code") if state.favorite_fabric else None
+                                        state.favorite_fabric = fabric
+                                        fabric_found = True
+                                        applied_fields.append("requested_fabric_code")
+                                        logger.info(
+                                            "[DesignHenk] ✅ Switched fabric: %s → %s",
+                                            old_fabric,
+                                            requested_code,
+                                        )
+                                        break
+
+                            if not fabric_found:
+                                logger.warning(
+                                    "[DesignHenk] ⚠️ Requested fabric %s not found in shown_fabric_images",
+                                    requested_code,
+                                )
+
                         logger.info(
                             "[DesignHenk] ✅ Applied %d fields from PatchDecision: %s",
                             len(applied_fields),

@@ -197,6 +197,14 @@ MAPPING-REGELN (Deutsche Synonyme → Strukturierte Felder):
 - "zwei Knöpfe" | "two buttons" → 2
 - "drei Knöpfe" | "three buttons" → 3
 
+**Fabric Code (requested_fabric_code):**
+- "anderer Stoff: XXXXX" | "Stoff: XXXXX" | "neuer Stoff XXXXX" → extract "XXXXX"
+- Fabric codes are typically alphanumeric (e.g., "50C4022", "10M5000", "20W3000")
+- Extract EXACTLY as user provides it (case-sensitive)
+- Examples:
+  - "Nein, anderer Stoff: 50C4022" → requested_fabric_code="50C4022"
+  - "lieber Stoff 10M5000" → requested_fabric_code="10M5000"
+
 WICHTIGE REGELN:
 1. Erkenne deutsche Synonyme, Flexionen und Tippfehler (z.B. "schulterpolter", "fallende revers")
 2. Setze confidence=0.0 wenn unklar, confidence=0.5-0.8 wenn teilweise sicher, confidence=0.9-1.0 wenn sehr sicher
@@ -239,5 +247,15 @@ Output:
   },
   "confidence": 0.85,
   "changed_fields": ["shoulder_padding", "notes_normalized"]
+}
+
+Input: "Nein, anderer Stoff: 50C4022"
+Output:
+{
+  "patch": {
+    "requested_fabric_code": "50C4022"
+  },
+  "confidence": 0.95,
+  "changed_fields": ["requested_fabric_code"]
 }
 """
