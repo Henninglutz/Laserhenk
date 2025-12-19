@@ -102,6 +102,14 @@ class DesignHenkAgent(BaseAgent):
             except Exception as exc:
                 logger.warning("[DesignHenk] OpenAI client initialization failed: %s", exc)
 
+        # Load style catalog for RAG knowledge
+        self.style_catalog = self._load_style_catalog()
+        if self.style_catalog:
+            dress_codes = list(self.style_catalog.get("dress_codes", {}).keys())
+            logger.info("[DesignHenk] ✅ Style catalog loaded: %d dress codes", len(dress_codes))
+        else:
+            logger.warning("[DesignHenk] ⚠️ Style catalog not loaded")
+
     async def process(self, state: SessionState) -> AgentDecision:
         """
         Process design preferences and lead securing with mood board iteration loop.
@@ -609,6 +617,13 @@ Extract keywords related to:
         if state.image_state.mood_board_iteration_count > 0:
             iteration_info = f"\n- Moodbild-Iteration: {state.image_state.mood_board_iteration_count}/7"
 
+        # Get style knowledge based on occasion
+        occasion = None
+        if hasattr(state, 'henk1_to_design_payload') and state.henk1_to_design_payload:
+            occasion = state.henk1_to_design_payload.get('occasion')
+
+        style_knowledge = self._get_style_knowledge(occasion)
+
         return f"""Du bist Design HENK, der kreative Design-Spezialist bei LASERHENK.
 
 Deine Aufgabe - DESIGN-BERATUNG & VISUALISIERUNG:
@@ -621,6 +636,7 @@ Deine Aufgabe - DESIGN-BERATUNG & VISUALISIERUNG:
 - Du iterierst bis der Kunde zufrieden ist (max. 7 Iterationen)
 
 📊 AKTUELLER STATUS:{fabric_info}{design_info}{iteration_info}
+{style_knowledge}
 
 💬 GESPRÄCHSFÜHRUNG:
 - Sei herzlich, persönlich und begeisternd
@@ -721,3 +737,85 @@ Wichtig: Antworte IMMER auf Deutsch, kurz, charmant und hilfreich!"""
         except Exception as exc:
             logger.warning("[DesignHenk] LLM call failed: %s", exc)
             return "Lass uns über die Design-Details deines Anzugs sprechen!"
+
+    def _load_style_catalog(self) -> dict:
+        """
+        Load style catalog from knowledge base.
+
+        Returns:
+            Style catalog dict or empty dict if failed
+        """
+        catalog_path = os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "drive_mirror",
+            "henk",
+            "knowledge",
+            "style_catalog.json"
+        )
+
+        try:
+            with open(catalog_path, "r", encoding="utf-8") as f:
+                catalog = json.load(f)
+                return catalog
+        except FileNotFoundError:
+            logger.warning("[DesignHenk] Style catalog not found at %s", catalog_path)
+            return {}
+        except Exception as exc:
+            logger.warning("[DesignHenk] Failed to load style catalog: %s", exc)
+            return {}
+
+    def _get_style_knowledge(self, occasion: str = None) -> str:
+        """
+        Get relevant style knowledge based on occasion.
+
+        Args:
+            occasion: Optional occasion to filter (e.g., "Hochzeit", "Business", "Gala")
+
+        Returns:
+            Formatted style knowledge string
+        """
+        if not self.style_catalog:
+            return ""
+
+        dress_codes = self.style_catalog.get("dress_codes", {})
+
+        # If specific occasion provided, try to match dress code
+        if occasion:
+            occasion_lower = occasion.lower()
+
+            # Map occasions to dress codes
+            occasion_mapping = {
+                "hochzeit": "formal_evening",
+                "gala": "formal_evening",
+                "business": "business_formal",
+                "vorstellungsgespräch": "business_formal",
+                "arbeit": "business_casual",
+                "meeting": "business_casual",
+                "freizeit": "smart_casual",
+                "restaurant": "smart_casual",
+            }
+
+            # Find matching dress code
+            for key, dress_code_key in occasion_mapping.items():
+                if key in occasion_lower:
+                    if dress_code_key in dress_codes:
+                        dc = dress_codes[dress_code_key]
+                        return f"""
+📋 EMPFEHLUNG FÜR {occasion.upper()}:
+- Stil: {dc['name']}
+- Erforderlich: {', '.join(dc.get('required_items', []))}
+- Farben: {', '.join(dc.get('color_palette', []))}
+- Stoffe: {', '.join(dc.get('fabric_recommendations', []))}
+"""
+
+        # Otherwise, return general overview
+        knowledge = "\n📚 VERFÜGBARE DRESS CODES:\n"
+        for code_key, code_data in dress_codes.items():
+            occasions = code_data.get('occasions', [])
+            colors = code_data.get('color_palette', [])
+            knowledge += f"\n{code_data['name']}:\n"
+            knowledge += f"  - Anlässe: {', '.join(occasions[:3])}\n"
+            knowledge += f"  - Farben: {', '.join(colors[:3])}\n"
+
+        return knowledge
