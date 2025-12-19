@@ -18,6 +18,7 @@ except ImportError:  # pragma: no cover - environment without Pillow
 
 from openai import AsyncOpenAI
 
+from models.rendering import RenderRequest, RenderResult
 from models.tools import DALLEImageRequest, DALLEImageResponse
 
 logger = logging.getLogger(__name__)
@@ -283,6 +284,154 @@ NOTE: Leave bottom-right corner clear (for fabric swatches overlay)."""
         logger.info(f"[DALLETool] Generated prompt: {prompt[:200]}...")
         return prompt
 
+    async def generate_product_sheet(
+        self,
+        request: RenderRequest,
+        notes_for_prompt: Optional[list[str]] = None,
+    ) -> RenderResult:
+        """
+        Generate a product sheet render with a real fabric overlay.
+
+        The output always includes a real fabric reference image as an overlay.
+        """
+        if Image is None:
+            return RenderResult(
+                image_url=None,
+                revised_prompt=None,
+                success=False,
+                local_path=None,
+                error="Pillow is required for fabric overlays but is not installed.",
+                used_params=request.params,
+                used_fabric_id=request.fabric.fabric_id,
+                iteration=0,
+            )
+
+        fabric_image_url = self._select_fabric_image(request)
+        if not fabric_image_url:
+            return RenderResult(
+                image_url=None,
+                revised_prompt=None,
+                success=False,
+                local_path=None,
+                error="No fabric image available for overlay.",
+                used_params=request.params,
+                used_fabric_id=request.fabric.fabric_id,
+                iteration=0,
+            )
+
+        prompt = self._build_product_sheet_prompt(request, notes_for_prompt or [])
+        dalle_response = await self.generate_image(
+            DALLEImageRequest(
+                prompt=prompt,
+                size=request.size,
+                quality=request.quality,
+            )
+        )
+
+        if not dalle_response.success or not dalle_response.image_url:
+            return RenderResult(
+                image_url=dalle_response.image_url,
+                revised_prompt=dalle_response.revised_prompt,
+                success=False,
+                local_path=dalle_response.local_path,
+                error=dalle_response.error,
+                used_params=request.params,
+                used_fabric_id=request.fabric.fabric_id,
+                iteration=0,
+            )
+
+        try:
+            base_image = self._download_image(dalle_response.image_url)
+            fabric_image = self._download_image(fabric_image_url)
+            composite = self._create_product_sheet_overlay(
+                base_image,
+                fabric_image,
+                request.overlay_mode,
+                request.overlay_height_ratio,
+            )
+            filename = (
+                f"product_sheet_{request.session_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            )
+            composite_path = self.images_dir / filename
+            composite.save(composite_path, format="PNG", quality=95)
+            composite_url = f"/static/generated_images/{filename}"
+            return RenderResult(
+                image_url=composite_url,
+                revised_prompt=dalle_response.revised_prompt,
+                success=True,
+                local_path=str(composite_path),
+                error=None,
+                used_params=request.params,
+                used_fabric_id=request.fabric.fabric_id,
+                iteration=0,
+            )
+        except Exception as exc:
+            logger.error("[DALLETool] Failed to build product sheet composite", exc_info=exc)
+            return RenderResult(
+                image_url=dalle_response.image_url,
+                revised_prompt=dalle_response.revised_prompt,
+                success=False,
+                local_path=dalle_response.local_path,
+                error=str(exc),
+                used_params=request.params,
+                used_fabric_id=request.fabric.fabric_id,
+                iteration=0,
+            )
+
+    def _select_fabric_image(self, request: RenderRequest) -> Optional[str]:
+        image_urls = request.fabric.image_urls
+        return image_urls.swatch or image_urls.macro or (image_urls.extra[0] if image_urls.extra else None)
+
+    def _build_product_sheet_prompt(
+        self,
+        request: RenderRequest,
+        notes_for_prompt: list[str],
+    ) -> str:
+        params = request.params
+        outfit = params.outfit
+        jacket = outfit.jacket
+        trousers = outfit.trousers
+        vest = outfit.vest
+        shirt = outfit.shirt
+        neckwear = outfit.neckwear
+
+        style_keywords = ", ".join(params.style_keywords) if params.style_keywords else "minimal, refined"
+        notes_text = "\n".join(f"- {note}" for note in notes_for_prompt) if notes_for_prompt else ""
+
+        prompt = f"""Create a photorealistic product sheet of a male model wearing a bespoke tailored outfit.
+
+STYLE GOAL:
+- Clean product sheet layout, minimal typography, no visible text overlays
+- Neutral background, studio lighting, sharp garment details
+- The model wears the garment; realistic photography only
+
+OUTFIT DETAILS:
+- Jacket type: {jacket.type}
+- Lapel: {jacket.lapel}
+- Buttons: {jacket.buttons}
+- Fit: {jacket.fit or 'tailored'}
+- Trousers: {trousers.type} (rise: {trousers.rise or 'mid'})
+- Vest/waistcoat: {'included' if vest.enabled else 'not included'}
+- Shirt: {shirt.collar or 'spread'} collar, color {shirt.color or 'white'}
+- Neckwear: {neckwear.type} ({neckwear.color or 'classic'})
+- Occasion: {params.occasion or 'formal'}
+
+FABRIC GUIDANCE:
+- Color hint: {request.fabric.color or 'classic tone'}
+- Pattern hint: {request.fabric.pattern or 'solid'}
+- Composition: {request.fabric.composition or 'fine wool'}
+
+IMPORTANT:
+- Do NOT attempt to replicate any specific fabric pattern; the real fabric reference will be overlaid separately.
+- Leave the bottom 10% of the image visually calm and uncluttered for a fabric overlay.
+- Avoid busy props; focus on the garment.
+
+STYLE KEYWORDS: {style_keywords}
+{notes_text}
+"""
+
+        return prompt
+
     def _download_image(self, url: str) -> Image.Image:
         """
         Download image from URL or load from local filesystem.
@@ -408,6 +557,53 @@ NOTE: Leave bottom-right corner clear (for fabric swatches overlay)."""
             draw.text((x, text_y), f"Ref: {fabric_code}", fill="black", font=font)
 
         logger.info(f"[DALLETool] Added {len(fabric_thumbnails)} fabric thumbnails to mood board")
+        return composite
+
+    def _create_product_sheet_overlay(
+        self,
+        base_image: Image.Image,
+        fabric_image: Image.Image,
+        overlay_mode: str,
+        overlay_height_ratio: float,
+    ) -> Image.Image:
+        if Image is None:
+            raise RuntimeError("Pillow not installed; cannot create overlays")
+
+        base = base_image.convert("RGB")
+        fabric = fabric_image.convert("RGB")
+        width, height = base.size
+        overlay_height = max(1, int(height * overlay_height_ratio))
+
+        if overlay_mode == "side_card":
+            card_width = int(width * 0.22)
+            card_height = int(height * 0.30)
+            card_x = width - card_width - int(width * 0.04)
+            card_y = int((height - card_height) / 2)
+
+            card = Image.new("RGB", (card_width, card_height), "white")
+            padding = int(card_width * 0.08)
+            target_w = card_width - 2 * padding
+            target_h = card_height - 2 * padding
+            fabric.thumbnail((target_w, target_h), Image.Resampling.LANCZOS)
+            fabric_x = padding + int((target_w - fabric.width) / 2)
+            fabric_y = padding + int((target_h - fabric.height) / 2)
+            card.paste(fabric, (fabric_x, fabric_y))
+
+            composite = base.copy()
+            composite.paste(card, (card_x, card_y))
+            return composite
+
+        strip = Image.new("RGB", (width, overlay_height), "white")
+        padding = max(4, int(overlay_height * 0.08))
+        target_height = overlay_height - 2 * padding
+        target_width = width - 2 * padding
+        fabric.thumbnail((target_width, target_height), Image.Resampling.LANCZOS)
+        fabric_x = padding + int((target_width - fabric.width) / 2)
+        fabric_y = padding + int((target_height - fabric.height) / 2)
+        strip.paste(fabric, (fabric_x, fabric_y))
+
+        composite = base.copy()
+        composite.paste(strip, (0, height - overlay_height))
         return composite
 
 

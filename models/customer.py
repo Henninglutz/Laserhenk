@@ -66,6 +66,25 @@ class DesignPreferences(BaseModel):
     button_style: Optional[str] = None
     pocket_style: Optional[str] = None
     additional_notes: Optional[str] = None
+    jacket_front: Optional[str] = Field(
+        None, description="single_breasted oder double_breasted"
+    )
+    button_count: Optional[int] = Field(None, description="Anzahl Knöpfe")
+    lapel_style: Optional[str] = Field(
+        None, description="notch, peak, shawl, unknown"
+    )
+    lapel_roll: Optional[str] = Field(
+        None, description="rolling, flat, unknown"
+    )
+    trouser_front: Optional[str] = Field(
+        None, description="pleats, flat_front, unknown"
+    )
+    neckwear: Optional[str] = Field(
+        None, description="tie, bow_tie, none, unknown"
+    )
+    notes_normalized: Optional[str] = Field(
+        None, description="Normalized short notes"
+    )
     approved_image: Optional[str] = Field(
         None, description="User-approved DALL-E generated outfit image URL"
     )
