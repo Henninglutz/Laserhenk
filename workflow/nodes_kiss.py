@@ -446,6 +446,28 @@ async def _crm_create_lead(params: dict, state: HenkGraphState) -> ToolResult:
     customer_email = params.get("customer_email") or session_state.customer.email
     customer_phone = params.get("customer_phone") or session_state.customer.phone
 
+    # CRITICAL: Validate Email BEFORE creating lead
+    # Email is required for CRM person creation in Pipedrive
+    if not customer_email:
+        logging.error(f"[CRM] Lead creation failed: No email provided for {customer_name}")
+
+        # Create MOCK lead to prevent infinite loop
+        session_id = params.get("session_id", "unknown")
+        mock_lead_id = f"NO_EMAIL_{session_id[:8]}"
+        session_state.customer.crm_lead_id = mock_lead_id
+        state["session_state"] = session_state
+
+        return ToolResult(
+            text="⚠️ Email-Adresse erforderlich für Kontaktsicherung.\n\n"
+                 "Bitte geben Sie Ihre Email-Adresse an, damit wir Sie erreichen können.",
+            metadata={
+                "error": "missing_email",
+                "crm_lead_id": mock_lead_id,
+                "mock": True,
+                "validation_failed": True,
+            },
+        )
+
     # Prepare lead data
     lead_data = CRMLeadCreate(
         customer_name=customer_name,
