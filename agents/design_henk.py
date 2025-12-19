@@ -56,8 +56,10 @@ import logging
 from typing import Optional
 
 from agents.base import AgentDecision, BaseAgent
+from agents.design_patch_agent import DesignPatchAgent
 from models.customer import SessionState
 from models.fabric import SelectedFabricData
+from models.patches import apply_design_preferences_patch
 
 logger = logging.getLogger(__name__)
 
@@ -179,28 +181,47 @@ class DesignHenkAgent(BaseAgent):
                 if state.image_state.mood_board_feedback:
                     logger.info(f"[DesignHenk] Incorporating user feedback: {state.image_state.mood_board_feedback}")
 
-                    # CRITICAL FIX: Parse feedback and update design_preferences + state
-                    updated_prefs, state_updates = self._parse_feedback_and_update_preferences(
-                        state.image_state.mood_board_feedback,
-                        design_prefs,
-                        state
+                    patch_agent = DesignPatchAgent()
+                    decision = await patch_agent.extract_patch_decision(
+                        user_message=state.image_state.mood_board_feedback,
+                        context="Designpräferenzen Update",
                     )
 
-                    # Log what was parsed
-                    logger.info(f"[DesignHenk] Parsed design_prefs updates: {updated_prefs}")
-                    logger.info(f"[DesignHenk] Parsed state updates: {state_updates}")
+                    logger.info(
+                        "[DesignHenk] PatchDecision for feedback '%s': %s",
+                        state.image_state.mood_board_feedback,
+                        decision.model_dump_json(),
+                    )
 
-                    design_prefs.update(updated_prefs)
+                    applied_fields = []
+                    updated_preferences = apply_design_preferences_patch(
+                        state.design_preferences, decision.patch
+                    )
 
-                    # Also update the session state with parsed preferences
-                    for key, value in updated_prefs.items():
-                        setattr(state.design_preferences, key, value)
-                        logger.info(f"[DesignHenk] Updated design_preferences.{key} = {value}")
+                    for field_name in updated_preferences.model_fields:
+                        new_value = getattr(updated_preferences, field_name)
+                        old_value = getattr(state.design_preferences, field_name)
+                        if new_value != old_value:
+                            applied_fields.append(field_name)
 
-                    # Apply state-level updates (like wants_vest)
-                    for key, value in state_updates.items():
-                        setattr(state, key, value)
-                        logger.info(f"[DesignHenk] Updated state.{key} = {value}")
+                    state.design_preferences = updated_preferences
+
+                    if decision.patch.wants_vest is not None:
+                        state.wants_vest = decision.patch.wants_vest
+                        applied_fields.append("wants_vest")
+
+                    logger.info(
+                        "[DesignHenk] Applied fields from PatchDecision: %s",
+                        applied_fields,
+                    )
+
+                    design_prefs.update(
+                        {
+                            "revers_type": state.design_preferences.revers_type,
+                            "shoulder_padding": state.design_preferences.shoulder_padding,
+                            "waistband_type": state.design_preferences.waistband_type,
+                        }
+                    )
 
                     # Add feedback to style keywords for additional context
                     style_keywords.append(f"User feedback: {state.image_state.mood_board_feedback}")
@@ -402,83 +423,3 @@ class DesignHenkAgent(BaseAgent):
 
         logger.info(f"[DesignHenkAgent] Extracted style keywords: {keywords}")
         return keywords
-
-    def _parse_feedback_and_update_preferences(
-        self, feedback: str, current_prefs: dict, state: SessionState
-    ) -> tuple[dict, dict]:
-        """
-        Parse user feedback and extract design preference changes.
-
-        Args:
-            feedback: User feedback text
-            current_prefs: Current design preferences dict
-            state: Session state for state-level updates
-
-        Returns:
-            Tuple of (design_prefs_updates, state_updates)
-        """
-        feedback_lower = feedback.lower()
-        updates = {}
-        state_updates = {}
-
-        # Parse lapel/revers type (RAG Spezifikationen)
-        if any(word in feedback_lower for word in ["spitzfacon", "spitz facon"]):
-            updates["revers_type"] = "Spitzfacon"
-            logger.info("[DesignHenk] Parsed feedback: revers_type = Spitzfacon")
-        elif any(word in feedback_lower for word in ["fallendes facon", "fallend facon", "fallendes revers", "fallend revers", "falling lapel"]):
-            updates["revers_type"] = "fallendes Facon"
-            logger.info("[DesignHenk] Parsed feedback: revers_type = fallendes Facon")
-        elif any(word in feedback_lower for word in ["stehkragen", "stand collar", "mandarin"]):
-            updates["revers_type"] = "Stehkragen"
-            logger.info("[DesignHenk] Parsed feedback: revers_type = Stehkragen")
-        elif any(word in feedback_lower for word in ["ohne revers", "no lapel", "kein revers"]):
-            updates["revers_type"] = "Ohne Revers"
-            logger.info("[DesignHenk] Parsed feedback: revers_type = Ohne Revers")
-        elif any(word in feedback_lower for word in ["schalkragen", "shawl collar", "schal"]):
-            updates["revers_type"] = "Schalkragen"
-            logger.info("[DesignHenk] Parsed feedback: revers_type = Schalkragen")
-        elif any(word in feedback_lower for word in ["dinner jacket", "smoking", "tuxedo"]):
-            updates["revers_type"] = "Dinner Jacket"
-            logger.info("[DesignHenk] Parsed feedback: revers_type = Dinner Jacket")
-        elif any(word in feedback_lower for word in ["normales revers", "normal lapel", "klassisches revers", "stegrevers"]):
-            updates["revers_type"] = "Stegrevers"
-            logger.info("[DesignHenk] Parsed feedback: revers_type = Stegrevers")
-        elif any(word in feedback_lower for word in ["spitzrevers", "peak lapel"]):
-            updates["revers_type"] = "Spitzrevers"
-            logger.info("[DesignHenk] Parsed feedback: revers_type = Spitzrevers")
-
-        # Parse shoulder padding
-        if any(word in feedback_lower for word in ["keine schulter", "no shoulder", "ohne polster", "ungepolstert"]):
-            updates["shoulder_padding"] = "keine"
-            logger.info("[DesignHenk] Parsed feedback: shoulder_padding = keine")
-        elif any(word in feedback_lower for word in ["leichte schulter", "light shoulder", "wenig polster"]):
-            updates["shoulder_padding"] = "leicht"
-            logger.info("[DesignHenk] Parsed feedback: shoulder_padding = leicht")
-        elif any(word in feedback_lower for word in ["mittlere schulter", "medium shoulder", "mittel"]):
-            updates["shoulder_padding"] = "mittel"
-            logger.info("[DesignHenk] Parsed feedback: shoulder_padding = mittel")
-        elif any(word in feedback_lower for word in ["starke schulter", "strong shoulder", "stark gepolstert"]):
-            updates["shoulder_padding"] = "stark"
-            logger.info("[DesignHenk] Parsed feedback: shoulder_padding = stark")
-
-        # Parse waistband type
-        if any(word in feedback_lower for word in ["bundfalte", "pleated", "mit falte", "falten"]):
-            updates["waistband_type"] = "bundfalte"
-            logger.info("[DesignHenk] Parsed feedback: waistband_type = bundfalte")
-        elif any(word in feedback_lower for word in ["glatt", "flat front", "ohne falte", "keine falte"]):
-            updates["waistband_type"] = "glatt"
-            logger.info("[DesignHenk] Parsed feedback: waistband_type = glatt")
-
-        # Parse vest preference (state-level update)
-        if any(word in feedback_lower for word in ["ohne weste", "no vest", "kein weste", "zweiteiler", "two-piece"]):
-            state_updates["wants_vest"] = False
-            logger.info("[DesignHenk] Parsed feedback: wants_vest = False (NO VEST)")
-        elif any(word in feedback_lower for word in ["mit weste", "with vest", "dreiteiler", "three-piece"]):
-            state_updates["wants_vest"] = True
-            logger.info("[DesignHenk] Parsed feedback: wants_vest = True (WITH VEST)")
-
-        # Log if no updates were parsed
-        if not updates and not state_updates:
-            logger.info(f"[DesignHenk] No specific design preferences parsed from feedback: {feedback}")
-
-        return updates, state_updates
