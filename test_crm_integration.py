@@ -61,28 +61,37 @@ async def test_lead_creation_without_api():
     print("TEST 3: Lead Creation (MOCK Mode)")
     print("="*60)
 
-    # Force no API key
-    crm_tool = CRMTool(api_key=None)
+    # Temporarily remove API key from environment
+    original_api_key = os.environ.pop('PIPEDRIVE_API_KEY', None)
 
-    lead_data = CRMLeadCreate(
-        customer_name="Test User (MOCK)",
-        email="test-mock@example.com",
-        phone="+49 123 456789",
-        notes="Test lead - MOCK mode",
-        deal_value=1500.0,
-    )
+    try:
+        # Force no API key by removing from env
+        crm_tool = CRMTool()
 
-    print(f"Creating lead: {lead_data.customer_name}")
-    response = await crm_tool.create_lead(lead_data)
+        lead_data = CRMLeadCreate(
+            customer_name="Test User (MOCK)",
+            email="test-mock@example.com",
+            phone="+49 123 456789",
+            notes="Test lead - MOCK mode",
+            deal_value=1500.0,
+        )
 
-    print(f"Success: {response.success}")
-    print(f"Lead ID: {response.lead_id}")
-    print(f"Message: {response.message}")
+        print(f"Creating lead: {lead_data.customer_name}")
+        response = await crm_tool.create_lead(lead_data)
 
-    assert response.lead_id == "no_api_key", "Expected 'no_api_key' as lead_id"
-    assert not response.success, "Expected success=False"
+        print(f"Success: {response.success}")
+        print(f"Lead ID: {response.lead_id}")
+        print(f"Message: {response.message}")
 
-    print("✅ MOCK lead creation works correctly")
+        assert response.lead_id == "no_api_key", f"Expected 'no_api_key', got '{response.lead_id}'"
+        assert not response.success, "Expected success=False"
+
+        print("✅ MOCK lead creation works correctly")
+
+    finally:
+        # Restore original API key
+        if original_api_key:
+            os.environ['PIPEDRIVE_API_KEY'] = original_api_key
 
 
 async def test_lead_creation_with_api(crm_tool: CRMTool):
