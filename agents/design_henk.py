@@ -129,8 +129,9 @@ class DesignHenkAgent(BaseAgent):
                 should_continue=False,
             )
 
-        # Check if we have a CRM lead (real Pipedrive OR mock for development)
-        # CRITICAL: MOCK leads are acceptable to prevent infinite loop
+        # Check if we have a CRM lead (real Pipedrive OR MOCK for development)
+        # CRITICAL: MOCK leads ARE acceptable to prevent infinite loop
+        # Only exclude provisional HENK1 leads (created before mood board approval)
         has_crm_lead = (
             state.customer.crm_lead_id
             and not state.customer.crm_lead_id.startswith("HENK1_LEAD")  # Only exclude provisional HENK1 leads

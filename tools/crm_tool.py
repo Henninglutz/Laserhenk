@@ -121,7 +121,7 @@ class CRMTool:
             if not person:
                 # Create new person
                 person = self.client.create_person(
-                    name=lead_data.name,
+                    name=lead_data.customer_name,
                     email=lead_data.email,
                     phone=lead_data.phone,
                 )
@@ -132,7 +132,7 @@ class CRMTool:
             deal_id = None
             if lead_data.deal_value and lead_data.deal_value > 0:
                 deal = self.client.create_deal(
-                    title=f"Lead: {lead_data.name}",
+                    title=f"Lead: {lead_data.customer_name}",
                     person_id=person_id,
                     value=lead_data.deal_value,
                     currency='EUR',
