@@ -5,7 +5,7 @@ from typing import List, Optional
 from datetime import datetime
 
 import requests
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
 from pydantic import BaseModel, Field
 
