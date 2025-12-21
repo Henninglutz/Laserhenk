@@ -25,6 +25,11 @@ class DesignPreferencesPatch(BaseModel):
     notes_normalized: Optional[str] = Field(
         None, max_length=120, description="Normalized short notes"
     )
+    requested_fabric_code: Optional[str] = Field(
+        None,
+        max_length=20,
+        description="Fabric code requested by user (e.g., '50C4022', '10M5000')"
+    )
 
 
 class SessionStatePatch(BaseModel):
