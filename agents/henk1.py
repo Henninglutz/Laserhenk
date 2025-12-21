@@ -271,65 +271,32 @@ class Henk1Agent(BaseAgent):
         # If RAG has been queried and fabric images shown, check if user responded
         if state.henk1_rag_queried and state.henk1_fabrics_shown:
             logger.info(
-                "[HENK1] RAG queried and fabric images shown - checking for user response"
+                "[HENK1] RAG queried and fabric images shown - waiting for user fabric selection"
             )
             if not state.customer.customer_id:
                 state.customer.customer_id = f"TEMP_{state.session_id[:8]}"
 
-            # SOFORT-FIX: Check if user has responded after fabric images
-            recent_user_messages = [
-                msg for msg in state.conversation_history[-3:]
-                if isinstance(msg, dict) and msg.get("role") == "user"
-            ]
+            # CRITICAL FIX: If fabrics were already shown, ALWAYS wait for user response
+            # Do NOT re-process the same message that triggered RAG initially
+            # This prevents infinite loops where henk1 → RAG → henk1 → RAG → ...
 
-            if recent_user_messages and state.favorite_fabric:
-                # User has responded and selected fabric → forward to Design HENK
-                logger.info("[HENK1] ✅ User responded after fabrics, forwarding to Design HENK")
+            if state.favorite_fabric:
+                # User has selected fabric → forward to Design HENK
+                logger.info("[HENK1] ✅ Fabric selected, forwarding to Design HENK")
                 return AgentDecision(
                     next_agent="design_henk",
                     message="Perfekt! Lass uns jetzt über Schnitt und Details sprechen...",
                     action=None,
                     should_continue=True,  # Continue to Design HENK
                 )
-            elif recent_user_messages and not state.favorite_fabric:
-                # User responded but hasn't selected fabric yet
-                # Check if user is requesting different fabrics (color change, more options, etc.)
-                latest_message = recent_user_messages[-1].get("content", "").lower()
-
-                # Keywords indicating user wants different/more fabrics
-                change_keywords = [
-                    "andere", "andere stoffe", "mehr stoffe", "weitere", "mehr",
-                    "stoffe", "stoff",  # Fabric mentions
-                    "blau", "grau", "schwarz", "braun", "beige", "rot", "gelb", "orange", "weiß", "dunkel", "hell",  # Colors
-                    "nicht grün", "nicht diese", "andere farbe", "nicht",
-                    "zeig mir", "hast du", "gibt es", "zeige",
-                ]
-
-                wants_different_fabrics = any(kw in latest_message for kw in change_keywords)
-
-                if wants_different_fabrics:
-                    logger.info("[HENK1] 🔄 User wants different fabrics, triggering new RAG search")
-                    # Reset RAG state to allow new search
-                    state.henk1_rag_queried = False
-                    state.henk1_fabrics_shown = False  # Also reset this to force new images
-                    # Don't return here - let the flow continue to LLM processing below
-                else:
-                    # User just commenting, no fabric change request → continue conversation
-                    logger.info("[HENK1] User responded but no fabric selected yet, continuing conversation")
-                    return AgentDecision(
-                        next_agent=None,
-                        message=None,
-                        action=None,
-                        should_continue=False,  # WAIT for fabric selection
-                    )
             else:
-                # No response yet → wait
-                logger.info("[HENK1] No user response yet, waiting...")
+                # Fabrics shown, waiting for user to select one → STOP here
+                logger.info("[HENK1] ⏸️ Waiting for user to select fabric (fabrics already shown)")
                 return AgentDecision(
                     next_agent=None,
-                    message=None,
+                    message=None,  # No new message - fabrics were already shown by RAG tool
                     action=None,
-                    should_continue=False,  # WAIT for user response
+                    should_continue=False,  # STOP and wait for user response
                 )
 
         # NOTE: Old mood board generation (BEFORE RAG) has been removed
@@ -1220,14 +1187,15 @@ Wichtig: Antworte IMMER auf Deutsch, kurz und freundlich."""
             return True
 
         # Check for REJECTION + COLOR (e.g., "ne, bitte grün")
-        rejection_keywords = ["ne", "nein", "nicht", "lieber", "besser"]
+        # IMPORTANT: Use word boundaries to avoid false positives like "gerne" or "eine"
+        rejection_keywords = [r"\bne\b", r"\bnein\b", r"\bnicht\b", r"\blieber\b", r"\bbesser\b"]
         color_keywords = [
             "rot", "blau", "grün", "grau", "schwarz", "braun", "beige",
             "red", "blue", "green", "grey", "gray", "black", "brown",
             "dunkel", "hell", "marine", "navy", "olive"
         ]
 
-        has_rejection = any(keyword in text for keyword in rejection_keywords)
+        has_rejection = any(re.search(pattern, text) for pattern in rejection_keywords)
         has_color = any(keyword in text for keyword in color_keywords)
 
         if has_rejection and has_color:
