@@ -292,14 +292,36 @@ class Henk1Agent(BaseAgent):
                     should_continue=True,  # Continue to Design HENK
                 )
             elif recent_user_messages and not state.favorite_fabric:
-                # User responded but hasn't selected fabric yet → continue conversation
-                logger.info("[HENK1] User responded but no fabric selected yet, continuing conversation")
-                return AgentDecision(
-                    next_agent=None,
-                    message=None,
-                    action=None,
-                    should_continue=False,  # WAIT for fabric selection
-                )
+                # User responded but hasn't selected fabric yet
+                # Check if user is requesting different fabrics (color change, more options, etc.)
+                latest_message = recent_user_messages[-1].get("content", "").lower()
+
+                # Keywords indicating user wants different/more fabrics
+                change_keywords = [
+                    "andere", "andere stoffe", "mehr stoffe", "weitere", "mehr",
+                    "stoffe", "stoff",  # Fabric mentions
+                    "blau", "grau", "schwarz", "braun", "beige", "rot", "gelb", "orange", "weiß", "dunkel", "hell",  # Colors
+                    "nicht grün", "nicht diese", "andere farbe", "nicht",
+                    "zeig mir", "hast du", "gibt es", "zeige",
+                ]
+
+                wants_different_fabrics = any(kw in latest_message for kw in change_keywords)
+
+                if wants_different_fabrics:
+                    logger.info("[HENK1] 🔄 User wants different fabrics, triggering new RAG search")
+                    # Reset RAG state to allow new search
+                    state.henk1_rag_queried = False
+                    state.henk1_fabrics_shown = False  # Also reset this to force new images
+                    # Don't return here - let the flow continue to LLM processing below
+                else:
+                    # User just commenting, no fabric change request → continue conversation
+                    logger.info("[HENK1] User responded but no fabric selected yet, continuing conversation")
+                    return AgentDecision(
+                        next_agent=None,
+                        message=None,
+                        action=None,
+                        should_continue=False,  # WAIT for fabric selection
+                    )
             else:
                 # No response yet → wait
                 logger.info("[HENK1] No user response yet, waiting...")

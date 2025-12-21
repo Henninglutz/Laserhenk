@@ -244,44 +244,123 @@ class DALLETool:
             revers = design_preferences.get("revers_type", "")
             shoulder = design_preferences.get("shoulder_padding", "")
             waistband = design_preferences.get("waistband_type", "")
+            jacket_front = design_preferences.get("jacket_front", "")
+            lapel_style = design_preferences.get("lapel_style", "")
+            lapel_roll = design_preferences.get("lapel_roll", "")
+            trouser_front = design_preferences.get("trouser_front", "")
             wants_vest = design_preferences.get("wants_vest")
 
-            if revers or shoulder or waistband:
-                design_details = "\n\nSUIT DESIGN:"
-                if revers:
-                    design_details += f"\n- Lapel style: {revers}"
-                if shoulder:
-                    design_details += f"\n- Shoulder: {shoulder}"
-                if waistband:
-                    design_details += f"\n- Trouser waistband: {waistband}"
+            # Build comprehensive design details
+            design_details_parts = []
+
+            # Jacket construction
+            if jacket_front:
+                if jacket_front == "single_breasted":
+                    design_details_parts.append("Single-breasted jacket (one row of buttons)")
+                elif jacket_front == "double_breasted":
+                    design_details_parts.append("Double-breasted jacket (two rows of buttons)")
+
+            # Lapel styling
+            lapel_parts = []
+            if lapel_style:
+                lapel_mapping = {
+                    "peak": "peak lapels (pointed upward)",
+                    "notch": "notch lapels (standard notch)",
+                    "shawl": "shawl collar"
+                }
+                lapel_parts.append(lapel_mapping.get(lapel_style, lapel_style))
+
+            if lapel_roll:
+                if lapel_roll == "rolling":
+                    lapel_parts.append("with soft rolling/falling lapels")
+                elif lapel_roll == "flat":
+                    lapel_parts.append("with flat lapels")
+
+            if lapel_parts:
+                design_details_parts.append(" ".join(lapel_parts))
+            elif revers:
+                design_details_parts.append(f"{revers} lapels")
+
+            # Shoulder construction
+            if shoulder:
+                shoulder_mapping = {
+                    "none": "unstructured soft shoulders (spalla camicia, no padding)",
+                    "light": "lightly padded shoulders",
+                    "medium": "medium shoulder padding",
+                    "structured": "structured shoulders with strong padding"
+                }
+                design_details_parts.append(shoulder_mapping.get(shoulder, f"{shoulder} shoulders"))
+
+            # Trouser details
+            trouser_parts = []
+            if trouser_front:
+                if trouser_front == "pleats":
+                    trouser_parts.append("pleated front trousers")
+                elif trouser_front == "flat_front":
+                    trouser_parts.append("flat front trousers")
+            elif waistband:
+                trouser_parts.append(f"{waistband} trousers")
+
+            if trouser_parts:
+                design_details_parts.append(", ".join(trouser_parts))
+
+            if design_details_parts:
+                design_details = "\n\nSUIT DESIGN SPECIFICATIONS:\n- " + "\n- ".join(design_details_parts)
 
             # Add explicit vest instruction
             if wants_vest is False:
-                vest_instruction = "\n\nCRITICAL: Show TWO-PIECE suit ONLY (jacket and trousers). NO vest/waistcoat. Two-piece configuration."
+                vest_instruction = "\n\nCRITICAL COMPOSITION: Show TWO-PIECE suit ONLY (jacket and trousers). NO vest/waistcoat visible. Two-piece configuration."
                 logger.info("[DALLETool] Adding NO VEST instruction to prompt")
             elif wants_vest is True:
-                vest_instruction = "\n\nCRITICAL: Show THREE-PIECE suit (jacket, vest/waistcoat, and trousers). Include matching vest."
+                vest_instruction = "\n\nCRITICAL COMPOSITION: Show THREE-PIECE suit (jacket, matching vest/waistcoat, and trousers). Vest must be visible under the jacket."
                 logger.info("[DALLETool] Adding WITH VEST instruction to prompt")
             else:
                 logger.info(f"[DALLETool] No vest preference set (wants_vest={wants_vest})")
 
         # Build final prompt
-        logger.info(f"[DALLETool] Building prompt with: revers={design_preferences.get('revers_type')}, vest_instruction length={len(vest_instruction)}")
+        design_pref_summary = []
+        if design_preferences:
+            if design_preferences.get("jacket_front"):
+                design_pref_summary.append(f"jacket_front={design_preferences['jacket_front']}")
+            if design_preferences.get("lapel_style"):
+                design_pref_summary.append(f"lapel_style={design_preferences['lapel_style']}")
+            if design_preferences.get("lapel_roll"):
+                design_pref_summary.append(f"lapel_roll={design_preferences['lapel_roll']}")
+            if design_preferences.get("shoulder_padding"):
+                design_pref_summary.append(f"shoulder={design_preferences['shoulder_padding']}")
+            if design_preferences.get("trouser_front"):
+                design_pref_summary.append(f"trouser={design_preferences['trouser_front']}")
+
+        logger.info(
+            "[DALLETool] Building prompt with design prefs: %s, vest_instruction=%d chars",
+            ", ".join(design_pref_summary) if design_pref_summary else "none",
+            len(vest_instruction),
+        )
+
         prompt = f"""Create an elegant mood board for a bespoke men's suit in a {scene}.
 
-FABRIC REFERENCE: Show suits made from {fabrics_text}.{design_details}{vest_instruction}
+FABRIC REFERENCE:
+Show suits made from {fabrics_text}.{design_details}{vest_instruction}
 
-STYLE: {style}, sophisticated, high-quality menswear photography.
+STYLE DIRECTION:
+{style}, sophisticated, high-quality menswear photography.
 
-COMPOSITION: Professional fashion editorial style, clean layout, luxurious atmosphere.
+VISUAL REQUIREMENTS:
+- Professional fashion editorial style with clean layout
+- Luxurious atmosphere with attention to tailoring details
+- Show the suit clearly with proper fit and drape
+- Natural lighting that highlights fabric texture and construction
 
-SETTING: {occasion} - create the appropriate ambiance and backdrop.
+SETTING:
+{occasion} - create the appropriate ambiance and backdrop.
 
-IMPORTANT: Realistic photograph only - NOT illustration, NOT drawing, NOT sketch. High-quality professional photography with natural lighting and photorealistic details.
+CRITICAL INSTRUCTIONS:
+- Realistic photograph ONLY - NOT illustration, NOT drawing, NOT sketch
+- High-quality professional photography with photorealistic details
+- Ensure all design specifications are clearly visible
+- Leave bottom-right corner visually calm (for fabric swatch overlay)"""
 
-NOTE: Leave bottom-right corner clear (for fabric swatches overlay)."""
-
-        logger.info(f"[DALLETool] Generated prompt: {prompt[:200]}...")
+        logger.info(f"[DALLETool] Generated prompt ({len(prompt)} chars): {prompt[:200]}...")
         return prompt
 
     async def generate_product_sheet(

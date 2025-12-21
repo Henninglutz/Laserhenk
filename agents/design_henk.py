@@ -52,7 +52,9 @@ BEISPIEL-ABLAUF:
 8. Weiter zu LASERHENK für Finalisierung
 """
 
+import json
 import logging
+import os
 from typing import Optional
 
 from agents.base import AgentDecision, BaseAgent
@@ -60,6 +62,11 @@ from agents.design_patch_agent import DesignPatchAgent
 from models.customer import SessionState
 from models.fabric import SelectedFabricData
 from models.patches import apply_design_preferences_patch
+
+try:
+    from openai import AsyncOpenAI
+except ModuleNotFoundError:
+    AsyncOpenAI = None
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +92,23 @@ class DesignHenkAgent(BaseAgent):
     def __init__(self):
         """Initialize Design HENK Agent."""
         super().__init__("design_henk")
+
+        # Initialize OpenAI client for LLM conversations
+        self.client = None
+        if AsyncOpenAI is not None and os.environ.get("OPENAI_API_KEY"):
+            try:
+                self.client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+                logger.info("[DesignHenk] ✅ OpenAI client initialized")
+            except Exception as exc:
+                logger.warning("[DesignHenk] OpenAI client initialization failed: %s", exc)
+
+        # Load style catalog for RAG knowledge
+        self.style_catalog = self._load_style_catalog()
+        if self.style_catalog:
+            dress_codes = list(self.style_catalog.get("dress_codes", {}).keys())
+            logger.info("[DesignHenk] ✅ Style catalog loaded: %d dress codes", len(dress_codes))
+        else:
+            logger.warning("[DesignHenk] ⚠️ Style catalog not loaded")
 
     async def process(self, state: SessionState) -> AgentDecision:
         """
@@ -113,20 +137,20 @@ class DesignHenkAgent(BaseAgent):
         )
 
         if not preferences_complete:
-            # TODO: Replace with actual LLM conversation to collect preferences
-            # For now: Mock data to prevent infinite loop
+            # Use LLM for flexible conversation about design preferences
+            llm_response = await self._process_with_llm(
+                state,
+                context_message="Der Kunde hat einen Stoff ausgewählt. Frage jetzt nach Design-Präferenzen (Revers, Schultern, Hosenbund)."
+            )
+
+            # Set default values to prevent infinite loop (will be overridden by user feedback)
             state.design_preferences.revers_type = "Spitzrevers"
             state.design_preferences.shoulder_padding = "mittel"
             state.design_preferences.waistband_type = "bundfalte"
 
             return AgentDecision(
                 next_agent=None,
-                message="Perfekt! Lass uns jetzt über die Details deines Anzugs sprechen.\n\n"
-                       "Ich würde gerne ein paar Fragen zum Schnitt stellen:\n\n"
-                       "1️⃣ **Revers-Stil**: Bevorzugst du klassische Spitzrevers oder moderne Stegrevers?\n"
-                       "2️⃣ **Schulterpolster**: Wie ausgeprägt soll die Schulter sein? (keine, leicht, mittel, stark)\n"
-                       "3️⃣ **Hosenbund**: Mit Bundfalte oder glatt?\n\n"
-                       "Sag mir einfach, was dir gefällt!",
+                message=llm_response,
                 action=None,
                 should_continue=False,
             )
@@ -181,6 +205,7 @@ class DesignHenkAgent(BaseAgent):
                 if state.image_state.mood_board_feedback:
                     logger.info(f"[DesignHenk] Incorporating user feedback: {state.image_state.mood_board_feedback}")
 
+                    # Extract structured patches from feedback
                     patch_agent = DesignPatchAgent()
                     decision = await patch_agent.extract_patch_decision(
                         user_message=state.image_state.mood_board_feedback,
@@ -193,38 +218,104 @@ class DesignHenkAgent(BaseAgent):
                         decision.model_dump_json(),
                     )
 
-                    applied_fields = []
-                    updated_preferences = apply_design_preferences_patch(
-                        state.design_preferences, decision.patch
+                    # Apply patches to design preferences
+                    if decision.confidence > 0.5:
+                        applied_fields = []
+                        updated_preferences = apply_design_preferences_patch(
+                            state.design_preferences, decision.patch
+                        )
+
+                        for field_name in updated_preferences.model_fields:
+                            new_value = getattr(updated_preferences, field_name)
+                            old_value = getattr(state.design_preferences, field_name)
+                            if new_value != old_value:
+                                applied_fields.append(field_name)
+                                logger.info(
+                                    "[DesignHenk] 🔄 Updated %s: %s → %s",
+                                    field_name,
+                                    old_value,
+                                    new_value,
+                                )
+
+                        state.design_preferences = updated_preferences
+
+                        # Update wants_vest in root state
+                        if decision.patch.wants_vest is not None:
+                            state.wants_vest = decision.patch.wants_vest
+                            applied_fields.append("wants_vest")
+                            logger.info(
+                                "[DesignHenk] 🔄 Updated wants_vest: %s",
+                                state.wants_vest,
+                            )
+
+                        # Handle fabric switching if requested
+                        if decision.patch.requested_fabric_code:
+                            requested_code = decision.patch.requested_fabric_code
+                            logger.info(
+                                "[DesignHenk] 🎨 User requested fabric change to: %s",
+                                requested_code,
+                            )
+
+                            # Search for fabric in shown_fabric_images
+                            fabric_found = False
+                            if state.shown_fabric_images:
+                                for fabric in state.shown_fabric_images:
+                                    if fabric.get("fabric_code") == requested_code:
+                                        # Update favorite_fabric to new selection
+                                        old_fabric = state.favorite_fabric.get("fabric_code") if state.favorite_fabric else None
+                                        state.favorite_fabric = fabric
+                                        fabric_found = True
+                                        applied_fields.append("requested_fabric_code")
+                                        logger.info(
+                                            "[DesignHenk] ✅ Switched fabric: %s → %s",
+                                            old_fabric,
+                                            requested_code,
+                                        )
+                                        break
+
+                            if not fabric_found:
+                                logger.warning(
+                                    "[DesignHenk] ⚠️ Requested fabric %s not found in shown_fabric_images",
+                                    requested_code,
+                                )
+
+                        logger.info(
+                            "[DesignHenk] ✅ Applied %d fields from PatchDecision: %s",
+                            len(applied_fields),
+                            applied_fields,
+                        )
+
+                        # Update design_prefs dict for DALLE
+                        design_prefs.update(
+                            {
+                                "revers_type": state.design_preferences.revers_type,
+                                "shoulder_padding": state.design_preferences.shoulder_padding,
+                                "waistband_type": state.design_preferences.waistband_type,
+                                "jacket_front": state.design_preferences.jacket_front,
+                                "lapel_style": state.design_preferences.lapel_style,
+                                "lapel_roll": state.design_preferences.lapel_roll,
+                                "trouser_front": state.design_preferences.trouser_front,
+                            }
+                        )
+                    else:
+                        logger.warning(
+                            "[DesignHenk] ⚠️ Low confidence (%.2f), not applying patches",
+                            decision.confidence,
+                        )
+
+                    # Extract style keywords from feedback using LLM
+                    feedback_keywords = await self._extract_style_keywords_from_feedback(
+                        state.image_state.mood_board_feedback
                     )
 
-                    for field_name in updated_preferences.model_fields:
-                        new_value = getattr(updated_preferences, field_name)
-                        old_value = getattr(state.design_preferences, field_name)
-                        if new_value != old_value:
-                            applied_fields.append(field_name)
+                    # Merge with existing style keywords
+                    if feedback_keywords:
+                        style_keywords.extend(feedback_keywords)
+                        logger.info(
+                            "[DesignHenk] 🎨 Merged style keywords: %s",
+                            style_keywords,
+                        )
 
-                    state.design_preferences = updated_preferences
-
-                    if decision.patch.wants_vest is not None:
-                        state.wants_vest = decision.patch.wants_vest
-                        applied_fields.append("wants_vest")
-
-                    logger.info(
-                        "[DesignHenk] Applied fields from PatchDecision: %s",
-                        applied_fields,
-                    )
-
-                    design_prefs.update(
-                        {
-                            "revers_type": state.design_preferences.revers_type,
-                            "shoulder_padding": state.design_preferences.shoulder_padding,
-                            "waistband_type": state.design_preferences.waistband_type,
-                        }
-                    )
-
-                    # Add feedback to style keywords for additional context
-                    style_keywords.append(f"User feedback: {state.image_state.mood_board_feedback}")
                     # Clear feedback after incorporating
                     state.image_state.mood_board_feedback = None
 
@@ -247,13 +338,16 @@ class DesignHenkAgent(BaseAgent):
             # Mood board generated, waiting for user approval
             if state.mood_image_url and not state.image_state.mood_board_approved:
                 iterations_left = 7 - state.image_state.mood_board_iteration_count
+
+                # Use LLM for flexible, charming mood board presentation
+                llm_response = await self._process_with_llm(
+                    state,
+                    context_message=f"Das Moodbild wurde generiert. Präsentiere es dem Kunden charmant und frage, ob es ihm gefällt. Erwähne, dass noch {iterations_left} Änderungen möglich sind."
+                )
+
                 return AgentDecision(
                     next_agent=None,
-                    message=f"Hier ist Ihr Moodbild für den maßgeschneiderten Anzug! 👔\n\n"
-                           f"**Gefällt Ihnen die Richtung?**\n\n"
-                           f"✅ Wenn ja, sagen Sie 'Ja', 'Genehmigt' oder 'Perfekt'\n"
-                           f"🔄 Wenn Sie Änderungen wünschen, beschreiben Sie einfach, was anders sein soll\n\n"
-                           f"Sie können noch bis zu {iterations_left} Änderungen vornehmen.",
+                    message=llm_response,
                     action=None,
                     should_continue=False,
                 )
@@ -269,12 +363,16 @@ class DesignHenkAgent(BaseAgent):
             # CRITICAL: Email is mandatory for CRM lead creation
             if not state.customer.email:
                 logger.info("[DesignHenk] Email missing, requesting from user")
+
+                # Use LLM for charming email request
+                llm_response = await self._process_with_llm(
+                    state,
+                    context_message="Das Moodbild wurde genehmigt! Gratuliere dem Kunden und frage charmant nach seiner E-Mail-Adresse, um den Termin vorzubereiten."
+                )
+
                 return AgentDecision(
                     next_agent=None,
-                    message="Perfekt! 🎉\n\n"
-                           "Um Ihre Daten zu sichern und den Termin vorzubereiten, "
-                           "benötige ich noch Ihre **E-Mail-Adresse**.\n\n"
-                           "Bitte geben Sie Ihre E-Mail ein:",
+                    message=llm_response,
                     action=None,
                     should_continue=False,
                 )
@@ -298,11 +396,15 @@ class DesignHenkAgent(BaseAgent):
         # Design phase complete → hand back to supervisor
         # Only proceed if we have a CRM lead (real or mock)
         if has_crm_lead:
+            # Use LLM for charming phase completion and appointment request
+            llm_response = await self._process_with_llm(
+                state,
+                context_message="Design-Phase erfolgreich abgeschlossen! Gratuliere dem Kunden und frage, ob er den Termin lieber zu Hause oder im Büro haben möchte."
+            )
+
             return AgentDecision(
                 next_agent=None,
-                message="✅ Design-Phase abgeschlossen!\n\n"
-                       "Als nächstes vereinbaren wir einen Termin mit Henning für die Maßerfassung. "
-                       "Bevorzugen Sie einen Termin bei Ihnen zu Hause oder im Büro?",
+                message=llm_response,
                 action="complete_design_phase",
                 should_continue=False,
             )
@@ -423,3 +525,297 @@ class DesignHenkAgent(BaseAgent):
 
         logger.info(f"[DesignHenkAgent] Extracted style keywords: {keywords}")
         return keywords
+
+    async def _extract_style_keywords_from_feedback(self, feedback: str) -> list[str]:
+        """
+        Extract style keywords from raw user feedback using LLM.
+
+        Args:
+            feedback: User feedback message
+
+        Returns:
+            List of extracted style keywords
+        """
+        if not feedback or AsyncOpenAI is None or not os.environ.get("OPENAI_API_KEY"):
+            return []
+
+        try:
+            client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
+            system_prompt = """Extract style keywords from German user feedback for a bespoke suit.
+
+IMPORTANT: Return ONLY a JSON object with a "keywords" array. No explanations.
+
+Examples:
+Input: "modern, leicht, italienisch"
+Output: {"keywords": ["modern", "light", "italian"]}
+
+Input: "klassischer Schnitt, elegant, business"
+Output: {"keywords": ["classic", "elegant", "business"]}
+
+Input: "ohne Futter ohne Polster, aufgesetzte Taschen"
+Output: {"keywords": ["unlined", "unpadded", "patch pockets"]}
+
+Extract keywords related to:
+- Style (classic, modern, contemporary)
+- Construction (lightweight, structured, soft)
+- Regional influence (Italian, British, American)
+- Occasion (business, formal, casual)
+- Design details (patch pockets, unlined, etc.)"""
+
+            response = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": feedback}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.3,
+            )
+
+            data = json.loads(response.choices[0].message.content)
+            keywords = data.get("keywords", [])
+
+            logger.info(
+                "[DesignHenkAgent] ✅ Extracted %d style keywords from feedback: %s",
+                len(keywords),
+                keywords,
+            )
+
+            return keywords
+
+        except Exception as exc:
+            logger.warning(
+                "[DesignHenkAgent] Style keyword extraction failed: %s",
+                exc,
+            )
+            return []
+
+    def _get_system_prompt(self, state: SessionState) -> str:
+        """Build system prompt for Design Henk based on current context."""
+        # Build context information
+        fabric_info = ""
+        if state.favorite_fabric:
+            fabric = state.favorite_fabric
+            fabric_info = f"\n- Stoff: {fabric.get('fabric_code')} ({fabric.get('color')}, {fabric.get('pattern')})"
+
+        design_info = ""
+        if state.design_preferences:
+            prefs = []
+            if state.design_preferences.lapel_style:
+                prefs.append(f"Revers: {state.design_preferences.lapel_style}")
+            if state.design_preferences.shoulder_padding:
+                prefs.append(f"Schulter: {state.design_preferences.shoulder_padding}")
+            if state.design_preferences.trouser_front:
+                prefs.append(f"Hose: {state.design_preferences.trouser_front}")
+            if state.wants_vest is not None:
+                prefs.append("mit Weste" if state.wants_vest else "ohne Weste")
+            if prefs:
+                design_info = f"\n- Bisherige Präferenzen: {', '.join(prefs)}"
+
+        iteration_info = ""
+        if state.image_state.mood_board_iteration_count > 0:
+            iteration_info = f"\n- Moodbild-Iteration: {state.image_state.mood_board_iteration_count}/7"
+
+        # Get style knowledge based on occasion
+        occasion = None
+        if hasattr(state, 'henk1_to_design_payload') and state.henk1_to_design_payload:
+            occasion = state.henk1_to_design_payload.get('occasion')
+
+        style_knowledge = self._get_style_knowledge(occasion)
+
+        return f"""Du bist Design HENK, der kreative Design-Spezialist bei LASERHENK.
+
+Deine Aufgabe - DESIGN-BERATUNG & VISUALISIERUNG:
+
+🎨 DEINE ROLLE:
+- Du bist charmant, kreativ und detailversessen
+- Du hilfst dem Kunden, seinen perfekten Anzug zu visualisieren
+- Du stellst Fragen zu Schnitt-Details (Revers, Schultern, Hose, etc.)
+- Du erstellst Moodbilder basierend auf seinen Wünschen
+- Du iterierst bis der Kunde zufrieden ist (max. 7 Iterationen)
+
+📊 AKTUELLER STATUS:{fabric_info}{design_info}{iteration_info}
+{style_knowledge}
+
+💬 GESPRÄCHSFÜHRUNG:
+- Sei herzlich, persönlich und begeisternd
+- Nutze lockere Sprache ("du", emoji 🎩✨)
+- Erkläre Design-Optionen verständlich
+- Reagiere auf ALLE Kundenfragen (Preis, Lieferzeit, Details, etc.)
+- Gehe auf Feedback ein und passe das Moodbild an
+
+🎯 DESIGN-DETAILS ZU KLÄREN:
+1. Revers-Stil (Spitzrevers, Stegrevers, Schalkragen)
+2. Schulterpolsterung (keine, leicht, mittel, stark)
+3. Hosenbund (Bundfalte, glatt)
+4. Weste (ja/nein)
+5. Weitere Präferenzen (Knopfanzahl, Taschenstil)
+
+📸 MOODBILD-ITERATION:
+- Nach jedem Feedback: Erkläre kurz, was du änderst
+- Sei positiv und motivierend
+- Zeige Verständnis für Kundenwünsche
+- Wenn zufrieden → Lead sichern & Termin vereinbaren
+
+💰 PREISE (wenn gefragt):
+- Einstieg: ab 899€ (2-Teiler, Standardstoffe)
+- Premium: 1.200-2.500€ (hochwertige Stoffe, mehr Details)
+- Luxus: 2.500€+ (exklusive Stoffe, alle Details)
+- Hinweis: "Genauer Preis wird im persönlichen Termin besprochen"
+
+⏱️ LIEFERZEIT (wenn gefragt):
+- Standardproduktion: 4-6 Wochen
+- Express: 2-3 Wochen (gegen Aufpreis)
+- Bei Termindruck: "Wir finden eine Lösung!"
+
+Wichtig: Antworte IMMER auf Deutsch, kurz, charmant und hilfreich!"""
+
+    async def _process_with_llm(
+        self, state: SessionState, context_message: str = ""
+    ) -> str:
+        """
+        Process user message with LLM for flexible, context-aware responses.
+
+        Args:
+            state: Session state
+            context_message: Optional context message to prepend
+
+        Returns:
+            LLM response string
+        """
+        if not self.client:
+            # Fallback if no client available
+            return "Lass uns über die Design-Details deines Anzugs sprechen!"
+
+        # Get latest user message
+        user_input = ""
+        for msg in reversed(state.conversation_history):
+            if isinstance(msg, dict) and msg.get("role") == "user":
+                user_input = msg.get("content", "")
+                break
+
+        # Build conversation context
+        messages = [
+            {"role": "system", "content": self._get_system_prompt(state)},
+        ]
+
+        # Add context message if provided
+        if context_message:
+            messages.append({"role": "system", "content": f"CONTEXT: {context_message}"})
+
+        # Add conversation history (last 10 messages)
+        for msg in state.conversation_history[-10:]:
+            if isinstance(msg, dict):
+                role = "assistant" if msg.get("sender") in ["design_henk", "system"] else "user"
+                content = msg.get("content", "")
+                if content:
+                    messages.append({"role": role, "content": content})
+
+        # Add current user input if not already in history
+        if user_input and not any(
+            isinstance(m, dict) and m.get("role") == "user" and m.get("content") == user_input
+            for m in messages
+        ):
+            messages.append({"role": "user", "content": user_input})
+
+        try:
+            response = await self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=0.7,
+            )
+            llm_response = response.choices[0].message.content
+
+            logger.info(
+                "[DesignHenk] ✅ LLM response generated (%d chars)",
+                len(llm_response)
+            )
+
+            return llm_response
+
+        except Exception as exc:
+            logger.warning("[DesignHenk] LLM call failed: %s", exc)
+            return "Lass uns über die Design-Details deines Anzugs sprechen!"
+
+    def _load_style_catalog(self) -> dict:
+        """
+        Load style catalog from knowledge base.
+
+        Returns:
+            Style catalog dict or empty dict if failed
+        """
+        catalog_path = os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "drive_mirror",
+            "henk",
+            "knowledge",
+            "style_catalog.json"
+        )
+
+        try:
+            with open(catalog_path, "r", encoding="utf-8") as f:
+                catalog = json.load(f)
+                return catalog
+        except FileNotFoundError:
+            logger.warning("[DesignHenk] Style catalog not found at %s", catalog_path)
+            return {}
+        except Exception as exc:
+            logger.warning("[DesignHenk] Failed to load style catalog: %s", exc)
+            return {}
+
+    def _get_style_knowledge(self, occasion: str = None) -> str:
+        """
+        Get relevant style knowledge based on occasion.
+
+        Args:
+            occasion: Optional occasion to filter (e.g., "Hochzeit", "Business", "Gala")
+
+        Returns:
+            Formatted style knowledge string
+        """
+        if not self.style_catalog:
+            return ""
+
+        dress_codes = self.style_catalog.get("dress_codes", {})
+
+        # If specific occasion provided, try to match dress code
+        if occasion:
+            occasion_lower = occasion.lower()
+
+            # Map occasions to dress codes
+            occasion_mapping = {
+                "hochzeit": "formal_evening",
+                "gala": "formal_evening",
+                "business": "business_formal",
+                "vorstellungsgespräch": "business_formal",
+                "arbeit": "business_casual",
+                "meeting": "business_casual",
+                "freizeit": "smart_casual",
+                "restaurant": "smart_casual",
+            }
+
+            # Find matching dress code
+            for key, dress_code_key in occasion_mapping.items():
+                if key in occasion_lower:
+                    if dress_code_key in dress_codes:
+                        dc = dress_codes[dress_code_key]
+                        return f"""
+📋 EMPFEHLUNG FÜR {occasion.upper()}:
+- Stil: {dc['name']}
+- Erforderlich: {', '.join(dc.get('required_items', []))}
+- Farben: {', '.join(dc.get('color_palette', []))}
+- Stoffe: {', '.join(dc.get('fabric_recommendations', []))}
+"""
+
+        # Otherwise, return general overview
+        knowledge = "\n📚 VERFÜGBARE DRESS CODES:\n"
+        for code_key, code_data in dress_codes.items():
+            occasions = code_data.get('occasions', [])
+            colors = code_data.get('color_palette', [])
+            knowledge += f"\n{code_data['name']}:\n"
+            knowledge += f"  - Anlässe: {', '.join(occasions[:3])}\n"
+            knowledge += f"  - Farben: {', '.join(colors[:3])}\n"
+
+        return knowledge
