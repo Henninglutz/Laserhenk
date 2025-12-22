@@ -48,6 +48,7 @@ class DALLETool:
         self.enabled = os.getenv("ENABLE_DALLE", "true").lower() == "true"
         self.images_dir = Path(__file__).parent.parent / "generated_images"
         self.images_dir.mkdir(parents=True, exist_ok=True)
+        self._template_logged = False
 
         if Image is None:
             logger.warning(
@@ -109,6 +110,7 @@ class DALLETool:
 
             image_url = response.data[0].url
             revised_prompt = response.data[0].revised_prompt
+            self._warn_if_prompt_drops_constraints(request.prompt, revised_prompt)
 
             logger.info(f"[DALLETool] Image generated: {image_url}")
 
@@ -254,20 +256,28 @@ class DALLETool:
 
         # Fabric descriptions
         fabric_descriptions = []
-        for i, fabric in enumerate(fabrics[:2], 1):
+        fabric_context_lines = []
+        for i, fabric in enumerate(fabrics[:4], 1):
             color = fabric.get("color", "classic")
             pattern = fabric.get("pattern", "solid")
             composition = fabric.get("composition", "fine wool")
+            fabric_code = fabric.get("fabric_code") or "N/A"
 
             fabric_desc = f"{color} {pattern} fabric in {composition}"
             fabric_descriptions.append(fabric_desc)
+            fabric_context_lines.append(
+                f"- {fabric_code}: color={color}, pattern={pattern}, composition={composition}"
+            )
 
         fabrics_text = " and ".join(fabric_descriptions)
+        fabric_context_block = "FABRIC CONTEXT:\n" + "\n".join(fabric_context_lines)
 
         # Extract design preferences if provided
         design_details = ""
         vest_instruction = ""
         trouser_color_instruction = ""
+        material_requirement = ""
+        constraints_summary_lines: list[str] = []
         if design_preferences:
             revers = design_preferences.get("revers_type", "")
             shoulder = design_preferences.get("shoulder_padding", "")
@@ -277,7 +287,9 @@ class DALLETool:
             lapel_roll = design_preferences.get("lapel_roll", "")
             trouser_front = design_preferences.get("trouser_front", "")
             wants_vest = design_preferences.get("wants_vest")
-            notes_normalized = (design_preferences.get("notes_normalized") or "").lower()
+            trouser_color = design_preferences.get("trouser_color")
+            preferred_material = design_preferences.get("preferred_material")
+            requested_fabric_code = design_preferences.get("requested_fabric_code")
 
             # Build comprehensive design details
             design_details_parts = []
@@ -333,38 +345,47 @@ class DALLETool:
             if trouser_parts:
                 design_details_parts.append(", ".join(trouser_parts))
 
-            trouser_color_map = {
-                "dunkelblau": "navy blue",
-                "navy": "navy blue",
-                "marine": "navy blue",
-                "blau": "blue",
-                "blue": "blue",
-                "schwarz": "black",
-                "black": "black",
-                "grau": "grey",
-                "grey": "grey",
-                "beige": "beige",
-                "braun": "brown",
-            }
-            for key, color in trouser_color_map.items():
-                if key in notes_normalized:
-                    trouser_color_instruction = (
-                        f"\n- TROUSERS COLOR: {color} (contrast trousers; jacket remains in fabric tone)"
-                    )
-                    break
+            if trouser_color:
+                trouser_color_label = trouser_color.replace("_", " ")
+                trouser_color_instruction = (
+                    f"\n- TROUSERS COLOR: {trouser_color_label} (contrast trousers; jacket remains in fabric tone)"
+                )
 
             if design_details_parts:
                 design_details = "\n\nSUIT DESIGN SPECIFICATIONS:\n- " + "\n- ".join(design_details_parts)
 
             # Add explicit vest instruction
             if wants_vest is False:
-                vest_instruction = "\n\nCRITICAL COMPOSITION: Show TWO-PIECE suit ONLY (jacket and trousers). NO vest/waistcoat/gilet visible. Absolutely exclude any vest."
+                vest_instruction = (
+                    "\n\nCRITICAL COMPOSITION: Show TWO-PIECE suit ONLY (jacket and trousers). "
+                    "NOT a three-piece. NO vest/waistcoat/gilet visible. Absolutely exclude any vest."
+                )
                 logger.info("[DALLETool] Adding NO VEST instruction to prompt")
             elif wants_vest is True:
-                vest_instruction = "\n\nCRITICAL COMPOSITION: Show THREE-PIECE suit (jacket, matching vest/waistcoat, and trousers). Vest must be visible under the jacket."
+                vest_instruction = (
+                    "\n\nCRITICAL COMPOSITION: Show THREE-PIECE suit (jacket, matching vest/waistcoat, and trousers). "
+                    "Vest must be visible under the jacket."
+                )
                 logger.info("[DALLETool] Adding WITH VEST instruction to prompt")
             else:
                 logger.info(f"[DALLETool] No vest preference set (wants_vest={wants_vest})")
+
+            if preferred_material:
+                material_requirement = f"\n\nMATERIAL REQUIREMENT: {preferred_material}"
+
+            constraints_summary_lines = [
+                f"- occasion={occasion}" if occasion else None,
+                f"- jacket_front={jacket_front}" if jacket_front else None,
+                f"- lapel_style={lapel_style}" if lapel_style else None,
+                f"- lapel_roll={lapel_roll}" if lapel_roll else None,
+                f"- shoulder_padding={shoulder}" if shoulder else None,
+                f"- trouser_front={trouser_front}" if trouser_front else None,
+                f"- trouser_color={trouser_color}" if trouser_color else None,
+                f"- wants_vest={wants_vest}" if wants_vest is not None else None,
+                f"- requested_fabric_code={requested_fabric_code}" if requested_fabric_code else None,
+                f"- preferred_material={preferred_material}" if preferred_material else None,
+            ]
+            constraints_summary_lines = [line for line in constraints_summary_lines if line]
 
         # Build final prompt
         design_pref_summary = []
@@ -386,10 +407,16 @@ class DALLETool:
             len(vest_instruction),
         )
 
+        constraints_summary_block = ""
+        if constraints_summary_lines:
+            constraints_summary_block = "\n\nCONSTRAINTS SUMMARY:\n" + "\n".join(constraints_summary_lines)
+
         prompt = f"""Create an elegant mood board for a bespoke men's suit in a {scene}.
 
+{fabric_context_block}
+
 FABRIC REFERENCE:
-Use these fabrics only as color/pattern inspiration (do NOT replicate exact fabric patterns).{design_details}{trouser_color_instruction}{vest_instruction}
+Use these fabrics only as color/pattern inspiration (do NOT replicate exact fabric patterns).{design_details}{trouser_color_instruction}{vest_instruction}{material_requirement}{constraints_summary_block}
 
 STYLE DIRECTION:
 {style}, sophisticated, high-quality menswear photography.
@@ -409,8 +436,43 @@ CRITICAL INSTRUCTIONS:
 - Ensure all design specifications are clearly visible
 - Leave bottom-right corner visually calm (for fabric swatch overlay)"""
 
-        logger.info(f"[DALLETool] Generated prompt ({len(prompt)} chars): {prompt[:200]}...")
-        return prompt
+        final_prompt = self._prepend_template(prompt, env_var="DALLE_MOODBOARD_TEMPLATE_PATH")
+        logger.info(f"[DALLETool] Generated prompt ({len(final_prompt)} chars): {final_prompt[:200]}...")
+        return final_prompt
+
+    def _prepend_template(self, prompt: str, env_var: str) -> str:
+        template_path = os.getenv(env_var)
+        if not template_path:
+            if not self._template_logged:
+                logger.info("[DALLETool] Using inline prompt builder; no template configured.")
+                self._template_logged = True
+            return prompt
+
+        path = Path(template_path)
+        if not path.exists():
+            if not self._template_logged:
+                logger.warning("[DALLETool] Template path set but not found: %s", template_path)
+                self._template_logged = True
+            return prompt
+
+        if not self._template_logged:
+            logger.info("[DALLETool] Prepending template from %s", template_path)
+            self._template_logged = True
+
+        template_text = path.read_text(encoding="utf-8").strip()
+        if not template_text:
+            return prompt
+        return f"{template_text}\n\n{prompt}"
+
+    def _warn_if_prompt_drops_constraints(self, original: str, revised: Optional[str]) -> None:
+        if not revised:
+            return
+        tokens = ["NO vest", "TROUSERS COLOR", "THREE-PIECE", "TWO-PIECE", "CONSTRAINTS SUMMARY"]
+        token_presence = {token: token in revised for token in tokens if token in original}
+        logger.info("[DALLETool] Revised prompt length=%d token_presence=%s", len(revised), token_presence)
+        for token in tokens:
+            if token in original and token not in revised:
+                logger.warning("[DALLETool] Revised prompt dropped constraint token: %s", token)
 
     async def generate_product_sheet(
         self,
@@ -572,7 +634,7 @@ STYLE KEYWORDS: {style_keywords}
 {notes_text}
 """
 
-        return prompt
+        return self._prepend_template(prompt, env_var="DALLE_PRODUCT_SHEET_TEMPLATE_PATH")
 
     def _download_image(self, url: str) -> Image.Image:
         """

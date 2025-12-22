@@ -55,6 +55,9 @@ class Measurements(BaseModel):
 class DesignPreferences(BaseModel):
     """Customer design preferences (Revers, Futter, etc.)."""
 
+    wants_vest: Optional[bool] = Field(
+        None, description="Whether the customer wants a vest (true/false)"
+    )
     revers_type: Optional[str] = Field(None, description="z.B. 'Spitzrevers'")
     revers_width: Optional[float] = Field(None, description="in cm")
     shoulder_padding: Optional[str] = Field(
@@ -79,11 +82,20 @@ class DesignPreferences(BaseModel):
     trouser_front: Optional[str] = Field(
         None, description="pleats, flat_front, unknown"
     )
+    trouser_color: Optional[str] = Field(
+        None, description="Structured trouser color for contrast (navy_blue, blue, black, grey, beige, brown)"
+    )
     neckwear: Optional[str] = Field(
         None, description="tie, bow_tie, none, unknown"
     )
     notes_normalized: Optional[str] = Field(
         None, description="Normalized short notes"
+    )
+    preferred_material: Optional[str] = Field(
+        None, description="Structured material preference (cashmere, wool, linen, cotton, silk)"
+    )
+    requested_fabric_code: Optional[str] = Field(
+        None, description="Requested fabric code (e.g., 50C4022)"
     )
     approved_image: Optional[str] = Field(
         None, description="User-approved DALL-E generated outfit image URL"

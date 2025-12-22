@@ -197,6 +197,10 @@ class DesignHenkAgent(BaseAgent):
                     "revers_type": state.design_preferences.revers_type,
                     "shoulder_padding": state.design_preferences.shoulder_padding,
                     "waistband_type": state.design_preferences.waistband_type,
+                    "wants_vest": state.design_preferences.wants_vest,
+                    "trouser_color": state.design_preferences.trouser_color,
+                    "preferred_material": state.design_preferences.preferred_material,
+                    "requested_fabric_code": state.design_preferences.requested_fabric_code,
                 }
 
                 # Extract style keywords
@@ -297,6 +301,10 @@ class DesignHenkAgent(BaseAgent):
                                 "lapel_roll": state.design_preferences.lapel_roll,
                                 "trouser_front": state.design_preferences.trouser_front,
                                 "notes_normalized": state.design_preferences.notes_normalized,
+                                "wants_vest": state.design_preferences.wants_vest,
+                                "trouser_color": state.design_preferences.trouser_color,
+                                "preferred_material": state.design_preferences.preferred_material,
+                                "requested_fabric_code": state.design_preferences.requested_fabric_code,
                             }
                         )
                     else:

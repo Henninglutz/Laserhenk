@@ -383,26 +383,8 @@ def _build_outfit_prompt(fabric_data: "SelectedFabricData", design_prefs: dict, 
     shoulder = design_prefs.get("shoulder_padding", "mittlere Schulterpolsterung")
     waistband = design_prefs.get("waistband_type", "klassische Bundfalte")
     wants_vest = design_prefs.get("wants_vest")
-    notes_normalized = (design_prefs.get("notes_normalized") or "").lower()
-
-    trouser_color = None
-    trouser_color_map = {
-        "dunkelblau": "navy blue",
-        "navy": "navy blue",
-        "marine": "navy blue",
-        "blau": "blue",
-        "blue": "blue",
-        "schwarz": "black",
-        "black": "black",
-        "grau": "grey",
-        "grey": "grey",
-        "beige": "beige",
-        "braun": "brown",
-    }
-    for key, color in trouser_color_map.items():
-        if key in notes_normalized:
-            trouser_color = color
-            break
+    trouser_color = design_prefs.get("trouser_color")
+    trouser_color_label = trouser_color.replace("_", " ") if trouser_color else None
 
     # Build vest instruction
     vest_instruction = ""
@@ -412,8 +394,8 @@ def _build_outfit_prompt(fabric_data: "SelectedFabricData", design_prefs: dict, 
         vest_instruction = "\n- Configuration: THREE-PIECE suit (jacket, vest, and trousers)"
 
     trouser_color_instruction = (
-        f"\n- Trouser color: {trouser_color} (contrast trousers; jacket stays in fabric tone)"
-        if trouser_color
+        f"\n- Trouser color: {trouser_color_label} (contrast trousers; jacket stays in fabric tone)"
+        if trouser_color_label
         else ""
     )
 

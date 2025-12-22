@@ -183,6 +183,14 @@ MAPPING-REGELN (Deutsche Synonyme → Strukturierte Felder):
 - "Bundfalte" | "Falten" | "pleats" | "mit Falte" → "pleats"
 - "glatt" | "ohne Falte" | "flat front" → "flat_front"
 
+**Trouser Color (trouser_color):**
+- "dunkelblau" | "marine" | "navy" → "navy_blue"
+- "blau" → "blue"
+- "schwarz" → "black"
+- "grau" → "grey"
+- "beige" → "beige"
+- "braun" → "brown"
+
 **Vest/Waistcoat (wants_vest):**
 - "ohne Weste" | "kein Gilet" | "Zweiteiler" | "no vest" → false
 - "mit Weste" | "Gilet" | "Dreiteiler" | "with vest" → true
@@ -204,6 +212,13 @@ MAPPING-REGELN (Deutsche Synonyme → Strukturierte Felder):
 - Examples:
   - "Nein, anderer Stoff: 50C4022" → requested_fabric_code="50C4022"
   - "lieber Stoff 10M5000" → requested_fabric_code="10M5000"
+
+**Preferred Material (preferred_material):**
+- "Kaschmir" | "cashmere" → "cashmere"
+- "Wolle" | "wool" → "wool"
+- "Leinen" | "linen" → "linen"
+- "Baumwolle" | "cotton" → "cotton"
+- "Seide" | "silk" → "silk"
 
 WICHTIGE REGELN:
 1. Erkenne deutsche Synonyme, Flexionen und Tippfehler (z.B. "schulterpolter", "fallende revers")
