@@ -46,6 +46,8 @@ MATERIAL_KEYWORDS = {
     "baumwolle": "cotton",
     "cotton": "cotton",
     "chino": "cotton",
+    "kaschmir": "cashmere",
+    "cashmere": "cashmere",
 }
 
 # Mapping gängiger Muster-Begriffe auf konsistente Pattern-Labels

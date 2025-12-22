@@ -296,6 +296,7 @@ class DesignHenkAgent(BaseAgent):
                                 "lapel_style": state.design_preferences.lapel_style,
                                 "lapel_roll": state.design_preferences.lapel_roll,
                                 "trouser_front": state.design_preferences.trouser_front,
+                                "notes_normalized": state.design_preferences.notes_normalized,
                             }
                         )
                     else:

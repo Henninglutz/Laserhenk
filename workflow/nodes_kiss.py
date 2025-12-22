@@ -383,13 +383,39 @@ def _build_outfit_prompt(fabric_data: "SelectedFabricData", design_prefs: dict, 
     shoulder = design_prefs.get("shoulder_padding", "mittlere Schulterpolsterung")
     waistband = design_prefs.get("waistband_type", "klassische Bundfalte")
     wants_vest = design_prefs.get("wants_vest")
+    notes_normalized = (design_prefs.get("notes_normalized") or "").lower()
+
+    trouser_color = None
+    trouser_color_map = {
+        "dunkelblau": "navy blue",
+        "navy": "navy blue",
+        "marine": "navy blue",
+        "blau": "blue",
+        "blue": "blue",
+        "schwarz": "black",
+        "black": "black",
+        "grau": "grey",
+        "grey": "grey",
+        "beige": "beige",
+        "braun": "brown",
+    }
+    for key, color in trouser_color_map.items():
+        if key in notes_normalized:
+            trouser_color = color
+            break
 
     # Build vest instruction
     vest_instruction = ""
     if wants_vest is False:
-        vest_instruction = "\n- Configuration: TWO-PIECE suit (jacket and trousers ONLY, NO vest/waistcoat)"
+        vest_instruction = "\n- Configuration: TWO-PIECE suit (jacket and trousers ONLY, NO vest/waistcoat/gilet)"
     elif wants_vest is True:
         vest_instruction = "\n- Configuration: THREE-PIECE suit (jacket, vest, and trousers)"
+
+    trouser_color_instruction = (
+        f"\n- Trouser color: {trouser_color} (contrast trousers; jacket stays in fabric tone)"
+        if trouser_color
+        else ""
+    )
 
     # Build style description
     style = ", ".join(style_keywords) if style_keywords else "elegant, maßgeschneidert"
@@ -408,13 +434,13 @@ Use the fabric description only as inspiration; do NOT claim or replicate any sp
 SUIT DESIGN:
 - Lapel style: {revers}
 - Shoulder: {shoulder}
-- Trouser waistband: {waistband}{vest_instruction}
+- Trouser waistband: {waistband}{trouser_color_instruction}{vest_instruction}
 
 STYLE: {style}, sophisticated, high-quality menswear photography.
 
 COMPOSITION: Professional fashion photography, clean background, natural lighting, focus on garment construction quality.
 
-IMPORTANT: Realistic photograph only - NOT illustration, NOT drawing, NOT sketch. High-quality professional photography with photorealistic details and natural lighting.
+IMPORTANT: Realistic photograph only - NOT illustration, NOT drawing, NOT sketch. High-quality professional photography with photorealistic details and natural lighting. Absolutely exclude any vest if not requested.
 
 NOTE: Use the fabric color ({color}) and pattern ({pattern}) as general inspiration only; avoid exact replication."""
 

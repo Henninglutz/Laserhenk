@@ -267,6 +267,7 @@ class DALLETool:
         # Extract design preferences if provided
         design_details = ""
         vest_instruction = ""
+        trouser_color_instruction = ""
         if design_preferences:
             revers = design_preferences.get("revers_type", "")
             shoulder = design_preferences.get("shoulder_padding", "")
@@ -276,6 +277,7 @@ class DALLETool:
             lapel_roll = design_preferences.get("lapel_roll", "")
             trouser_front = design_preferences.get("trouser_front", "")
             wants_vest = design_preferences.get("wants_vest")
+            notes_normalized = (design_preferences.get("notes_normalized") or "").lower()
 
             # Build comprehensive design details
             design_details_parts = []
@@ -331,12 +333,32 @@ class DALLETool:
             if trouser_parts:
                 design_details_parts.append(", ".join(trouser_parts))
 
+            trouser_color_map = {
+                "dunkelblau": "navy blue",
+                "navy": "navy blue",
+                "marine": "navy blue",
+                "blau": "blue",
+                "blue": "blue",
+                "schwarz": "black",
+                "black": "black",
+                "grau": "grey",
+                "grey": "grey",
+                "beige": "beige",
+                "braun": "brown",
+            }
+            for key, color in trouser_color_map.items():
+                if key in notes_normalized:
+                    trouser_color_instruction = (
+                        f"\n- TROUSERS COLOR: {color} (contrast trousers; jacket remains in fabric tone)"
+                    )
+                    break
+
             if design_details_parts:
                 design_details = "\n\nSUIT DESIGN SPECIFICATIONS:\n- " + "\n- ".join(design_details_parts)
 
             # Add explicit vest instruction
             if wants_vest is False:
-                vest_instruction = "\n\nCRITICAL COMPOSITION: Show TWO-PIECE suit ONLY (jacket and trousers). NO vest/waistcoat visible. Two-piece configuration."
+                vest_instruction = "\n\nCRITICAL COMPOSITION: Show TWO-PIECE suit ONLY (jacket and trousers). NO vest/waistcoat/gilet visible. Absolutely exclude any vest."
                 logger.info("[DALLETool] Adding NO VEST instruction to prompt")
             elif wants_vest is True:
                 vest_instruction = "\n\nCRITICAL COMPOSITION: Show THREE-PIECE suit (jacket, matching vest/waistcoat, and trousers). Vest must be visible under the jacket."
@@ -367,7 +389,7 @@ class DALLETool:
         prompt = f"""Create an elegant mood board for a bespoke men's suit in a {scene}.
 
 FABRIC REFERENCE:
-Use these fabrics only as color/pattern inspiration (do NOT replicate exact fabric patterns).{design_details}{vest_instruction}
+Use these fabrics only as color/pattern inspiration (do NOT replicate exact fabric patterns).{design_details}{trouser_color_instruction}{vest_instruction}
 
 STYLE DIRECTION:
 {style}, sophisticated, high-quality menswear photography.
