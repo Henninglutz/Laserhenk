@@ -58,6 +58,7 @@ import os
 from typing import Optional
 
 from agents.base import AgentDecision, BaseAgent
+from agents.prompt_loader import IMAGE_SYSTEM_CONTRACT
 from agents.design_patch_agent import DesignPatchAgent
 from models.customer import SessionState
 from models.fabric import SelectedFabricData
@@ -669,7 +670,9 @@ Deine Aufgabe - DESIGN-BERATUNG & VISUALISIERUNG:
 - Express: 2-3 Wochen (gegen Aufpreis)
 - Bei Termindruck: "Wir finden eine Lösung!"
 
-Wichtig: Antworte IMMER auf Deutsch, kurz, charmant und hilfreich!"""
+Wichtig: Antworte IMMER auf Deutsch, kurz, charmant und hilfreich!
+
+{IMAGE_SYSTEM_CONTRACT}"""
 
     async def _process_with_llm(
         self, state: SessionState, context_message: str = ""

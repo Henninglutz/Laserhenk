@@ -15,6 +15,7 @@ from agents.design_henk import DesignHenkAgent
 from agents.henk1 import Henk1Agent
 from agents.laserhenk import LaserHenkAgent
 from agents.supervisor_agent import SupervisorAgent, SupervisorDecision
+from backend.services.image_policy import ImagePolicyAgent
 from models.customer import SessionState
 from models.handoff import (
     DesignHenkToLaserHenkPayload,
@@ -22,6 +23,7 @@ from models.handoff import (
     Henk1ToDesignHenkPayload,
     LaserHenkToHITLPayload,
 )
+from models.api_payload import ImagePolicyDecision
 from models.tools import DALLEImageRequest
 from tools.dalle_tool import DALLETool
 from tools.fabric_preferences import build_fabric_search_criteria
@@ -253,6 +255,12 @@ async def _dalle_tool(params: dict, state: HenkGraphState) -> ToolResult:
     from models.fabric import SelectedFabricData
 
     session_state = _session_state(state)
+    image_policy_raw = state.get("image_policy")
+    image_policy = (
+        ImagePolicyDecision(**image_policy_raw)
+        if isinstance(image_policy_raw, dict)
+        else image_policy_raw
+    )
 
     # Extract structured fabric data
     fabric_data_raw = params.get("fabric_data", {})
@@ -312,6 +320,7 @@ async def _dalle_tool(params: dict, state: HenkGraphState) -> ToolResult:
             style_keywords=style_keywords,
             design_preferences=design_prefs,
             session_id=session_id,
+            decision=image_policy,
         )
 
     # OPTION 2: Text-only prompt (fallback if no fabric image)
@@ -330,7 +339,7 @@ async def _dalle_tool(params: dict, state: HenkGraphState) -> ToolResult:
         request = params.get("request")
         request = request if isinstance(request, DALLEImageRequest) else DALLEImageRequest(prompt=prompt)
 
-        response = await DALLETool().generate_image(request=request)
+        response = await DALLETool().generate_image(request=request, decision=image_policy)
 
     # Store generated image in session state
     image_url = getattr(response, "image_url", None)
@@ -339,7 +348,7 @@ async def _dalle_tool(params: dict, state: HenkGraphState) -> ToolResult:
         session_state.image_generation_history.append({"image_url": image_url, "type": "dalle_composite" if fabric_data.image_url else "dalle"})
         state["session_state"] = session_state
 
-    text = response.error if getattr(response, "error", None) else "Hier ist dein Mood Board mit dem gewählten Stoff!"
+    text = response.error if getattr(response, "error", None) else "Hier ist dein illustratives Mood Board. Die echten Stoffbilder findest du separat."
     metadata = {"image_url": image_url} if image_url else {}
     return ToolResult(text=text, metadata=metadata)
 
@@ -394,7 +403,7 @@ FABRIC SPECIFICATION:
 - Material: {composition}
 - Texture: {texture or 'glatte, edle Struktur'}
 
-The suit should be made from this exact fabric: {fabric_desc}.
+Use the fabric description only as inspiration; do NOT claim or replicate any specific real fabric pattern.
 
 SUIT DESIGN:
 - Lapel style: {revers}
@@ -403,11 +412,11 @@ SUIT DESIGN:
 
 STYLE: {style}, sophisticated, high-quality menswear photography.
 
-COMPOSITION: Professional fashion photography, clean background, natural lighting, focus on fabric detail and suit construction quality.
+COMPOSITION: Professional fashion photography, clean background, natural lighting, focus on garment construction quality.
 
 IMPORTANT: Realistic photograph only - NOT illustration, NOT drawing, NOT sketch. High-quality professional photography with photorealistic details and natural lighting.
 
-NOTE: Accurately represent the fabric color ({color}) and pattern ({pattern}) in the visualization."""
+NOTE: Use the fabric color ({color}) and pattern ({pattern}) as general inspiration only; avoid exact replication."""
 
     return prompt
 
@@ -951,6 +960,46 @@ Ich bestätige Ihren Termin und sende Ihnen alle Details per E-Mail zu."""
         "session_state": session_state,
         "metadata": metadata,
     }
+
+
+async def image_policy_node(state: HenkGraphState) -> HenkGraphState:
+    action_data = state.get("next_step")
+    if not action_data:
+        return {"image_policy": None}
+
+    action = HandoffAction.model_validate(action_data)
+    if action.kind != "tool" or action.name not in {"dalle_mood_board", "dalle_tool"}:
+        return {"image_policy": state.get("image_policy")}
+
+    session_state = _session_state(state)
+    user_message = _latest_content(state.get("messages", []), "user") or state.get("user_input", "")
+
+    decision = await ImagePolicyAgent().decide(
+        user_message=user_message,
+        state=session_state,
+        supervisor_allows_dalle=True,
+    )
+
+    updates: Dict[str, Any] = {"image_policy": decision.model_dump()}
+
+    if decision.allowed_source != "dalle":
+        messages = list(state.get("messages", []))
+        if decision.allowed_source == "rag":
+            text = "Ich nutze echte Stoffbilder aus dem Katalog statt illustrativer Moodboards."
+        elif decision.allowed_source == "upload":
+            text = "Ich nutze deine hochgeladenen Stoffbilder für die Visualisierung."
+        else:
+            text = "Ohne reale Stoffbilder kann ich kein Moodboard zeigen. Bitte lade ein Stofffoto hoch oder wähle einen Stoff aus dem Katalog."
+        messages.append({"role": "assistant", "content": text, "sender": "image_policy"})
+        updates.update(
+            {
+                "messages": messages,
+                "awaiting_user_input": True,
+                "next_step": None,
+            }
+        )
+
+    return updates
 
 
 def _validate_handoff(target: str, payload: dict) -> tuple[bool, Optional[str]]:

@@ -10,6 +10,9 @@ from flask_jwt_extended import jwt_required
 from pydantic import ValidationError
 
 from app.middleware import get_current_user_id, jwt_required_optional
+from backend.services.image_policy import collect_fabric_refs, collect_image_urls_from_refs
+from models.api_payload import ImagePolicyDecision
+from models.customer import SessionState
 from workflow.graph_state import HenkGraphState, create_initial_state
 from workflow.nodes_kiss import TOOL_REGISTRY
 from workflow.workflow import create_smart_workflow
@@ -217,6 +220,10 @@ def chat():
         # Current stage
         stage = final_state.get('current_agent') or final_state.get('next_agent') or 'henk1'
 
+        session_state = final_state.get("session_state")
+        if isinstance(session_state, dict):
+            session_state = SessionState(**session_state)
+
         response_data = {
             'reply': reply,
             'session_id': sid,
@@ -232,6 +239,65 @@ def chat():
         # Add fabric_images if present
         if fabric_images:
             response_data['fabric_images'] = fabric_images
+
+        image_policy_raw = final_state.get("image_policy")
+        if isinstance(image_policy_raw, dict):
+            image_policy = ImagePolicyDecision(**image_policy_raw)
+        elif isinstance(image_policy_raw, ImagePolicyDecision):
+            image_policy = image_policy_raw
+        else:
+            image_policy = ImagePolicyDecision(
+                want_images=False,
+                allowed_source="none",
+                rationale="No image policy decision recorded.",
+                required_fabric_images=True,
+                max_images=0,
+                block_reason="No image policy decision recorded.",
+            )
+
+        fabric_refs = collect_fabric_refs(session_state) if isinstance(session_state, SessionState) else []
+        image_urls = []
+        if image_policy.allowed_source == "rag":
+            image_urls = collect_image_urls_from_refs(fabric_refs)
+        elif image_policy.allowed_source == "upload":
+            image_urls = list(getattr(session_state.image_state, "user_uploads", [])) if isinstance(session_state, SessionState) else []
+        elif image_policy.allowed_source == "dalle":
+            image_urls = [image_url] if image_url else []
+
+        citations = []
+
+        response_data.update(
+            {
+                "image_source": image_policy.allowed_source,
+                "image_urls": image_urls,
+                "fabric_refs": [ref.model_dump() for ref in fabric_refs],
+                "citations": citations,
+                "handoff": {
+                    "next_action": final_state.get("next_step"),
+                    "pending_action": final_state.get("pending_action"),
+                    "tool_used": (final_state.get("metadata") or {}).get("tool_used"),
+                    "image_policy": image_policy.model_dump(),
+                    "occasion": (
+                        (session_state.henk1_to_design_payload or {}).get("occasion")
+                        if isinstance(session_state, SessionState)
+                        else None
+                    ),
+                },
+                "render": (
+                    {
+                        "mode": "moodboard",
+                        "image_url": image_urls[0] if image_urls else None,
+                        "image_source": image_policy.allowed_source,
+                    }
+                    if image_policy.allowed_source == "dalle" and image_urls
+                    else None
+                ),
+                "rag": {
+                    "fabrics": [ref.model_dump() for ref in fabric_refs],
+                    "citations": citations,
+                },
+            }
+        )
 
         return jsonify(response_data), 200
 

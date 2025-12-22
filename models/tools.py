@@ -121,6 +121,8 @@ class DALLEImageResponse(BaseModel):
     revised_prompt: Optional[str] = Field(None, description="DALLE revised prompt")
     success: bool = True
     error: Optional[str] = None
+    policy_blocked: bool = False
+    policy_reason: Optional[str] = None
 
 
 # ============================================================================

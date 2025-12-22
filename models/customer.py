@@ -117,6 +117,10 @@ class ImageGenerationState(BaseModel):
     mood_image_url: Optional[str] = Field(
         None, description="Currently displayed DALLE mood image"
     )
+    user_uploads: list[str] = Field(
+        default_factory=list,
+        description="User-uploaded fabric image URLs stored for the session",
+    )
     image_generation_history: list[dict] = Field(
         default_factory=list,
         description="History of all generated images (url, type, timestamp, approved)",

@@ -18,6 +18,7 @@ except ImportError:  # pragma: no cover - environment without Pillow
 
 from openai import AsyncOpenAI
 
+from models.api_payload import ImagePolicyDecision
 from models.rendering import RenderRequest, RenderResult
 from models.tools import DALLEImageRequest, DALLEImageResponse
 
@@ -57,7 +58,23 @@ class DALLETool:
             logger.warning("[DALLETool] OpenAI API key not set, DALL-E disabled")
             self.enabled = False
 
-    async def generate_image(self, request: DALLEImageRequest) -> DALLEImageResponse:
+    def _policy_blocked(self, decision: Optional[ImagePolicyDecision]) -> Optional[DALLEImageResponse]:
+        if decision and decision.allowed_source != "dalle":
+            return DALLEImageResponse(
+                image_url=None,
+                revised_prompt=None,
+                success=False,
+                error="Image policy blocked DALL-E generation.",
+                policy_blocked=True,
+                policy_reason=decision.block_reason or decision.rationale,
+            )
+        return None
+
+    async def generate_image(
+        self,
+        request: DALLEImageRequest,
+        decision: Optional[ImagePolicyDecision] = None,
+    ) -> DALLEImageResponse:
         """
         Generate image with DALL-E 3.
 
@@ -67,6 +84,10 @@ class DALLETool:
         Returns:
             Generated image response
         """
+        policy_block = self._policy_blocked(decision)
+        if policy_block:
+            return policy_block
+
         if not self.enabled:
             return DALLEImageResponse(
                 image_url=None,
@@ -113,6 +134,7 @@ class DALLETool:
         style_keywords: Optional[List[str]] = None,
         design_preferences: Optional[Dict[str, Any]] = None,
         session_id: Optional[str] = None,
+        decision: Optional[ImagePolicyDecision] = None,
     ) -> DALLEImageResponse:
         """
         Generate mood board with real fabric thumbnails as reference.
@@ -131,6 +153,10 @@ class DALLETool:
         Returns:
             Composite image with mood board + fabric thumbnails
         """
+        policy_block = self._policy_blocked(decision)
+        if policy_block:
+            return policy_block
+
         if not fabrics or len(fabrics) == 0:
             logger.warning("[DALLETool] No fabrics provided for mood board")
             return DALLEImageResponse(
@@ -149,7 +175,8 @@ class DALLETool:
                 prompt=prompt,
                 size="1024x1024",
                 quality="standard",
-            )
+            ),
+            decision=decision,
         )
 
         if not dalle_response.success or not dalle_response.image_url:
@@ -340,7 +367,7 @@ class DALLETool:
         prompt = f"""Create an elegant mood board for a bespoke men's suit in a {scene}.
 
 FABRIC REFERENCE:
-Show suits made from {fabrics_text}.{design_details}{vest_instruction}
+Use these fabrics only as color/pattern inspiration (do NOT replicate exact fabric patterns).{design_details}{vest_instruction}
 
 STYLE DIRECTION:
 {style}, sophisticated, high-quality menswear photography.
@@ -367,12 +394,25 @@ CRITICAL INSTRUCTIONS:
         self,
         request: RenderRequest,
         notes_for_prompt: Optional[list[str]] = None,
+        decision: Optional[ImagePolicyDecision] = None,
     ) -> RenderResult:
         """
         Generate a product sheet render with a real fabric overlay.
 
         The output always includes a real fabric reference image as an overlay.
         """
+        if decision and decision.allowed_source != "dalle":
+            return RenderResult(
+                image_url=None,
+                revised_prompt=None,
+                success=False,
+                local_path=None,
+                error=decision.block_reason or decision.rationale,
+                used_params=request.params,
+                used_fabric_id=request.fabric.fabric_id,
+                iteration=0,
+            )
+
         if Image is None:
             return RenderResult(
                 image_url=None,
@@ -404,7 +444,8 @@ CRITICAL INSTRUCTIONS:
                 prompt=prompt,
                 size=request.size,
                 quality=request.quality,
-            )
+            ),
+            decision=decision,
         )
 
         if not dalle_response.success or not dalle_response.image_url:

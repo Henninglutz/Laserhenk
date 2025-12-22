@@ -65,6 +65,11 @@ __all__ = [
     "DALLEImageResponse",
     "SAIAMeasurementRequest",
     "SAIAMeasurementResponse",
+    # API payload models
+    "ImagePolicyDecision",
+    "FabricRef",
+    "Citation",
+    "ImagePayload",
 ]
 
 
@@ -130,6 +135,11 @@ _LAZY_IMPORTS = {
     "DALLEImageResponse": ("models.tools", "DALLEImageResponse"),
     "SAIAMeasurementRequest": ("models.tools", "SAIAMeasurementRequest"),
     "SAIAMeasurementResponse": ("models.tools", "SAIAMeasurementResponse"),
+    # API payload models
+    "ImagePolicyDecision": ("models.api_payload", "ImagePolicyDecision"),
+    "FabricRef": ("models.api_payload", "FabricRef"),
+    "Citation": ("models.api_payload", "Citation"),
+    "ImagePayload": ("models.api_payload", "ImagePayload"),
 }
 
 
