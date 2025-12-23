@@ -255,21 +255,19 @@ class DALLETool:
         style = ", ".join(style_keywords) if style_keywords else "timeless elegant"
 
         # Fabric descriptions
-        fabric_descriptions = []
         fabric_context_lines = []
-        for i, fabric in enumerate(fabrics[:4], 1):
+        for fabric in fabrics[:4]:
             color = fabric.get("color", "classic")
             pattern = fabric.get("pattern", "solid")
             composition = fabric.get("composition", "fine wool")
             fabric_code = fabric.get("fabric_code") or "N/A"
-
-            fabric_desc = f"{color} {pattern} fabric in {composition}"
-            fabric_descriptions.append(fabric_desc)
+            weight = fabric.get("weight_g_m2") or fabric.get("weight")
+            category = fabric.get("category") or "unspecified"
             fabric_context_lines.append(
-                f"- {fabric_code}: color={color}, pattern={pattern}, composition={composition}"
+                f"- {fabric_code}: color={color}, pattern={pattern}, composition={composition}, "
+                f"category={category}, weight={weight or 'n/a'}"
             )
 
-        fabrics_text = " and ".join(fabric_descriptions)
         fabric_context_block = "FABRIC CONTEXT:\n" + "\n".join(fabric_context_lines)
 
         # Extract design preferences if provided
@@ -278,6 +276,7 @@ class DALLETool:
         trouser_color_instruction = ""
         material_requirement = ""
         constraints_summary_lines: list[str] = []
+        garment_lines: list[str] = []
         if design_preferences:
             revers = design_preferences.get("revers_type", "")
             shoulder = design_preferences.get("shoulder_padding", "")
@@ -290,6 +289,11 @@ class DALLETool:
             trouser_color = design_preferences.get("trouser_color")
             preferred_material = design_preferences.get("preferred_material")
             requested_fabric_code = design_preferences.get("requested_fabric_code")
+            shirt = design_preferences.get("shirt") or "NONE"
+            neckwear = design_preferences.get("neckwear") or "NONE"
+            coat = design_preferences.get("coat") or "NONE"
+            shoes = design_preferences.get("shoes") or "NONE"
+            pocket_square = design_preferences.get("pocket_square") or "NONE"
 
             # Build comprehensive design details
             design_details_parts = []
@@ -387,6 +391,19 @@ class DALLETool:
             ]
             constraints_summary_lines = [line for line in constraints_summary_lines if line]
 
+            vest_label = "NONE" if wants_vest is False else ("WITH VEST" if wants_vest is True else "NONE")
+            garment_lines = [
+                f"- Jacket: {jacket_front or 'single-breasted'}; lapel={lapel_style or revers or 'unspecified'}; "
+                f"shoulder={shoulder or 'unspecified'}",
+                f"- Trousers: {trouser_front or waistband or 'unspecified'}; color={trouser_color or 'NONE'}",
+                f"- Vest: {vest_label}",
+                f"- Shirt: {shirt}",
+                f"- Neckwear: {neckwear}",
+                f"- Coat: {coat}",
+                f"- Shoes: {shoes}",
+                f"- Pocket square: {pocket_square}",
+            ]
+
         # Build final prompt
         design_pref_summary = []
         if design_preferences:
@@ -411,30 +428,68 @@ class DALLETool:
         if constraints_summary_lines:
             constraints_summary_block = "\n\nCONSTRAINTS SUMMARY:\n" + "\n".join(constraints_summary_lines)
 
-        prompt = f"""Create an elegant mood board for a bespoke men's suit in a {scene}.
+        garments_block = "GARMENTS:\n" + "\n".join(garment_lines or ["- Jacket: NONE", "- Trousers: NONE"])
+        primary_fabric = fabrics[0] if fabrics else {}
+        fabric_image = (primary_fabric.get("image_urls") or [None])[0]
+        prompt = f"""Ultra-photorealistic professional fashion photograph of a tailored Italian sport jacket.
 
 {fabric_context_block}
 
-FABRIC REFERENCE:
-Use these fabrics only as color/pattern inspiration (do NOT replicate exact fabric patterns).{design_details}{trouser_color_instruction}{vest_instruction}{material_requirement}{constraints_summary_block}
+FABRIC PHOTO REFERENCE:
+- {fabric_image or 'NONE'}
 
-STYLE DIRECTION:
-{style}, sophisticated, high-quality menswear photography.
+OCCASION / BACKGROUND:
+- {occasion or 'NONE'} (use as background/scene guidance)
 
-VISUAL REQUIREMENTS:
-- Professional fashion editorial style with clean layout
-- Luxurious atmosphere with attention to tailoring details
-- Show the suit clearly with proper fit and drape
-- Natural lighting that highlights fabric texture and construction
+{garments_block}
 
-SETTING:
-{occasion} - create the appropriate ambiance and backdrop.
+FABRIC ACCURACY:
+The jacket is made from the exact referenced fabric shown in the uploaded fabric image.
+Fabric accuracy is critical: preserve the original weave, color depth, texture, and wool grain without alteration.
+Use RAG fabric details for structure, suitability, color, and grammature.
 
-CRITICAL INSTRUCTIONS:
-- Realistic photograph ONLY - NOT illustration, NOT drawing, NOT sketch
-- High-quality professional photography with photorealistic details
-- Ensure all design specifications are clearly visible
-- Leave bottom-right corner visually calm (for fabric swatch overlay)"""
+Jacket details:
+- {jacket_front or 'Single-breasted'} tailored sport jacket
+- Italian cut
+- {('Soft natural shoulder, no heavy padding' if (shoulder or '').lower() in {'none', 'light', 'soft'} else 'Structured shoulder based on preference')}
+- {lapel_style or revers or 'Stepped lapel (Stegrevers)'}
+- Two-button front
+- Patch pockets
+- {('No vest' if wants_vest is False else 'Vest included' if wants_vest is True else 'No vest')}
+- Fine wool fabric with subtle texture
+
+Color & material:
+- Jacket fabric: exact match to the uploaded fabric reference (no reinterpretation)
+- Trousers: {trouser_color.replace('_', ' ') if trouser_color else 'NONE'}
+- Shirt: {shirt}
+- Neckwear: {neckwear}
+{material_requirement}
+
+Scene & styling:
+- Mannequin or headless model
+- Outdoor Italian setting (historic stone architecture, soft greenery)
+- Natural daylight
+- Shallow depth of field
+- Elegant, understated Italian menswear aesthetic
+
+Photography style:
+- High-end fashion photography
+- DSLR realism
+- Natural proportions
+- True fabric physics
+- Studio-quality lighting
+
+STRICT CONSTRAINTS:
+- DO NOT stylize
+- DO NOT illustrate
+- DO NOT paint
+- DO NOT draw
+- DO NOT change fabric pattern
+- DO NOT smooth textures
+- DO NOT invent materials
+{design_details}{trouser_color_instruction}{vest_instruction}{constraints_summary_block}
+
+The result must look like a real photograph taken by a professional fashion photographer."""
 
         final_prompt = self._prepend_template(prompt, env_var="DALLE_MOODBOARD_TEMPLATE_PATH")
         logger.info(f"[DALLETool] Generated prompt ({len(final_prompt)} chars): {final_prompt[:200]}...")

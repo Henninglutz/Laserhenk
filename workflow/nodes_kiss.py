@@ -365,66 +365,89 @@ def _build_outfit_prompt(fabric_data: "SelectedFabricData", design_prefs: dict, 
     Returns:
         Detailed DALL-E prompt
     """
-    # Extract fabric properties
     color = fabric_data.color or "klassisches Blau"
     pattern = fabric_data.pattern or "Uni"
     composition = fabric_data.composition or "hochwertige Wolle"
-    texture = fabric_data.texture or ""
+    texture = fabric_data.texture or "glatte, edle Struktur"
 
-    # Build fabric description
-    fabric_desc = f"{color}"
-    if pattern and pattern.lower() != "plain" and pattern.lower() != "uni":
-        fabric_desc += f" mit {pattern}"
-    if texture:
-        fabric_desc += f" und {texture}"
-
-    # Extract design details
-    revers = design_prefs.get("revers_type", "klassisches Revers")
-    shoulder = design_prefs.get("shoulder_padding", "mittlere Schulterpolsterung")
+    revers = design_prefs.get("revers_type", "Stegrevers")
+    shoulder = design_prefs.get("shoulder_padding", "soft natural shoulder, no heavy padding")
     waistband = design_prefs.get("waistband_type", "klassische Bundfalte")
     wants_vest = design_prefs.get("wants_vest")
     trouser_color = design_prefs.get("trouser_color")
-    trouser_color_label = trouser_color.replace("_", " ") if trouser_color else None
+    shirt = design_prefs.get("shirt") or "crisp white dress shirt"
+    neckwear = design_prefs.get("neckwear") or "NONE"
+    coat = design_prefs.get("coat") or "NONE"
+    shoes = design_prefs.get("shoes") or "NONE"
+    pocket_square = design_prefs.get("pocket_square") or "NONE"
+    occasion = design_prefs.get("occasion") or "NONE"
 
-    # Build vest instruction
-    vest_instruction = ""
-    if wants_vest is False:
-        vest_instruction = "\n- Configuration: TWO-PIECE suit (jacket and trousers ONLY, NO vest/waistcoat/gilet)"
-    elif wants_vest is True:
-        vest_instruction = "\n- Configuration: THREE-PIECE suit (jacket, vest, and trousers)"
+    vest_label = "No vest" if wants_vest is False else ("Vest included" if wants_vest is True else "No vest")
+    trouser_color_label = trouser_color.replace("_", " ") if trouser_color else "NONE"
 
-    trouser_color_instruction = (
-        f"\n- Trouser color: {trouser_color_label} (contrast trousers; jacket stays in fabric tone)"
-        if trouser_color_label
-        else ""
-    )
+    prompt = f"""Ultra-photorealistic professional fashion photograph of a tailored Italian sport jacket.
 
-    # Build style description
-    style = ", ".join(style_keywords) if style_keywords else "elegant, maßgeschneidert"
+FABRIC PHOTO REFERENCE:
+- {fabric_data.image_url or 'NONE'}
 
-    # Create prompt
-    prompt = f"""Create a high-quality fashion editorial photo of a bespoke men's suit in an elegant professional setting.
+OCCASION / BACKGROUND:
+- {occasion}
 
-FABRIC SPECIFICATION:
-- Color: {color}
+GARMENTS:
+- Jacket: single-breasted tailored sport jacket; lapel={revers}; shoulder={shoulder}
+- Trousers: {waistband}; color={trouser_color_label}
+- Vest: {vest_label}
+- Shirt: {shirt}
+- Neckwear: {neckwear}
+- Coat: {coat}
+- Shoes: {shoes}
+- Pocket square: {pocket_square}
+
+Fabric accuracy is critical: preserve the original weave, color depth, texture, and wool grain without alteration.
+
+Jacket details:
+- Single-breasted tailored sport jacket
+- Italian cut
+- Soft natural shoulder, no heavy padding
+- Stepped lapel (Stegrevers)
+- Two-button front
+- Patch pockets
+- {vest_label}
+- Fine wool fabric with subtle texture
+
+Color & material:
+- Jacket fabric: exact match to the uploaded fabric reference (no reinterpretation)
 - Pattern: {pattern}
-- Material: {composition}
-- Texture: {texture or 'glatte, edle Struktur'}
+- Composition: {composition}
+- Texture: {texture}
+- Trousers: {trouser_color_label}
+- Shirt: {shirt}
+- Neckwear: {neckwear}
 
-Use the fabric description only as inspiration; do NOT claim or replicate any specific real fabric pattern.
+Scene & styling:
+- Mannequin or headless model
+- Outdoor Italian setting (historic stone architecture, soft greenery)
+- Natural daylight
+- Shallow depth of field
+- Elegant, understated Italian menswear aesthetic
 
-SUIT DESIGN:
-- Lapel style: {revers}
-- Shoulder: {shoulder}
-- Trouser waistband: {waistband}{trouser_color_instruction}{vest_instruction}
+Photography style:
+- High-end fashion photography
+- DSLR realism
+- Natural proportions
+- True fabric physics
+- Studio-quality lighting
 
-STYLE: {style}, sophisticated, high-quality menswear photography.
+STRICT CONSTRAINTS:
+- DO NOT stylize
+- DO NOT illustrate
+- DO NOT paint
+- DO NOT draw
+- DO NOT change fabric pattern
+- DO NOT smooth textures
+- DO NOT invent materials
 
-COMPOSITION: Professional fashion photography, clean background, natural lighting, focus on garment construction quality.
-
-IMPORTANT: Realistic photograph only - NOT illustration, NOT drawing, NOT sketch. High-quality professional photography with photorealistic details and natural lighting. Absolutely exclude any vest if not requested.
-
-NOTE: Use the fabric color ({color}) and pattern ({pattern}) as general inspiration only; avoid exact replication."""
+The result must look like a real photograph taken by a professional fashion photographer."""
 
     return prompt
 
