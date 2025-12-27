@@ -1,41 +1,39 @@
-"""Tests for prompt loading and usage tracking."""
-
 import sys
 from pathlib import Path
 
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from agents.prompt_loader import PROMPT_FILES, prompt_registry
+from backend.prompts.loader import PromptLoader
 
 
-def test_prompt_usage_tracking():
-    """Prompt registry should track load time, last use, and usage count."""
-    prompt_registry.reset()
+def test_prompt_loader_renders_variables():
+    loader = PromptLoader()
+    prompt = loader.render_template(
+        "moodboard_sportjacket.md",
+        {
+            "fabric_context_block": "- FAB123: navy twill",
+            "fabric_image": "img.png",
+            "occasion": "Business",
+            "garments_block": "- Jacket",
+            "jacket_front": "single_breasted",
+            "shoulder": "light",
+            "lapel_style_or_revers": "notch",
+            "wants_vest_text": "",
+            "trouser_color": "navy",
+            "shirt": "white",
+            "neckwear": "tie",
+            "material_requirement": "fine wool",
+            "design_details": "- notch lapels",
+            "trouser_color_instruction": "Contrast",
+            "vest_instruction": "no vest",
+            "constraints_summary_block": "- occasion=Business",
+            "style_keywords": "classic",
+            "scene": "studio",
+        },
+    )
 
-    # First access loads from disk
-    content = prompt_registry.get_prompt("core")
-    assert "HENK Core Prompt" in content
-
-    usage = prompt_registry.get_usage_report()["core"]
-    assert usage["use_count"] == 1
-    assert usage["loaded_at"] is not None
-    assert usage["last_used_at"] is not None
-
-    # Second access increments use counter but keeps same path
-    prompt_registry.get_prompt("core")
-    updated_usage = prompt_registry.get_usage_report()["core"]
-    assert updated_usage["use_count"] == 2
-    assert updated_usage["path"].endswith(PROMPT_FILES["core"])
-
-
-
-def test_unknown_prompt_key_raises():
-    """Unknown prompt names should raise a KeyError."""
-    prompt_registry.reset()
-    try:
-        prompt_registry.get_prompt("unknown")
-    except KeyError:
-        pass
-    else:  # pragma: no cover - explicit failure branch
-        raise AssertionError("Expected KeyError for unknown prompt name")
+    assert "FAB123" in prompt
+    assert "Business" in prompt
+    assert "classic" in prompt
+    assert "Base Image Generation Rules" in prompt
