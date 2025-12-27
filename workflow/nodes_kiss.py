@@ -15,6 +15,7 @@ from agents.design_henk import DesignHenkAgent
 from agents.henk1 import Henk1Agent
 from agents.laserhenk import LaserHenkAgent
 from agents.supervisor_agent import SupervisorAgent, SupervisorDecision
+from backend.services.image_policy import ImagePolicyAgent
 from models.customer import SessionState
 from models.handoff import (
     DesignHenkToLaserHenkPayload,
@@ -22,6 +23,7 @@ from models.handoff import (
     Henk1ToDesignHenkPayload,
     LaserHenkToHITLPayload,
 )
+from models.api_payload import ImagePolicyDecision
 from models.tools import DALLEImageRequest
 from tools.dalle_tool import DALLETool
 from tools.fabric_preferences import build_fabric_search_criteria
@@ -253,6 +255,12 @@ async def _dalle_tool(params: dict, state: HenkGraphState) -> ToolResult:
     from models.fabric import SelectedFabricData
 
     session_state = _session_state(state)
+    image_policy_raw = state.get("image_policy")
+    image_policy = (
+        ImagePolicyDecision(**image_policy_raw)
+        if isinstance(image_policy_raw, dict)
+        else image_policy_raw
+    )
 
     # Extract structured fabric data
     fabric_data_raw = params.get("fabric_data", {})
@@ -312,6 +320,7 @@ async def _dalle_tool(params: dict, state: HenkGraphState) -> ToolResult:
             style_keywords=style_keywords,
             design_preferences=design_prefs,
             session_id=session_id,
+            decision=image_policy,
         )
 
     # OPTION 2: Text-only prompt (fallback if no fabric image)
@@ -330,7 +339,7 @@ async def _dalle_tool(params: dict, state: HenkGraphState) -> ToolResult:
         request = params.get("request")
         request = request if isinstance(request, DALLEImageRequest) else DALLEImageRequest(prompt=prompt)
 
-        response = await DALLETool().generate_image(request=request)
+        response = await DALLETool().generate_image(request=request, decision=image_policy)
 
     # Store generated image in session state
     image_url = getattr(response, "image_url", None)
@@ -339,7 +348,7 @@ async def _dalle_tool(params: dict, state: HenkGraphState) -> ToolResult:
         session_state.image_generation_history.append({"image_url": image_url, "type": "dalle_composite" if fabric_data.image_url else "dalle"})
         state["session_state"] = session_state
 
-    text = response.error if getattr(response, "error", None) else "Hier ist dein Mood Board mit dem gewählten Stoff!"
+    text = response.error if getattr(response, "error", None) else "Hier ist dein illustratives Mood Board. Die echten Stoffbilder findest du separat."
     metadata = {"image_url": image_url} if image_url else {}
     return ToolResult(text=text, metadata=metadata)
 
@@ -356,58 +365,89 @@ def _build_outfit_prompt(fabric_data: "SelectedFabricData", design_prefs: dict, 
     Returns:
         Detailed DALL-E prompt
     """
-    # Extract fabric properties
     color = fabric_data.color or "klassisches Blau"
     pattern = fabric_data.pattern or "Uni"
     composition = fabric_data.composition or "hochwertige Wolle"
-    texture = fabric_data.texture or ""
+    texture = fabric_data.texture or "glatte, edle Struktur"
 
-    # Build fabric description
-    fabric_desc = f"{color}"
-    if pattern and pattern.lower() != "plain" and pattern.lower() != "uni":
-        fabric_desc += f" mit {pattern}"
-    if texture:
-        fabric_desc += f" und {texture}"
-
-    # Extract design details
-    revers = design_prefs.get("revers_type", "klassisches Revers")
-    shoulder = design_prefs.get("shoulder_padding", "mittlere Schulterpolsterung")
+    revers = design_prefs.get("revers_type", "Stegrevers")
+    shoulder = design_prefs.get("shoulder_padding", "soft natural shoulder, no heavy padding")
     waistband = design_prefs.get("waistband_type", "klassische Bundfalte")
     wants_vest = design_prefs.get("wants_vest")
+    trouser_color = design_prefs.get("trouser_color")
+    shirt = design_prefs.get("shirt") or "crisp white dress shirt"
+    neckwear = design_prefs.get("neckwear") or "NONE"
+    coat = design_prefs.get("coat") or "NONE"
+    shoes = design_prefs.get("shoes") or "NONE"
+    pocket_square = design_prefs.get("pocket_square") or "NONE"
+    occasion = design_prefs.get("occasion") or "NONE"
 
-    # Build vest instruction
-    vest_instruction = ""
-    if wants_vest is False:
-        vest_instruction = "\n- Configuration: TWO-PIECE suit (jacket and trousers ONLY, NO vest/waistcoat)"
-    elif wants_vest is True:
-        vest_instruction = "\n- Configuration: THREE-PIECE suit (jacket, vest, and trousers)"
+    vest_label = "No vest" if wants_vest is False else ("Vest included" if wants_vest is True else "No vest")
+    trouser_color_label = trouser_color.replace("_", " ") if trouser_color else "NONE"
 
-    # Build style description
-    style = ", ".join(style_keywords) if style_keywords else "elegant, maßgeschneidert"
+    prompt = f"""Ultra-photorealistic professional fashion photograph of a tailored Italian sport jacket.
 
-    # Create prompt
-    prompt = f"""Create a high-quality fashion editorial photo of a bespoke men's suit in an elegant professional setting.
+FABRIC PHOTO REFERENCE:
+- {fabric_data.image_url or 'NONE'}
 
-FABRIC SPECIFICATION:
-- Color: {color}
+OCCASION / BACKGROUND:
+- {occasion}
+
+GARMENTS:
+- Jacket: single-breasted tailored sport jacket; lapel={revers}; shoulder={shoulder}
+- Trousers: {waistband}; color={trouser_color_label}
+- Vest: {vest_label}
+- Shirt: {shirt}
+- Neckwear: {neckwear}
+- Coat: {coat}
+- Shoes: {shoes}
+- Pocket square: {pocket_square}
+
+Fabric accuracy is critical: preserve the original weave, color depth, texture, and wool grain without alteration.
+
+Jacket details:
+- Single-breasted tailored sport jacket
+- Italian cut
+- Soft natural shoulder, no heavy padding
+- Stepped lapel (Stegrevers)
+- Two-button front
+- Patch pockets
+- {vest_label}
+- Fine wool fabric with subtle texture
+
+Color & material:
+- Jacket fabric: exact match to the uploaded fabric reference (no reinterpretation)
 - Pattern: {pattern}
-- Material: {composition}
-- Texture: {texture or 'glatte, edle Struktur'}
+- Composition: {composition}
+- Texture: {texture}
+- Trousers: {trouser_color_label}
+- Shirt: {shirt}
+- Neckwear: {neckwear}
 
-The suit should be made from this exact fabric: {fabric_desc}.
+Scene & styling:
+- Mannequin or headless model
+- Outdoor Italian setting (historic stone architecture, soft greenery)
+- Natural daylight
+- Shallow depth of field
+- Elegant, understated Italian menswear aesthetic
 
-SUIT DESIGN:
-- Lapel style: {revers}
-- Shoulder: {shoulder}
-- Trouser waistband: {waistband}{vest_instruction}
+Photography style:
+- High-end fashion photography
+- DSLR realism
+- Natural proportions
+- True fabric physics
+- Studio-quality lighting
 
-STYLE: {style}, sophisticated, high-quality menswear photography.
+STRICT CONSTRAINTS:
+- DO NOT stylize
+- DO NOT illustrate
+- DO NOT paint
+- DO NOT draw
+- DO NOT change fabric pattern
+- DO NOT smooth textures
+- DO NOT invent materials
 
-COMPOSITION: Professional fashion photography, clean background, natural lighting, focus on fabric detail and suit construction quality.
-
-IMPORTANT: Realistic photograph only - NOT illustration, NOT drawing, NOT sketch. High-quality professional photography with photorealistic details and natural lighting.
-
-NOTE: Accurately represent the fabric color ({color}) and pattern ({pattern}) in the visualization."""
+The result must look like a real photograph taken by a professional fashion photographer."""
 
     return prompt
 
@@ -951,6 +991,46 @@ Ich bestätige Ihren Termin und sende Ihnen alle Details per E-Mail zu."""
         "session_state": session_state,
         "metadata": metadata,
     }
+
+
+async def image_policy_node(state: HenkGraphState) -> HenkGraphState:
+    action_data = state.get("next_step")
+    if not action_data:
+        return {"image_policy": None}
+
+    action = HandoffAction.model_validate(action_data)
+    if action.kind != "tool" or action.name not in {"dalle_mood_board", "dalle_tool"}:
+        return {"image_policy": state.get("image_policy")}
+
+    session_state = _session_state(state)
+    user_message = _latest_content(state.get("messages", []), "user") or state.get("user_input", "")
+
+    decision = await ImagePolicyAgent().decide(
+        user_message=user_message,
+        state=session_state,
+        supervisor_allows_dalle=True,
+    )
+
+    updates: Dict[str, Any] = {"image_policy": decision.model_dump()}
+
+    if decision.allowed_source != "dalle":
+        messages = list(state.get("messages", []))
+        if decision.allowed_source == "rag":
+            text = "Ich nutze echte Stoffbilder aus dem Katalog statt illustrativer Moodboards."
+        elif decision.allowed_source == "upload":
+            text = "Ich nutze deine hochgeladenen Stoffbilder für die Visualisierung."
+        else:
+            text = "Ohne reale Stoffbilder kann ich kein Moodboard zeigen. Bitte lade ein Stofffoto hoch oder wähle einen Stoff aus dem Katalog."
+        messages.append({"role": "assistant", "content": text, "sender": "image_policy"})
+        updates.update(
+            {
+                "messages": messages,
+                "awaiting_user_input": True,
+                "next_step": None,
+            }
+        )
+
+    return updates
 
 
 def _validate_handoff(target: str, payload: dict) -> tuple[bool, Optional[str]]:

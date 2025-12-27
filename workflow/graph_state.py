@@ -38,6 +38,7 @@ class HenkGraphState(TypedDict):
     dalle_output: Optional[Dict[str, Any]]
     saia_output: Optional[Dict[str, Any]]
     metadata: Dict[str, Any]
+    image_policy: Optional[Dict[str, Any]]
 
 
 def create_initial_state(session_id: str = "default") -> HenkGraphState:
@@ -69,4 +70,5 @@ def create_initial_graph_state(session_id: str = "default") -> HenkGraphState:
         dalle_output=None,
         saia_output=None,
         metadata={},
+        image_policy=None,
     )

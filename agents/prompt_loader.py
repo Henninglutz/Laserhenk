@@ -17,6 +17,14 @@ PROMPT_FILES = {
     "henk3": "henk3_prompt_measurement.txt",
 }
 
+IMAGE_SYSTEM_CONTRACT = (
+    "SYSTEM CONTRACT: Never invent fabrics or visuals. "
+    "Images must come from RAG-provided real fabric photos or user uploads. "
+    "DALL·E is forbidden unless the user explicitly opts in to an illustrative moodboard "
+    "and the supervisor allows it. "
+    "Never claim a fabric pattern in an image unless it is a real fabric image."
+)
+
 
 @dataclass
 class PromptMetadata:

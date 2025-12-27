@@ -21,10 +21,18 @@ class DesignPreferencesPatch(BaseModel):
         Literal["none", "light", "medium", "structured", "unknown"]
     ] = None
     trouser_front: Optional[Literal["pleats", "flat_front", "unknown"]] = None
+    trouser_color: Optional[
+        Literal["navy_blue", "blue", "black", "grey", "beige", "brown"]
+    ] = None
     neckwear: Optional[Literal["tie", "bow_tie", "none", "unknown"]] = None
     notes_normalized: Optional[str] = Field(
-        None, max_length=120, description="Normalized short notes"
+        None,
+        max_length=120,
+        description="Auxiliary notes only; no hard constraints. Use dedicated fields for constraints.",
     )
+    preferred_material: Optional[
+        Literal["cashmere", "wool", "linen", "cotton", "silk"]
+    ] = None
     requested_fabric_code: Optional[str] = Field(
         None,
         max_length=20,
@@ -63,11 +71,15 @@ def apply_design_preferences_patch(
 
     _set("jacket_front", patch.jacket_front)
     _set("button_count", patch.button_count)
+    _set("wants_vest", patch.wants_vest)
     _set("lapel_style", patch.lapel_style)
     _set("lapel_roll", patch.lapel_roll)
     _set("shoulder_padding", patch.shoulder_padding)
     _set("trouser_front", patch.trouser_front)
+    _set("trouser_color", patch.trouser_color)
     _set("neckwear", patch.neckwear)
     _set("notes_normalized", patch.notes_normalized)
+    _set("preferred_material", patch.preferred_material)
+    _set("requested_fabric_code", patch.requested_fabric_code)
 
     return updated

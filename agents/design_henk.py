@@ -58,6 +58,7 @@ import os
 from typing import Optional
 
 from agents.base import AgentDecision, BaseAgent
+from agents.prompt_loader import IMAGE_SYSTEM_CONTRACT
 from agents.design_patch_agent import DesignPatchAgent
 from models.customer import SessionState
 from models.fabric import SelectedFabricData
@@ -196,6 +197,10 @@ class DesignHenkAgent(BaseAgent):
                     "revers_type": state.design_preferences.revers_type,
                     "shoulder_padding": state.design_preferences.shoulder_padding,
                     "waistband_type": state.design_preferences.waistband_type,
+                    "wants_vest": state.design_preferences.wants_vest,
+                    "trouser_color": state.design_preferences.trouser_color,
+                    "preferred_material": state.design_preferences.preferred_material,
+                    "requested_fabric_code": state.design_preferences.requested_fabric_code,
                 }
 
                 # Extract style keywords
@@ -295,6 +300,11 @@ class DesignHenkAgent(BaseAgent):
                                 "lapel_style": state.design_preferences.lapel_style,
                                 "lapel_roll": state.design_preferences.lapel_roll,
                                 "trouser_front": state.design_preferences.trouser_front,
+                                "notes_normalized": state.design_preferences.notes_normalized,
+                                "wants_vest": state.design_preferences.wants_vest,
+                                "trouser_color": state.design_preferences.trouser_color,
+                                "preferred_material": state.design_preferences.preferred_material,
+                                "requested_fabric_code": state.design_preferences.requested_fabric_code,
                             }
                         )
                     else:
@@ -669,7 +679,9 @@ Deine Aufgabe - DESIGN-BERATUNG & VISUALISIERUNG:
 - Express: 2-3 Wochen (gegen Aufpreis)
 - Bei Termindruck: "Wir finden eine Lösung!"
 
-Wichtig: Antworte IMMER auf Deutsch, kurz, charmant und hilfreich!"""
+Wichtig: Antworte IMMER auf Deutsch, kurz, charmant und hilfreich!
+
+{IMAGE_SYSTEM_CONTRACT}"""
 
     async def _process_with_llm(
         self, state: SessionState, context_message: str = ""

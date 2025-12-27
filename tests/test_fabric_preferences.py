@@ -64,3 +64,12 @@ def test_merges_pattern_from_params_and_query():
     criteria, _, _, _ = build_fabric_search_criteria(query, params, _empty_state())
 
     assert criteria.patterns == ["pinstripe", "herringbone"]
+
+
+def test_detects_cashmere_material_from_query():
+    query = "bitte kaschmir stoffe in grau"
+    params = {}
+
+    criteria, _, _, _ = build_fabric_search_criteria(query, params, _empty_state())
+
+    assert criteria.preferred_materials == ["cashmere"]
