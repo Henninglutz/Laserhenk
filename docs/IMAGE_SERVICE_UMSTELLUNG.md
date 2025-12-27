@@ -37,3 +37,11 @@ OPENAI_API_KEY=your-openai-key
 1. Aufrufer verwenden weiterhin die bisherigen Service-Einstiege; `get_image_service()` sorgt für die einmalige Initialisierung von Provider + PromptLoader.
 2. Vor jedem Request wird die Policy geprüft: Wenn `allowed_source` nicht dem aktiven Provider entspricht, wird der Request blockiert und als `policy_blocked` markiert.
 3. Erfolgreiche Antworten werden als Bytes geöffnet (`PIL.Image.open(BytesIO(...))`), Compositing läuft wie zuvor, Ergebnisse landen unter `/static/generated_images/`.
+
+## Troubleshooting: Imagen liefert keine Bilder
+- **Service-Account-JSON fehlt**: Das Repo enthält bewusst keine GCP-Credentials. Lege lokal eine Service-Account-Datei ab und setze `GOOGLE_APPLICATION_CREDENTIALS` auf diesen Pfad.
+- **GCP-Projekt-ID fehlt**: `GCP_PROJECT` muss gesetzt sein, sonst bricht der `ImagenProvider` vor dem API-Call ab.
+- **Vertex AI API nicht aktiviert**: Im GCP-Projekt muss die Vertex-AI-API aktiv sein, sonst scheitert der REST-Aufruf mit 403/404.
+- **Rollen/Berechtigungen**: Der Service-Account benötigt mindestens `roles/aiplatform.user` (Vertex AI User), um Publishermodelle aufzurufen.
+- **Region/Modell**: Stelle sicher, dass `GCP_LOCATION` (Standard `europe-west4`) und `IMAGEN_MODEL` (`imagen-3.0-generate-002`) zur gewählten Region passen. Falsche Kombinationen führen zu 404.
+- **Provider-Wahl**: Wenn `IMAGE_PROVIDER=imagen` gesetzt ist, aber `GCP_PROJECT` oder `GOOGLE_APPLICATION_CREDENTIALS` fehlen, fällt der Code automatisch auf DALL·E zurück. Wird dennoch Imagen gewählt, prüfe die ENV zur Prozess-Startzeit.
