@@ -576,9 +576,15 @@ class ImageService:
 
 def _select_provider() -> ImageProvider:
     provider_name = os.getenv("IMAGE_PROVIDER", "imagen").lower()
-    if provider_name == "dalle":
-        return DalleProvider()
-    return ImagenProvider()
+    if provider_name == "imagen":
+        project = os.getenv("GCP_PROJECT")
+        creds = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        if project and creds:
+            return ImagenProvider(project=project, credentials_path=creds)
+        logger.warning(
+            "[ImageService] Imagen selected but missing GCP_PROJECT/GOOGLE_APPLICATION_CREDENTIALS; falling back to DALL·E"
+        )
+    return DalleProvider()
 
 
 _image_service: Optional[ImageService] = None
