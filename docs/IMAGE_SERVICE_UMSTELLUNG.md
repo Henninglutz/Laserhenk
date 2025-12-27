@@ -1,0 +1,51 @@
+# Umstellung der Image-Generation (Vertex Imagen 3 + DALL·E Fallback)
+
+Diese Notiz fasst die Architekturänderungen zusammen, die den Wechsel zu Google Vertex AI Imagen 3 als primären Provider, die Prompt-Auslagerung und die policy-konforme Bildgenerierung betreffen.
+
+## Architekturüberblick
+- **PromptLoader** (`backend/prompts/loader.py`): Lädt Jinja2-Templates aus `backend/prompts/image/` und rendert sie mit Variablen zur Laufzeit. Templates enthalten keine Hardcoded-Prompts mehr im Code und können gemeinsam genutzte Regeln (`base_rules.md`) einbinden.
+- **Provider-Abstraktion** (`backend/services/image_providers/base.py`): Ein gemeinsames Protokoll stellt sicher, dass alle Provider `generate()` asynchron implementieren und immer Bildbytes (keine URLs) zurückliefern.
+- **ImagenProvider** (`backend/services/image_providers/imagen_provider.py`): Standardprovider, der das Vertex AI REST-Endpoint aufruft, Base64-kodierte Bildbytes dekodiert und robuste Fehlerbehandlung/Logging liefert.
+- **DalleProvider** (`backend/services/image_providers/dalle_provider.py`): Fallback-Provider, nutzt OpenAI `images.generate`, vereinheitlicht die Ausgabe zu Bytes (Download bei URL, sonst Base64-Decode).
+- **ImageService** (`backend/services/image_service.py`): Orchestriert Prompt-Rendering, Provider-Aufruf, Policy-Check (`ImagePolicyDecision.allowed_source`), und übernimmt das bestehende PIL-Compositing (Moodboard mit Fabric-Thumbnails, Product-Sheet-Overlay). Der Legacy-Wrapper `get_dalle_tool()` delegiert intern, sodass Aufrufer unverändert bleiben.
+
+## Environment-Variablen
+Die Providerwahl und Endpunkte sind rein per ENV steuerbar. Relevante Variablen:
+
+| Variable | Zweck |
+| --- | --- |
+| `IMAGE_PROVIDER` | Aktiver Provider: `imagen` (Default) oder `dalle`. Nicht passende Policy-Quellen werden blockiert. |
+| `GCP_PROJECT` | Projekt-ID für Vertex AI (Imagen). |
+| `GCP_LOCATION` | Region, Standard `europe-west4`. |
+| `IMAGEN_MODEL` | Modellname, Standard `imagen-3.0-generate-002`. |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Pfad zur Service-Account-JSON für Vertex AI. |
+| `OPENAI_API_KEY` | API-Key für DALL·E Fallback. |
+
+Weitere interne Parameter wie Größe/Qualität werden an den jeweiligen Provider durchgereicht, bleiben für Aufrufer unverändert und orientieren sich an den bisherigen DALLEImageRequest-Feldern.
+
+## Beispiel `.env`
+Siehe `.env.example` im Repo. Empfehlenswert ist ein lokaler, nicht versionierter Pfad wie `~/LaserhenkSecrets/service_account.json` oder `./secrets/service_account.json` (Ordner ist in `.gitignore` eingetragen).
+
+```
+IMAGE_PROVIDER=auto
+GCP_PROJECT=your-project-id
+GCP_LOCATION=europe-west4
+IMAGEN_MODEL=imagen-3.0-generate-002
+GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/service-account.json
+# Optional: Inline JSON falls kein File-Mount möglich
+# GOOGLE_APPLICATION_CREDENTIALS_JSON=...
+OPENAI_API_KEY=your-openai-key
+```
+
+## Laufzeitverhalten
+1. Aufrufer verwenden weiterhin die bisherigen Service-Einstiege; `get_image_service()` sorgt für die einmalige Initialisierung von Provider + PromptLoader.
+2. Vor jedem Request wird die Policy geprüft: Wenn `allowed_source` nicht dem aktiven Provider entspricht, wird der Request blockiert und als `policy_blocked` markiert.
+3. Erfolgreiche Antworten werden als Bytes geöffnet (`PIL.Image.open(BytesIO(...))`), Compositing läuft wie zuvor, Ergebnisse landen unter `/static/generated_images/`.
+
+## Troubleshooting: Imagen liefert keine Bilder
+- **Service-Account-JSON fehlt**: Das Repo enthält bewusst keine GCP-Credentials. Lege lokal eine Service-Account-Datei ab und setze `GOOGLE_APPLICATION_CREDENTIALS` auf diesen Pfad.
+- **GCP-Projekt-ID fehlt**: `GCP_PROJECT` muss gesetzt sein, sonst bricht der `ImagenProvider` vor dem API-Call ab.
+- **Vertex AI API nicht aktiviert**: Im GCP-Projekt muss die Vertex-AI-API aktiv sein, sonst scheitert der REST-Aufruf mit 403/404.
+- **Rollen/Berechtigungen**: Der Service-Account benötigt mindestens `roles/aiplatform.user` (Vertex AI User), um Publishermodelle aufzurufen.
+- **Region/Modell**: Stelle sicher, dass `GCP_LOCATION` (Standard `europe-west4`) und `IMAGEN_MODEL` (`imagen-3.0-generate-002`) zur gewählten Region passen. Falsche Kombinationen führen zu 404.
+- **Provider-Wahl**: Wenn `IMAGE_PROVIDER=imagen` gesetzt ist, aber `GCP_PROJECT` oder `GOOGLE_APPLICATION_CREDENTIALS` fehlen, fällt der Code automatisch auf DALL·E zurück. Wird dennoch Imagen gewählt, prüfe die ENV zur Prozess-Startzeit.
