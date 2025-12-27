@@ -30,7 +30,8 @@ class ImageService:
     def __init__(self, provider: ImageProvider, prompt_loader: PromptLoader | None = None):
         self.provider = provider
         self.prompt_loader = prompt_loader or PromptLoader()
-        self.images_dir = Path(__file__).parent.parent / "generated_images"
+        # Align with Flask static route /static/generated_images served from project root
+        self.images_dir = Path(__file__).resolve().parent.parent.parent / "generated_images"
         self.images_dir.mkdir(parents=True, exist_ok=True)
 
     # --------------------------- public API ---------------------------
