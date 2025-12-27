@@ -131,6 +131,20 @@ class DesignHenkAgent(BaseAgent):
             state.design_rag_queried = True
             logger.info("[DesignHenk] ⚠️ Design RAG disabled - skipping to preferences collection")
 
+        if state.image_generation_failed:
+            error_hint = f" Grund: {state.last_tool_error}" if state.last_tool_error else ""
+            return AgentDecision(
+                next_agent=None,
+                message=(
+                    "Die Bildgenerierung ist leider fehlgeschlagen."
+                    f"{error_hint}\n"
+                    "Ich kann dir stattdessen sofort eine textbasierte Outfitbeschreibung senden oder wir versuchen es später"
+                    " erneut, sobald die Konfiguration passt."
+                ),
+                action=None,
+                should_continue=False,
+            )
+
         # Check if design preferences are collected
         preferences_complete = (
             state.design_preferences.revers_type is not None

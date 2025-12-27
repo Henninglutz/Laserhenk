@@ -343,13 +343,21 @@ async def _dalle_tool(params: dict, state: HenkGraphState) -> ToolResult:
 
     # Store generated image in session state
     image_url = getattr(response, "image_url", None)
+    success = getattr(response, "success", True)
     if image_url:
         session_state.mood_image_url = image_url
         session_state.image_generation_history.append({"image_url": image_url, "type": "dalle_composite" if fabric_data.image_url else "dalle"})
         state["session_state"] = session_state
+        session_state.image_generation_failed = False
+        session_state.last_tool_error = None
+    else:
+        session_state.image_generation_failed = True
+        session_state.last_tool_error = getattr(response, "error", None) or "Bildgenerierung fehlgeschlagen"
 
     text = response.error if getattr(response, "error", None) else "Hier ist dein illustratives Mood Board. Die echten Stoffbilder findest du separat."
-    metadata = {"image_url": image_url} if image_url else {}
+    metadata = {"image_url": image_url, "success": success}
+    if getattr(response, "error", None):
+        metadata["error"] = response.error
     return ToolResult(text=text, metadata=metadata)
 
 
@@ -1076,10 +1084,14 @@ async def _run_tool_action(action: HandoffAction, state: HenkGraphState) -> Henk
     if not tool:
         return {"awaiting_user_input": True, "next_step": None}
 
+    failed = False
+    failure_reason: Optional[str] = None
     try:
         result: ToolResult = await tool(action.params, state)
     except Exception as exc:  # pragma: no cover
         logging.error("[ToolRunner] Tool failed", exc_info=exc)
+        failed = True
+        failure_reason = str(exc)
         result = ToolResult(text="Da ist etwas schiefgegangen bei der Ausführung. Versuchen wir es gleich nochmal.")
     messages = list(state.get("messages", []))
     messages.append(
@@ -1091,9 +1103,16 @@ async def _run_tool_action(action: HandoffAction, state: HenkGraphState) -> Henk
         }
     )
     session_state = _session_state(state)
+    meta_error = result.metadata.get("error") if hasattr(result, "metadata") else None
+    meta_success = result.metadata.get("success") if hasattr(result, "metadata") else None
+    failed = failed or meta_success is False or bool(meta_error)
+    if failed:
+        session_state.image_generation_failed = True
+        session_state.last_tool_error = meta_error or failure_reason or result.text
 
+    continue_flag = action.should_continue and not failed
     next_step = (
-        HandoffAction(kind="agent", name=action.return_to_agent, should_continue=action.should_continue).model_dump()
+        HandoffAction(kind="agent", name=action.return_to_agent, should_continue=continue_flag).model_dump()
         if action.return_to_agent
         else None
     )
@@ -1101,7 +1120,7 @@ async def _run_tool_action(action: HandoffAction, state: HenkGraphState) -> Henk
     return {
         "messages": messages,
         "session_state": session_state,
-        "awaiting_user_input": not action.should_continue,
+        "awaiting_user_input": not continue_flag,
         "next_step": next_step,
         "user_input": None,  # type: ignore[typeddict-item]
     }

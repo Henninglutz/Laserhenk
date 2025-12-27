@@ -204,6 +204,12 @@ class SessionState(BaseModel):
     fabric_state: FabricSelectionState = Field(default_factory=FabricSelectionState)
     image_state: ImageGenerationState = Field(default_factory=ImageGenerationState)
     progress: AgentProgressState = Field(default_factory=AgentProgressState)
+    image_generation_failed: bool = Field(
+        default=False, description="Letzter Bildgenerierungsversuch ist fehlgeschlagen"
+    )
+    last_tool_error: Optional[str] = Field(
+        default=None, description="Letzte Tool-Fehlermeldung für Debug/UX"
+    )
 
     # Conversation and routing
     conversation_history: list[dict] = Field(

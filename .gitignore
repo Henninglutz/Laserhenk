@@ -37,6 +37,7 @@ ENV/
 .env
 .env.local
 .env.*.local
+secrets/
 
 # Jupyter Notebooks
 .ipynb_checkpoints

@@ -24,12 +24,16 @@ Die Providerwahl und Endpunkte sind rein per ENV steuerbar. Relevante Variablen:
 Weitere interne Parameter wie Größe/Qualität werden an den jeweiligen Provider durchgereicht, bleiben für Aufrufer unverändert und orientieren sich an den bisherigen DALLEImageRequest-Feldern.
 
 ## Beispiel `.env`
+Siehe `.env.example` im Repo. Empfehlenswert ist ein lokaler, nicht versionierter Pfad wie `~/LaserhenkSecrets/service_account.json` oder `./secrets/service_account.json` (Ordner ist in `.gitignore` eingetragen).
+
 ```
-IMAGE_PROVIDER=imagen
+IMAGE_PROVIDER=auto
 GCP_PROJECT=your-project-id
 GCP_LOCATION=europe-west4
 IMAGEN_MODEL=imagen-3.0-generate-002
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/service-account.json
+# Optional: Inline JSON falls kein File-Mount möglich
+# GOOGLE_APPLICATION_CREDENTIALS_JSON=...
 OPENAI_API_KEY=your-openai-key
 ```
 

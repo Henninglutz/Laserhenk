@@ -15,6 +15,7 @@ except ImportError:  # pragma: no cover - environment without Pillow
     Image = ImageDraw = ImageFont = None
 
 from backend.prompts.loader import PromptLoader
+from backend.settings import get_settings
 from models.api_payload import ImagePolicyDecision
 from models.rendering import RenderRequest, RenderResult
 from models.tools import DALLEImageRequest, DALLEImageResponse
@@ -576,15 +577,24 @@ class ImageService:
 
 
 def _select_provider() -> ImageProvider:
-    provider_name = os.getenv("IMAGE_PROVIDER", "imagen").lower()
-    if provider_name == "imagen":
-        project = os.getenv("GCP_PROJECT")
-        creds = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-        if project and creds:
-            return ImagenProvider(project=project, credentials_path=creds)
-        logger.warning(
-            "[ImageService] Imagen selected but missing GCP_PROJECT/GOOGLE_APPLICATION_CREDENTIALS; falling back to DALL·E"
+    settings = get_settings()
+    provider_name = settings.image_provider
+
+    if provider_name in {"imagen", "auto"}:
+        imagen = ImagenProvider(
+            project=settings.gcp_project,
+            location=settings.gcp_location,
+            model=settings.imagen_model,
+            credentials_path=settings.credentials_path,
+            credentials_json=settings.credentials_json,
         )
+        if settings.imagen_ready() and imagen.credentials:
+            return imagen
+        logger.warning(
+            "[ImageService] Imagen unavailable, falling back to OpenAI/DALL·E"
+        )
+        if provider_name == "imagen":
+            logger.info("[ImageService] Setze DALL·E als Fallback, weil Imagen-Konfiguration fehlt")
     return DalleProvider()
 
 
