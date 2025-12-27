@@ -41,6 +41,11 @@ LIGHT_KEYWORDS = ["leicht", "luftig", "sommer", "sommerlich", "leichter"]
 LIGHTWEIGHT_THRESHOLD = 250
 
 MATERIAL_KEYWORDS = {
+    "wolle": "wool",
+    "schurwolle": "wool",
+    "merino": "wool",
+    "schur-wolle": "wool",
+    "wool": "wool",
     "leinen": "linen",
     "linen": "linen",
     "baumwolle": "cotton",
@@ -57,7 +62,11 @@ PATTERN_KEYWORDS = {
     "fischgrätmuster": "herringbone",
     "herringbone": "herringbone",
     "herring bone": "herringbone",
+    "twill": "twill",
+    "köper": "twill",
 }
+
+ALTERNATIVE_FABRIC_TRIGGERS = ["andere stoff", "andere stoffen", "andere material", "weitere stoff"]
 
 
 def _normalize_session_state(session_state: Optional[SessionState | dict]) -> Optional[SessionState]:
@@ -152,6 +161,29 @@ def _extract_patterns(query_lower: str, patterns: list[str]) -> list[str]:
     return patterns
 
 
+def _is_alternative_request(query_lower: str) -> bool:
+    return any(trigger in query_lower for trigger in ALTERNATIVE_FABRIC_TRIGGERS)
+
+
+def _inject_alternative_filters(
+    preferred_materials: Optional[Iterable[str]], patterns: list[str]
+) -> tuple[Optional[list[str]], list[str]]:
+    """Sorge dafür, dass "andere Stoffe" tatsächlich andere Material/Pattern-Filter
+    auslöst. Wenn keine Materialpräferenz gesetzt ist, erzwingen wir Wolle als
+    Alternative zu den zuletzt gezeigten Baumwoll-/Mischgeweben. Falls keine
+    Pattern gesetzt sind, erzwingen wir Twill als Variation.
+    """
+
+    new_materials: Optional[list[str]] = None
+    if preferred_materials:
+        new_materials = list(preferred_materials)
+    else:
+        new_materials = ["wool"]
+
+    new_patterns = list(dict.fromkeys([*patterns, "twill"])) if patterns else ["twill"]
+    return new_materials, new_patterns
+
+
 def build_fabric_search_criteria(
     query: str,
     params: Dict[str, Any],
@@ -180,11 +212,13 @@ def build_fabric_search_criteria(
     extracted_colors: list[str] = []
     excluded_colors: list[str] = []
 
+    alternative_request = False
     if query_lower:
         extracted_colors, excluded_colors = _extract_colors(query_lower)
         weight_max = _detect_lightweight_preference(query_lower, weight_max)
         preferred_materials = _detect_materials(query_lower, preferred_materials)
         patterns = _extract_patterns(query_lower, patterns)
+        alternative_request = _is_alternative_request(query_lower)
 
     colors = _merge_colors(colors, extracted_colors)
     if excluded_colors:
@@ -212,6 +246,15 @@ def build_fabric_search_criteria(
                 logger.info(f"[FabricPrefs] MERGED color preferences: {existing} + {colors} = {merged}")
             else:
                 logger.info(f"[FabricPrefs] Color preferences unchanged: {colors}")
+
+    if alternative_request:
+        preferred_materials, patterns = _inject_alternative_filters(
+            preferred_materials, patterns
+        )
+        logger.info(
+            "[FabricPrefs] Alternative fabrics requested -> forcing material/pattern variation: "
+            f"materials={preferred_materials}, patterns={patterns}"
+        )
 
     criteria = FabricSearchCriteria(
         colors=colors,
